@@ -1,0 +1,35 @@
+{
+  "n_vertices": 1621,
+  "n_triangles": 3219,
+  "n_boundary": 21,
+  "boundary_indices": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+  ],
+  "center_offset": [
+    976.8630475015423,
+    754.5219000616903
+  ],
+  "scale_factor": 945.0,
+  "epsilon_ratio": 0.005,
+  "interior_spacing": 15
+}

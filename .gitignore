@@ -1,0 +1,22 @@
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Unity generated files
+UnityProject/[Ll]ibrary/
+UnityProject/[Tt]emp/
+UnityProject/[Oo]bj/
+UnityProject/[Bb]uild/
+UnityProject/[Bb]uilds/
+UnityProject/[Ll]ogs/
+UnityProject/[Uu]ser[Ss]ettings/
+UnityProject/.vscode/
+UnityProject/*.csproj
+UnityProject/*.sln
+UnityProject/*.slnx
+
+# macOS / editor noise
+*.log
