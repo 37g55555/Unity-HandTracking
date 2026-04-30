@@ -1,4 +1,5 @@
 from pathlib import Path
+import argparse
 import socket
 import time
 import urllib.request
@@ -13,6 +14,61 @@ WIDTH, HEIGHT = 1280, 720
 UDP_TARGET = ("127.0.0.1", 5052)
 MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
 MODEL_PATH = Path(__file__).resolve().parent / "hand_landmarker.task"
+
+
+def open_camera(camera_id=0):
+    candidate_ids = []
+    if camera_id is not None and camera_id >= 0:
+        candidate_ids.append(camera_id)
+
+    for fallback_id in [0, 1, 2, 3]:
+        if fallback_id not in candidate_ids:
+            candidate_ids.append(fallback_id)
+
+    backend_candidates = []
+    if hasattr(cv2, "CAP_AVFOUNDATION"):
+        backend_candidates.append(("AVFoundation", cv2.CAP_AVFOUNDATION))
+    backend_candidates.append(("Default", None))
+
+    tried = []
+    for candidate_id in candidate_ids:
+        for backend_name, backend in backend_candidates:
+            try:
+                if backend is None:
+                    cap = cv2.VideoCapture(candidate_id)
+                else:
+                    cap = cv2.VideoCapture(candidate_id, backend)
+            except Exception:
+                cap = None
+
+            tried.append(f"{candidate_id}:{backend_name}")
+            if cap is None or not cap.isOpened():
+                if cap is not None:
+                    cap.release()
+                continue
+
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+
+            success = False
+            for _ in range(12):
+                ok, frame = cap.read()
+                if ok and frame is not None and frame.size > 0:
+                    success = True
+                    break
+                time.sleep(0.05)
+
+            if success:
+                print(f"[OK] Camera connected: camera_id={candidate_id}, backend={backend_name}")
+                return cap
+
+            cap.release()
+
+    raise SystemExit(
+        "Could not open a usable camera. "
+        f"Tried: {', '.join(tried)}. "
+        "Check macOS camera permissions and close any app already using the camera."
+    )
 
 
 def ensure_model_exists():
@@ -60,14 +116,13 @@ def build_udp_payload(result, frame_width, frame_height):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="MediaPipe hand tracking sender")
+    parser.add_argument("--camera", type=int, default=0, help="Preferred camera index")
+    args = parser.parse_args()
+
     ensure_model_exists()
 
-    cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
-
-    if not cap.isOpened():
-        raise SystemExit("Could not open camera 0. Check macOS camera permissions.")
+    cap = open_camera(args.camera)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     landmarker = create_landmarker()

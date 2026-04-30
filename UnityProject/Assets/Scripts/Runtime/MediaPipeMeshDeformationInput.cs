@@ -8,15 +8,12 @@ namespace ShadowPrototype
         {
             None,
             Hover,
-            Push,
-            Pull,
-            Tear
+            Pull
         }
 
         private const int LandmarksPerHand = 21;
         private const int ThumbTipIndex = 4;
         private const int IndexTipIndex = 8;
-        private const int MiddleTipIndex = 12;
 
         [SerializeField] private ShadowDeformer targetDeformer;
         [SerializeField] private HandLandmarkUdpReceiver handReceiver;
@@ -25,45 +22,42 @@ namespace ShadowPrototype
         [SerializeField] private float trackedFrameWidth = 1280.0f;
         [SerializeField] private float trackedFrameHeight = 720.0f;
 
-        [Header("Push")]
-        [SerializeField] private bool enablePush = true;
-        [SerializeField] private float pushRadius = 0.16f;
-        [SerializeField] private float pushStrengthPerSecond = 0.65f;
+        [Header("Selection")]
+        [SerializeField] private float hoverSnapDistanceLocal = 0.18f;
+        [SerializeField] private float pointSmoothingSpeed = 16.0f;
 
-        [Header("Pull")]
-        [SerializeField] private bool enablePull = true;
-        [SerializeField] private float pinchDistanceThresholdPixels = 70.0f;
+        [Header("Grab / Pull")]
+        [SerializeField] private float pinchEnterThresholdPixels = 65.0f;
+        [SerializeField] private float pinchExitThresholdPixels = 95.0f;
         [SerializeField] private float pullRadius = 0.22f;
         [SerializeField] private float pullStrength = 1.0f;
-        [SerializeField] private float maxPullDeltaPerFrame = 0.06f;
+        [SerializeField] private float maxPullDeltaPerFrame = 0.045f;
 
-        [Header("Tear")]
-        [SerializeField] private bool enableTear = true;
-        [SerializeField] private float tearFingerDistanceThresholdPixels = 150.0f;
-        [SerializeField] private float tearSpreadDeltaThresholdPixels = 28.0f;
-        [SerializeField] private float tearWidth = 0.09f;
-        [SerializeField] private float tearSeparation = 0.05f;
-        [SerializeField] private float tearCooldownSeconds = 0.85f;
+        private bool hasSmoothedPoints;
+        private Vector2 smoothedThumbLocal;
+        private Vector2 smoothedIndexLocal;
+        private Vector2 smoothedGrabLocal;
 
-        private bool wasPinchingLastFrame;
+        private bool isGrabLocked;
+        private int lockedBoundaryArrayIndex = -1;
         private bool hasPreviousGrabPoint;
-        private Vector2 previousGrabPointLocal;
-        private float previousScissorDistancePixels;
-        private float nextAllowedTearTime;
+        private Vector2 previousGrabLocal;
 
         public InteractionMode CurrentMode { get; private set; }
         public bool HasProjectedPoints { get; private set; }
         public Vector2 ThumbLocalPoint { get; private set; }
         public Vector2 IndexLocalPoint { get; private set; }
-        public Vector2 MiddleLocalPoint { get; private set; }
         public Vector2 GrabLocalPoint { get; private set; }
         public Vector3 ThumbWorldPoint { get; private set; }
         public Vector3 IndexWorldPoint { get; private set; }
-        public Vector3 MiddleWorldPoint { get; private set; }
         public Vector3 GrabWorldPoint { get; private set; }
-        public float PushRadiusLocal => pushRadius;
+
+        public bool HasActiveBoundaryTarget { get; private set; }
+        public int ActiveBoundaryArrayIndex { get; private set; } = -1;
+        public Vector2 ActiveBoundaryLocalPoint { get; private set; }
+        public Vector3 ActiveBoundaryWorldPoint { get; private set; }
+        public bool IsGrabLocked => isGrabLocked;
         public float PullRadiusLocal => pullRadius;
-        public float TearWidthLocal => tearWidth;
 
         public void Configure(ShadowDeformer deformer, HandLandmarkUdpReceiver receiver)
         {
@@ -92,116 +86,149 @@ namespace ShadowPrototype
             }
 
             if (!TryGetHandPoint(landmarks, controllingHandIndex, ThumbTipIndex, out Vector2 thumbTracked) ||
-                !TryGetHandPoint(landmarks, controllingHandIndex, IndexTipIndex, out Vector2 indexTracked) ||
-                !TryGetHandPoint(landmarks, controllingHandIndex, MiddleTipIndex, out Vector2 middleTracked))
+                !TryGetHandPoint(landmarks, controllingHandIndex, IndexTipIndex, out Vector2 indexTracked))
             {
                 ResetGestureState();
                 return;
             }
 
-            if (!TryProjectTrackedPointToLocal(thumbTracked, out Vector2 thumbLocal) ||
-                !TryProjectTrackedPointToLocal(indexTracked, out Vector2 indexLocal) ||
-                !TryProjectTrackedPointToLocal(middleTracked, out Vector2 middleLocal))
+            if (!TryProjectTrackedPointToLocal(thumbTracked, out Vector2 thumbLocalRaw) ||
+                !TryProjectTrackedPointToLocal(indexTracked, out Vector2 indexLocalRaw))
             {
                 ResetGestureState();
                 return;
             }
 
-            ThumbLocalPoint = thumbLocal;
-            IndexLocalPoint = indexLocal;
-            MiddleLocalPoint = middleLocal;
-            GrabLocalPoint = (thumbLocal + indexLocal) * 0.5f;
-            ThumbWorldPoint = targetDeformer.transform.TransformPoint(new Vector3(thumbLocal.x, thumbLocal.y, 0.0f));
-            IndexWorldPoint = targetDeformer.transform.TransformPoint(new Vector3(indexLocal.x, indexLocal.y, 0.0f));
-            MiddleWorldPoint = targetDeformer.transform.TransformPoint(new Vector3(middleLocal.x, middleLocal.y, 0.0f));
-            GrabWorldPoint = targetDeformer.transform.TransformPoint(new Vector3(GrabLocalPoint.x, GrabLocalPoint.y, 0.0f));
+            Vector2 grabLocalRaw = (thumbLocalRaw + indexLocalRaw) * 0.5f;
+            SmoothInteractionPoints(thumbLocalRaw, indexLocalRaw, grabLocalRaw);
+
+            ThumbLocalPoint = smoothedThumbLocal;
+            IndexLocalPoint = smoothedIndexLocal;
+            GrabLocalPoint = smoothedGrabLocal;
+            ThumbWorldPoint = LocalToWorld(ThumbLocalPoint);
+            IndexWorldPoint = LocalToWorld(IndexLocalPoint);
+            GrabWorldPoint = LocalToWorld(GrabLocalPoint);
             HasProjectedPoints = true;
 
-            bool indexInsideMesh = targetDeformer.ContainsLocalPoint(indexLocal);
-            bool middleInsideMesh = targetDeformer.ContainsLocalPoint(middleLocal);
-            bool grabInsideMesh = targetDeformer.ContainsLocalPoint(GrabLocalPoint);
-
             float pinchDistancePixels = Vector2.Distance(thumbTracked, indexTracked);
-            bool isPinching = enablePull && pinchDistancePixels <= pinchDistanceThresholdPixels;
-            bool tearPoseCandidate = enableTear &&
-                                     !isPinching &&
-                                     indexInsideMesh &&
-                                     middleInsideMesh &&
-                                     Vector2.Distance(indexTracked, middleTracked) >= tearFingerDistanceThresholdPixels;
+            bool isPinching = isGrabLocked
+                ? pinchDistancePixels <= pinchExitThresholdPixels
+                : pinchDistancePixels <= pinchEnterThresholdPixels;
 
-            CurrentMode = InteractionMode.None;
-            if (grabInsideMesh && isPinching)
-            {
-                CurrentMode = InteractionMode.Pull;
-            }
-            else if (tearPoseCandidate)
-            {
-                CurrentMode = InteractionMode.Tear;
-            }
-            else if (indexInsideMesh)
-            {
-                CurrentMode = InteractionMode.Push;
-            }
-            else if (HasProjectedPoints)
-            {
-                CurrentMode = InteractionMode.Hover;
-            }
+            bool hasHoverTarget = TryResolveHoverBoundary(IndexLocalPoint);
 
-            if (enablePush && !isPinching && indexInsideMesh)
+            if (!isPinching)
             {
-                float pushAmount = pushStrengthPerSecond * Time.deltaTime;
-                targetDeformer.ApplyPush(indexLocal, pushRadius, pushAmount);
+                ReleaseGrab();
             }
-
-            if (isPinching && (grabInsideMesh || wasPinchingLastFrame))
+            else if (!isGrabLocked && hasHoverTarget)
             {
-                if (hasPreviousGrabPoint)
-                {
-                    Vector2 pullDelta = Vector2.ClampMagnitude(GrabLocalPoint - previousGrabPointLocal, maxPullDeltaPerFrame);
-                    if (pullDelta.sqrMagnitude > 0.0f)
-                    {
-                        targetDeformer.ApplyPull(GrabLocalPoint, pullDelta, pullRadius, pullStrength);
-                    }
-                }
-
-                previousGrabPointLocal = GrabLocalPoint;
-                hasPreviousGrabPoint = true;
-            }
-            else
-            {
+                isGrabLocked = true;
+                lockedBoundaryArrayIndex = ActiveBoundaryArrayIndex;
+                previousGrabLocal = GrabLocalPoint;
                 hasPreviousGrabPoint = false;
             }
 
-            if (enableTear && !isPinching)
+            if (isGrabLocked &&
+                targetDeformer.TryGetBoundaryVertexAtBoundaryIndex(
+                    lockedBoundaryArrayIndex,
+                    out _,
+                    out Vector2 lockedBoundaryLocal,
+                    out Vector3 lockedBoundaryWorld))
             {
-                float scissorDistancePixels = Vector2.Distance(indexTracked, middleTracked);
-                float spreadDeltaPixels = scissorDistancePixels - previousScissorDistancePixels;
-                bool canTear = Time.time >= nextAllowedTearTime &&
-                               tearPoseCandidate &&
-                               spreadDeltaPixels >= tearSpreadDeltaThresholdPixels;
+                HasActiveBoundaryTarget = true;
+                ActiveBoundaryArrayIndex = lockedBoundaryArrayIndex;
+                ActiveBoundaryLocalPoint = lockedBoundaryLocal;
+                ActiveBoundaryWorldPoint = lockedBoundaryWorld;
+                CurrentMode = InteractionMode.Pull;
 
-                if (canTear && targetDeformer.ApplyTear(indexLocal, middleLocal, tearWidth, tearSeparation))
+                if (hasPreviousGrabPoint)
                 {
-                    nextAllowedTearTime = Time.time + tearCooldownSeconds;
+                    Vector2 pullDelta = Vector2.ClampMagnitude(GrabLocalPoint - previousGrabLocal, maxPullDeltaPerFrame);
+                    if (pullDelta.sqrMagnitude > 0.0f)
+                    {
+                        targetDeformer.ApplyPull(ActiveBoundaryLocalPoint, pullDelta, pullRadius, pullStrength);
+                    }
                 }
 
-                previousScissorDistancePixels = scissorDistancePixels;
-            }
-            else
-            {
-                previousScissorDistancePixels = 0.0f;
+                previousGrabLocal = GrabLocalPoint;
+                hasPreviousGrabPoint = true;
+                return;
             }
 
-            wasPinchingLastFrame = isPinching;
+            if (hasHoverTarget)
+            {
+                CurrentMode = InteractionMode.Hover;
+                hasPreviousGrabPoint = false;
+                return;
+            }
+
+            CurrentMode = InteractionMode.None;
+            HasActiveBoundaryTarget = false;
+            ActiveBoundaryArrayIndex = -1;
+            hasPreviousGrabPoint = false;
+        }
+
+        private bool TryResolveHoverBoundary(Vector2 localPoint)
+        {
+            HasActiveBoundaryTarget = false;
+            ActiveBoundaryArrayIndex = -1;
+
+            if (!targetDeformer.TryGetNearestBoundaryVertex(
+                    localPoint,
+                    out int boundaryArrayIndex,
+                    out _,
+                    out Vector2 boundaryLocal,
+                    out Vector3 boundaryWorld))
+            {
+                return false;
+            }
+
+            float distance = Vector2.Distance(localPoint, boundaryLocal);
+            if (distance > hoverSnapDistanceLocal)
+            {
+                return false;
+            }
+
+            HasActiveBoundaryTarget = true;
+            ActiveBoundaryArrayIndex = boundaryArrayIndex;
+            ActiveBoundaryLocalPoint = boundaryLocal;
+            ActiveBoundaryWorldPoint = boundaryWorld;
+            return true;
+        }
+
+        private void SmoothInteractionPoints(Vector2 thumbLocalRaw, Vector2 indexLocalRaw, Vector2 grabLocalRaw)
+        {
+            if (!hasSmoothedPoints)
+            {
+                smoothedThumbLocal = thumbLocalRaw;
+                smoothedIndexLocal = indexLocalRaw;
+                smoothedGrabLocal = grabLocalRaw;
+                hasSmoothedPoints = true;
+                return;
+            }
+
+            float blend = 1.0f - Mathf.Exp(-pointSmoothingSpeed * Time.deltaTime);
+            smoothedThumbLocal = Vector2.Lerp(smoothedThumbLocal, thumbLocalRaw, blend);
+            smoothedIndexLocal = Vector2.Lerp(smoothedIndexLocal, indexLocalRaw, blend);
+            smoothedGrabLocal = Vector2.Lerp(smoothedGrabLocal, grabLocalRaw, blend);
+        }
+
+        private void ReleaseGrab()
+        {
+            isGrabLocked = false;
+            lockedBoundaryArrayIndex = -1;
+            hasPreviousGrabPoint = false;
         }
 
         private void ResetGestureState()
         {
             CurrentMode = InteractionMode.None;
             HasProjectedPoints = false;
-            wasPinchingLastFrame = false;
-            hasPreviousGrabPoint = false;
-            previousScissorDistancePixels = 0.0f;
+            HasActiveBoundaryTarget = false;
+            ActiveBoundaryArrayIndex = -1;
+            hasSmoothedPoints = false;
+            ReleaseGrab();
         }
 
         private bool TryGetHandPoint(Vector3[] landmarks, int handIndex, int landmarkIndex, out Vector2 trackedPoint)
@@ -246,6 +273,11 @@ namespace ShadowPrototype
             Vector3 localPoint3 = targetDeformer.transform.InverseTransformPoint(worldPoint);
             localPoint = new Vector2(localPoint3.x, localPoint3.y);
             return true;
+        }
+
+        private Vector3 LocalToWorld(Vector2 localPoint)
+        {
+            return targetDeformer.transform.TransformPoint(new Vector3(localPoint.x, localPoint.y, 0.0f));
         }
 
         private Camera ResolveCamera()

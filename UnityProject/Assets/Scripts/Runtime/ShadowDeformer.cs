@@ -117,6 +117,81 @@ namespace ShadowPrototype
             return false;
         }
 
+        public bool TryGetNearestBoundaryVertex(
+            Vector2 localPoint,
+            out int boundaryArrayIndex,
+            out int meshVertexIndex,
+            out Vector2 boundaryLocalPoint,
+            out Vector3 boundaryWorldPoint)
+        {
+            boundaryArrayIndex = -1;
+            meshVertexIndex = -1;
+            boundaryLocalPoint = Vector2.zero;
+            boundaryWorldPoint = Vector3.zero;
+
+            if (!HasMesh || boundaryIndices == null || boundaryIndices.Length == 0)
+            {
+                return false;
+            }
+
+            float bestDistanceSquared = float.PositiveInfinity;
+            for (int i = 0; i < boundaryIndices.Length; i++)
+            {
+                int candidateVertexIndex = boundaryIndices[i];
+                if (candidateVertexIndex < 0 || candidateVertexIndex >= workingVertices.Length)
+                {
+                    continue;
+                }
+
+                Vector2 candidate = GetCurrentVertex2D(candidateVertexIndex);
+                float distanceSquared = (candidate - localPoint).sqrMagnitude;
+                if (distanceSquared >= bestDistanceSquared)
+                {
+                    continue;
+                }
+
+                bestDistanceSquared = distanceSquared;
+                boundaryArrayIndex = i;
+                meshVertexIndex = candidateVertexIndex;
+                boundaryLocalPoint = candidate;
+            }
+
+            if (meshVertexIndex < 0)
+            {
+                return false;
+            }
+
+            boundaryWorldPoint = transform.TransformPoint(new Vector3(boundaryLocalPoint.x, boundaryLocalPoint.y, 0.0f));
+            return true;
+        }
+
+        public bool TryGetBoundaryVertexAtBoundaryIndex(
+            int boundaryArrayIndex,
+            out int meshVertexIndex,
+            out Vector2 boundaryLocalPoint,
+            out Vector3 boundaryWorldPoint)
+        {
+            meshVertexIndex = -1;
+            boundaryLocalPoint = Vector2.zero;
+            boundaryWorldPoint = Vector3.zero;
+
+            if (!HasMesh || boundaryIndices == null || boundaryArrayIndex < 0 || boundaryArrayIndex >= boundaryIndices.Length)
+            {
+                return false;
+            }
+
+            meshVertexIndex = boundaryIndices[boundaryArrayIndex];
+            if (meshVertexIndex < 0 || meshVertexIndex >= workingVertices.Length)
+            {
+                meshVertexIndex = -1;
+                return false;
+            }
+
+            boundaryLocalPoint = GetCurrentVertex2D(meshVertexIndex);
+            boundaryWorldPoint = transform.TransformPoint(new Vector3(boundaryLocalPoint.x, boundaryLocalPoint.y, 0.0f));
+            return true;
+        }
+
         public bool ApplyPush(Vector2 localPoint, float radius, float strength)
         {
             if (!HasMesh || radius <= 0.0f || strength <= 0.0f)

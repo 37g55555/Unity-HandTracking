@@ -15,9 +15,10 @@ namespace ShadowPrototype
 
         private Transform indexMarker;
         private Transform thumbMarker;
-        private Transform middleMarker;
         private Transform grabMarker;
-        private LineRenderer mainLine;
+        private Transform boundaryMarker;
+        private LineRenderer handLink;
+        private LineRenderer boundaryLink;
         private LineRenderer radiusRing;
         private TextMesh modeLabel;
 
@@ -50,47 +51,49 @@ namespace ShadowPrototype
             float markerSize = ComputeMarkerSize();
             UpdateMarker(indexMarker, deformationInput.IndexWorldPoint, markerSize, new Color(1.0f, 0.76f, 0.15f));
             UpdateMarker(thumbMarker, deformationInput.ThumbWorldPoint, markerSize, new Color(0.18f, 0.89f, 1.0f));
-            UpdateMarker(middleMarker, deformationInput.MiddleWorldPoint, markerSize, new Color(1.0f, 0.35f, 0.82f));
             UpdateMarker(grabMarker, deformationInput.GrabWorldPoint, markerSize * 0.85f, new Color(0.2f, 1.0f, 0.45f));
 
-            mainLine.enabled = false;
+            handLink.enabled = false;
+            boundaryLink.enabled = false;
             radiusRing.enabled = false;
+            boundaryMarker.gameObject.SetActive(false);
+
+            if (deformationInput.HasActiveBoundaryTarget)
+            {
+                Color boundaryColor = deformationInput.IsGrabLocked
+                    ? new Color(0.15f, 1.0f, 0.52f)
+                    : new Color(1.0f, 0.36f, 0.12f);
+
+                UpdateMarker(boundaryMarker, deformationInput.ActiveBoundaryWorldPoint, markerSize * 1.2f, boundaryColor);
+
+                Vector3 linkStart = deformationInput.IsGrabLocked
+                    ? deformationInput.GrabWorldPoint
+                    : deformationInput.IndexWorldPoint;
+
+                DrawLine(boundaryLink, linkStart, deformationInput.ActiveBoundaryWorldPoint, boundaryColor, markerSize * 0.12f);
+            }
 
             switch (deformationInput.CurrentMode)
             {
-                case MediaPipeMeshDeformationInput.InteractionMode.Push:
-                    DrawRing(deformationInput.IndexLocalPoint, deformationInput.PushRadiusLocal, new Color(1.0f, 0.45f, 0.15f), markerSize * 0.18f);
-                    SetLabel("PUSH", deformationInput.IndexWorldPoint, new Color(1.0f, 0.45f, 0.15f), markerSize);
+                case MediaPipeMeshDeformationInput.InteractionMode.Hover:
+                    thumbMarker.gameObject.SetActive(false);
                     grabMarker.gameObject.SetActive(false);
+                    DrawRing(deformationInput.ActiveBoundaryLocalPoint, deformationInput.PullRadiusLocal * 0.7f, new Color(1.0f, 0.56f, 0.16f), markerSize * 0.12f);
+                    SetLabel("PINCH TO GRAB", deformationInput.ActiveBoundaryWorldPoint, new Color(1.0f, 0.56f, 0.16f), markerSize);
                     break;
 
                 case MediaPipeMeshDeformationInput.InteractionMode.Pull:
-                    DrawLine(deformationInput.ThumbWorldPoint, deformationInput.IndexWorldPoint, new Color(0.23f, 1.0f, 0.5f), markerSize * 0.2f);
-                    DrawRing(deformationInput.GrabLocalPoint, deformationInput.PullRadiusLocal, new Color(0.23f, 1.0f, 0.5f), markerSize * 0.18f);
-                    SetLabel("PULL", deformationInput.GrabWorldPoint, new Color(0.23f, 1.0f, 0.5f), markerSize);
                     grabMarker.gameObject.SetActive(true);
-                    break;
-
-                case MediaPipeMeshDeformationInput.InteractionMode.Tear:
-                    DrawLine(deformationInput.IndexWorldPoint, deformationInput.MiddleWorldPoint, new Color(1.0f, 0.18f, 0.18f), markerSize * 0.28f);
-                    SetLabel("TEAR", (deformationInput.IndexWorldPoint + deformationInput.MiddleWorldPoint) * 0.5f, new Color(1.0f, 0.18f, 0.18f), markerSize);
-                    grabMarker.gameObject.SetActive(false);
-                    break;
-
-                case MediaPipeMeshDeformationInput.InteractionMode.Hover:
-                    SetLabel("TRACK", deformationInput.IndexWorldPoint, new Color(0.88f, 0.88f, 0.88f), markerSize);
-                    grabMarker.gameObject.SetActive(false);
+                    DrawLine(handLink, deformationInput.ThumbWorldPoint, deformationInput.IndexWorldPoint, new Color(0.23f, 1.0f, 0.5f), markerSize * 0.18f);
+                    DrawRing(deformationInput.ActiveBoundaryLocalPoint, deformationInput.PullRadiusLocal, new Color(0.23f, 1.0f, 0.5f), markerSize * 0.15f);
+                    SetLabel("GRAB", deformationInput.ActiveBoundaryWorldPoint, new Color(0.23f, 1.0f, 0.5f), markerSize);
                     break;
 
                 default:
-                    modeLabel.gameObject.SetActive(false);
+                    thumbMarker.gameObject.SetActive(false);
                     grabMarker.gameObject.SetActive(false);
+                    modeLabel.gameObject.SetActive(false);
                     break;
-            }
-
-            if (deformationInput.CurrentMode != MediaPipeMeshDeformationInput.InteractionMode.Pull)
-            {
-                grabMarker.gameObject.SetActive(false);
             }
 
             OrientLabelToCamera();
@@ -108,19 +111,24 @@ namespace ShadowPrototype
                 thumbMarker = CreateMarker("Thumb Marker", Color.cyan).transform;
             }
 
-            if (middleMarker == null)
-            {
-                middleMarker = CreateMarker("Middle Marker", Color.magenta).transform;
-            }
-
             if (grabMarker == null)
             {
                 grabMarker = CreateMarker("Grab Marker", Color.green).transform;
             }
 
-            if (mainLine == null)
+            if (boundaryMarker == null)
             {
-                mainLine = CreateLineRenderer("Interaction Line");
+                boundaryMarker = CreateMarker("Boundary Marker", new Color(1.0f, 0.36f, 0.12f)).transform;
+            }
+
+            if (handLink == null)
+            {
+                handLink = CreateLineRenderer("Hand Link");
+            }
+
+            if (boundaryLink == null)
+            {
+                boundaryLink = CreateLineRenderer("Boundary Link");
             }
 
             if (radiusRing == null)
@@ -193,16 +201,16 @@ namespace ShadowPrototype
             }
         }
 
-        private void DrawLine(Vector3 start, Vector3 end, Color color, float width)
+        private void DrawLine(LineRenderer line, Vector3 start, Vector3 end, Color color, float width)
         {
-            mainLine.enabled = true;
-            mainLine.positionCount = 2;
-            mainLine.startColor = color;
-            mainLine.endColor = color;
-            mainLine.startWidth = width;
-            mainLine.endWidth = width;
-            mainLine.SetPosition(0, start);
-            mainLine.SetPosition(1, end);
+            line.enabled = true;
+            line.positionCount = 2;
+            line.startColor = color;
+            line.endColor = color;
+            line.startWidth = width;
+            line.endWidth = width;
+            line.SetPosition(0, start);
+            line.SetPosition(1, end);
         }
 
         private void DrawRing(Vector2 localCenter, float localRadius, Color color, float width)
@@ -222,8 +230,7 @@ namespace ShadowPrototype
                     localCenter.x + (Mathf.Cos(angle) * localRadius),
                     localCenter.y + (Mathf.Sin(angle) * localRadius),
                     0.0f);
-                Vector3 worldPoint = targetDeformer.transform.TransformPoint(localPoint);
-                radiusRing.SetPosition(i, worldPoint);
+                radiusRing.SetPosition(i, targetDeformer.transform.TransformPoint(localPoint));
             }
         }
 
@@ -232,8 +239,8 @@ namespace ShadowPrototype
             modeLabel.gameObject.SetActive(true);
             modeLabel.text = text;
             modeLabel.color = color;
-            modeLabel.characterSize = markerSize * 0.85f;
-            modeLabel.transform.position = anchorWorldPoint + new Vector3(0.0f, markerSize * 2.1f, 0.0f);
+            modeLabel.characterSize = markerSize * 0.7f;
+            modeLabel.transform.position = anchorWorldPoint + new Vector3(0.0f, markerSize * 2.2f, 0.0f);
         }
 
         private void OrientLabelToCamera()
@@ -249,10 +256,11 @@ namespace ShadowPrototype
         private void SetVisible(bool visible)
         {
             if (indexMarker != null) indexMarker.gameObject.SetActive(visible);
-            if (thumbMarker != null) thumbMarker.gameObject.SetActive(visible);
-            if (middleMarker != null) middleMarker.gameObject.SetActive(visible);
+            if (thumbMarker != null) thumbMarker.gameObject.SetActive(false);
             if (grabMarker != null) grabMarker.gameObject.SetActive(false);
-            if (mainLine != null) mainLine.enabled = false;
+            if (boundaryMarker != null) boundaryMarker.gameObject.SetActive(false);
+            if (handLink != null) handLink.enabled = false;
+            if (boundaryLink != null) boundaryLink.enabled = false;
             if (radiusRing != null) radiusRing.enabled = false;
             if (modeLabel != null) modeLabel.gameObject.SetActive(false);
         }

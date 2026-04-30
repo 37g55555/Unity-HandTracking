@@ -26,6 +26,7 @@ import json
 import os
 import sys
 import argparse
+import time
 import triangle as tr
 import trimesh
 
@@ -36,6 +37,67 @@ OUTPUT_DIR = "output"
 # Phase A: 그림자 캡처 — 배경 차분으로 그림자 영역 추출
 # ============================================================
 
+def open_camera(camera_id=0, width=1280, height=720):
+    """
+    macOS에서 카메라 장치 순서가 자주 바뀌는 편이라
+    AVFoundation + 여러 camera index를 순서대로 재시도한다.
+    """
+    candidate_ids = []
+    if camera_id is not None and camera_id >= 0:
+        candidate_ids.append(camera_id)
+
+    for fallback_id in [0, 1, 2, 3]:
+        if fallback_id not in candidate_ids:
+            candidate_ids.append(fallback_id)
+
+    backend_candidates = []
+    if hasattr(cv2, "CAP_AVFOUNDATION"):
+        backend_candidates.append(("AVFoundation", cv2.CAP_AVFOUNDATION))
+    backend_candidates.append(("Default", None))
+
+    tried = []
+    for candidate_id in candidate_ids:
+        for backend_name, backend in backend_candidates:
+            try:
+                if backend is None:
+                    cap = cv2.VideoCapture(candidate_id)
+                else:
+                    cap = cv2.VideoCapture(candidate_id, backend)
+            except Exception:
+                cap = None
+
+            tried.append(f"{candidate_id}:{backend_name}")
+            if cap is None or not cap.isOpened():
+                if cap is not None:
+                    cap.release()
+                continue
+
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+            success = False
+            for _ in range(12):
+                ok, frame = cap.read()
+                if ok and frame is not None and frame.size > 0:
+                    success = True
+                    break
+                time.sleep(0.05)
+
+            if success:
+                print(f"[OK] 카메라 연결 성공: camera_id={candidate_id}, backend={backend_name}")
+                return cap, candidate_id, backend_name
+
+            cap.release()
+
+    print("[ERROR] 사용 가능한 카메라를 열지 못했습니다.")
+    print(f"        시도한 조합: {', '.join(tried)}")
+    print("        확인할 것:")
+    print("        1) 다른 Python/Unity/Photo Booth가 카메라를 잡고 있지 않은지")
+    print("        2) 시스템 설정 > 개인정보 보호 및 보안 > 카메라 권한")
+    print("        3) 아이폰 연속성 카메라가 우선 선택되고 있지 않은지")
+    return None, None, None
+
+
 def capture_live(camera_id=0):
     """
     웹캠 라이브 캡처.
@@ -43,11 +105,8 @@ def capture_live(camera_id=0):
     2) 오브제를 놓고 스페이스바: 그림자 캡처
     3) ESC: 종료
     """
-    cap = cv2.VideoCapture(camera_id)
-    if not cap.isOpened():
-        print(f"[ERROR] 카메라 {camera_id}를 열 수 없습니다.")
-        print("        맥북 웹캠은 보통 camera_id=0 입니다.")
-        print("        카메라 접근 권한을 확인하세요 (시스템 설정 > 개인정보 보호 > 카메라)")
+    cap, resolved_camera_id, backend_name = open_camera(camera_id)
+    if cap is None:
         return None, None
 
     bg_frame = None
@@ -62,6 +121,8 @@ def capture_live(camera_id=0):
     print()
     print("  [Step 2] 오브제를 놓아 그림자를 만든 뒤")
     print("           스페이스바를 눌러 그림자를 캡처하세요.")
+    print()
+    print(f"  Camera: id={resolved_camera_id}, backend={backend_name}")
     print()
     print("  ESC: 종료")
     print("=" * 60)
