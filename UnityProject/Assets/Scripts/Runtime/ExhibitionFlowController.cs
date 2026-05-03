@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using Debug = UnityEngine.Debug;
 
 namespace ShadowPrototype
@@ -14,6 +15,13 @@ namespace ShadowPrototype
         [SerializeField] private bool suppressExistingMeshOnPlay = true;
         [SerializeField] private bool autoStartHandTrackingAfterMeshLoad = true;
         [SerializeField] private bool stopProcessesOnDisable = true;
+
+        [Header("Export")]
+        [SerializeField] private bool allowManualPngExport = true;
+        [SerializeField] private string exportFileName = "deformed_shadow.png";
+        [SerializeField] private int exportResolution = 1024;
+        [SerializeField] private Color exportFillColor = default;
+        [SerializeField] private Color exportBackgroundColor = new Color(0f, 0f, 0f, 0f);
 
         [Header("Capture")]
         [SerializeField] private bool launchCaptureInTerminal = true;
@@ -34,6 +42,7 @@ namespace ShadowPrototype
         [SerializeField] private LiveMeshLoader liveMeshLoader;
         [SerializeField] private HandLandmarkUdpReceiver handLandmarkUdpReceiver;
         [SerializeField] private MediaPipeScaleInput mediaPipeScaleInput;
+        [SerializeField] private ShadowDeformer shadowDeformer;
 
         private readonly ConcurrentQueue<string> pendingLogs = new ConcurrentQueue<string>();
 
@@ -93,6 +102,13 @@ namespace ShadowPrototype
             FlushPendingLogs();
             CheckProcessExit(ref captureProcess, "ShadowCapture");
             CheckProcessExit(ref handTrackingProcess, "HandTracking");
+
+            if (allowManualPngExport &&
+                Keyboard.current != null &&
+                (Keyboard.current.enterKey.wasPressedThisFrame || Keyboard.current.numpadEnterKey.wasPressedThisFrame))
+            {
+                ExportCurrentShadowSilhouette();
+            }
         }
 
         private void OnDisable()
@@ -171,6 +187,27 @@ namespace ShadowPrototype
             }
 
             gameManager?.OnHandTrackingStarted();
+        }
+
+        private void ExportCurrentShadowSilhouette()
+        {
+            ResolveDependencies();
+
+            if (shadowDeformer == null || !shadowDeformer.HasMesh)
+            {
+                Debug.LogWarning("Shadow silhouette export skipped because there is no loaded mesh.");
+                return;
+            }
+
+            string outputPath = GetSilhouetteExportPath();
+            if (shadowDeformer.SaveSilhouetteToPng(
+                    outputPath,
+                    exportResolution,
+                    exportFillColor == default ? Color.black : exportFillColor,
+                    exportBackgroundColor))
+            {
+                gameManager?.OnShadowMeshExtracted();
+            }
         }
 
         private void LaunchCaptureProcess()
@@ -384,6 +421,24 @@ namespace ShadowPrototype
             {
                 mediaPipeScaleInput = UnityEngine.Object.FindAnyObjectByType<MediaPipeScaleInput>();
             }
+
+            if (shadowDeformer == null)
+            {
+                shadowDeformer = UnityEngine.Object.FindAnyObjectByType<ShadowDeformer>();
+            }
+        }
+
+        private string GetSilhouetteExportPath()
+        {
+            string userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string baseDirectory = captureWorkingDirectory;
+            if (string.IsNullOrWhiteSpace(baseDirectory))
+            {
+                baseDirectory = Path.Combine(userHome, "Downloads", "CAP_II");
+            }
+
+            string outputDirectory = Path.Combine(baseDirectory, "output");
+            return Path.Combine(outputDirectory, exportFileName);
         }
 
         private void FlushPendingLogs()

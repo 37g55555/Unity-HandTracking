@@ -34,15 +34,20 @@ python shadow_capture.py --mode live
 ### 3. 파라미터 조절
 
 ```bash
-# 윤곽선을 더 세밀하게 (vertex 수 증가)
-python shadow_capture.py --mode test --epsilon 0.002
+# 전체 vertex를 더 많이 생성 (기본값보다 촘촘함)
+python shadow_capture.py --mode test --spacing 5 --boundary-spacing 5 --epsilon 0.0015
 
-# 내부 vertex를 더 촘촘하게 (변형 부드러움 증가, 성능 감소)
-python shadow_capture.py --mode test --spacing 10
+# 내부 vertex만 더 촘촘하게 (변형 부드러움 증가, 성능 감소)
+python shadow_capture.py --mode test --spacing 5
+
+# 경계 vertex만 더 촘촘하게 (외곽선 형태 보존 증가)
+python shadow_capture.py --mode test --boundary-spacing 5
 
 # 수동 threshold (Otsu가 잘 안 먹힐 때)
 python shadow_capture.py --mode live --threshold 30
 ```
+
+기본값은 `--epsilon 0.002`, `--spacing 8`, `--boundary-spacing 8`입니다.
 
 ### 4. 결과 시각화
 

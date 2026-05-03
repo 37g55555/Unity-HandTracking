@@ -11,6 +11,7 @@ namespace ShadowPrototype
             CapturingShadow,
             MeshLoaded,
             HandTrackingActive,
+            MeshExtracted,
             Error
         }
 
@@ -47,6 +48,12 @@ namespace ShadowPrototype
         {
             currentState = PrototypeState.HandTrackingActive;
             Debug.Log("Hand tracking started.");
+        }
+
+        public void OnShadowMeshExtracted()
+        {
+            currentState = PrototypeState.MeshExtracted;
+            Debug.Log("Shadow mesh extracted to PNG.");
         }
 
         public void OnShadowMeshLoadFailed(string path)

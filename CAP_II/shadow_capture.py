@@ -285,15 +285,45 @@ def extract_contour(mask, epsilon_ratio=0.005):
 # Phase B: 2D Mesh 생성 — Constrained Delaunay Triangulation
 # ============================================================
 
-def generate_mesh(contour, interior_spacing=15):
+def resample_closed_contour(contour, spacing):
+    """
+    닫힌 윤곽선을 일정 간격으로 재샘플링해 boundary vertex를 늘림.
+    spacing이 작을수록 외곽선 vertex가 촘촘해진다.
+    """
+    if spacing is None or spacing <= 0 or len(contour) < 2:
+        return contour.astype(np.float64)
+
+    pts = contour.astype(np.float64)
+    resampled = []
+
+    for start, end in zip(pts, np.roll(pts, -1, axis=0)):
+        segment = end - start
+        length = np.linalg.norm(segment)
+        if length <= 1e-6:
+            continue
+
+        n_steps = max(1, int(np.ceil(length / spacing)))
+        for i in range(n_steps):
+            t = i / n_steps
+            resampled.append(start + segment * t)
+
+    if len(resampled) == 0:
+        return pts
+
+    return np.array(resampled, dtype=np.float64)
+
+
+def generate_mesh(contour, interior_spacing=8, boundary_spacing=8):
     """
     윤곽선 → 내부 점 생성 → Constrained Delaunay → OBJ 내보내기.
 
-    Input: 윤곽선 (N×2), 내부 점 간격 (px)
+    Input: 윤곽선 (N×2), 내부 점 간격 (px), 경계 점 간격 (px)
     Output: vertices_3d, faces, n_boundary
     """
-    boundary = contour.astype(np.float64)
+    boundary_base = contour.astype(np.float64)
+    boundary = resample_closed_contour(boundary_base, boundary_spacing)
     n_boundary = len(boundary)
+    print(f"  경계 vertex: {len(boundary_base)} → {n_boundary}개 (spacing={boundary_spacing}px)")
 
     # ── 내부 점 생성 (균일 그리드 + 내부 판정) ──
     x_min, y_min = boundary.min(axis=0)
@@ -380,7 +410,7 @@ def save_obj(filepath, vertices, faces):
 
 
 def save_metadata(filepath, n_vertices, n_faces, n_boundary, center, scale,
-                  epsilon_ratio, interior_spacing):
+                  epsilon_ratio, interior_spacing, boundary_spacing):
     """메타데이터 JSON 저장."""
     metadata = {
         "n_vertices": n_vertices,
@@ -390,7 +420,8 @@ def save_metadata(filepath, n_vertices, n_faces, n_boundary, center, scale,
         "center_offset": center.tolist(),
         "scale_factor": float(scale),
         "epsilon_ratio": epsilon_ratio,
-        "interior_spacing": interior_spacing
+        "interior_spacing": interior_spacing,
+        "boundary_spacing": boundary_spacing
     }
 
     with open(filepath, 'w', encoding='utf-8') as f:
@@ -444,8 +475,9 @@ def visualize_mesh(vertices_2d, faces, boundary_n, image_size, output_path):
 # 메인
 # ============================================================
 
-def process_shadow(bg_frame, shadow_frame, epsilon_ratio=0.005,
-                   interior_spacing=15, threshold_value=None):
+def process_shadow(bg_frame, shadow_frame, epsilon_ratio=0.002,
+                   interior_spacing=8, boundary_spacing=8,
+                   threshold_value=None):
     """
     전체 파이프라인: 배경/그림자 프레임 → OBJ + 메타데이터.
     """
@@ -465,7 +497,7 @@ def process_shadow(bg_frame, shadow_frame, epsilon_ratio=0.005,
 
     print("\n[3/4] 2D Mesh 생성...")
     vertices_3d, faces, n_boundary, center, scale = generate_mesh(
-        contour, interior_spacing
+        contour, interior_spacing, boundary_spacing
     )
 
     print("\n[4/4] 파일 저장...")
@@ -478,7 +510,8 @@ def process_shadow(bg_frame, shadow_frame, epsilon_ratio=0.005,
     # 메타데이터 저장
     meta_path = os.path.join(OUTPUT_DIR, "shadow_metadata.json")
     save_metadata(meta_path, len(vertices_3d), len(faces), n_boundary,
-                  center, scale, epsilon_ratio, interior_spacing)
+                  center, scale, epsilon_ratio, interior_spacing,
+                  boundary_spacing)
     print(f"  → {meta_path}")
 
     # mesh 시각화 (원본 좌표계)
@@ -511,14 +544,21 @@ def main():
                         help="file 모드: 배경 이미지 경로")
     parser.add_argument("--camera", type=int, default=0,
                         help="live 모드: 카메라 ID (기본: 0)")
-    parser.add_argument("--epsilon", type=float, default=0.005,
-                        help="윤곽선 단순화 비율 (기본: 0.005)")
-    parser.add_argument("--spacing", type=int, default=15,
-                        help="내부 vertex 간격 px (기본: 15)")
+    parser.add_argument("--epsilon", type=float, default=0.002,
+                        help="윤곽선 단순화 비율 (기본: 0.002)")
+    parser.add_argument("--spacing", type=float, default=8,
+                        help="내부 vertex 간격 px (기본: 8, 작을수록 vertex 증가)")
+    parser.add_argument("--boundary-spacing", type=float, default=8,
+                        help="경계 vertex 간격 px (기본: 8, 작을수록 boundary vertex 증가)")
     parser.add_argument("--threshold", type=int, default=None,
                         help="이진화 threshold (기본: Otsu 자동)")
 
     args = parser.parse_args()
+
+    if args.spacing <= 0:
+        parser.error("--spacing은 0보다 커야 합니다.")
+    if args.boundary_spacing <= 0:
+        parser.error("--boundary-spacing은 0보다 커야 합니다.")
 
     if args.mode == "live":
         bg_frame, shadow_frame = capture_live(args.camera)
@@ -543,6 +583,7 @@ def main():
         bg_frame, shadow_frame,
         epsilon_ratio=args.epsilon,
         interior_spacing=args.spacing,
+        boundary_spacing=args.boundary_spacing,
         threshold_value=args.threshold
     )
 

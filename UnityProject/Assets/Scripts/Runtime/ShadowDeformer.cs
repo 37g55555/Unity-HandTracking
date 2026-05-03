@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 namespace ShadowPrototype
@@ -547,6 +548,92 @@ namespace ShadowPrototype
             );
 
             return new Bounds(center, worldExtents * 2.0f);
+        }
+
+        public bool SaveSilhouetteToPng(string outputPath, int resolution = 1024, Color? fillColor = null, Color? bgColor = null)
+        {
+            if (!HasMesh)
+            {
+                Debug.LogWarning("ShadowDeformer: there is no mesh to export.");
+                return false;
+            }
+
+            Color fill = fillColor ?? Color.black;
+            Color background = bgColor ?? Color.clear;
+
+            Color[] pixels = new Color[resolution * resolution];
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                pixels[i] = background;
+            }
+
+            Bounds bounds = meshFilter.sharedMesh.bounds;
+            float rangeX = bounds.size.x > 0.0001f ? bounds.size.x : 1.0f;
+            float rangeY = bounds.size.y > 0.0001f ? bounds.size.y : 1.0f;
+
+            int[] triangles = GetActiveTriangles();
+            for (int i = 0; i < triangles.Length; i += 3)
+            {
+                Vector2 a = NormalizeVertexToPixel(workingVertices[triangles[i]], bounds, rangeX, rangeY, resolution);
+                Vector2 b = NormalizeVertexToPixel(workingVertices[triangles[i + 1]], bounds, rangeX, rangeY, resolution);
+                Vector2 c = NormalizeVertexToPixel(workingVertices[triangles[i + 2]], bounds, rangeX, rangeY, resolution);
+
+                int minX = Mathf.Max(0, Mathf.FloorToInt(Mathf.Min(a.x, Mathf.Min(b.x, c.x))));
+                int maxX = Mathf.Min(resolution - 1, Mathf.CeilToInt(Mathf.Max(a.x, Mathf.Max(b.x, c.x))));
+                int minY = Mathf.Max(0, Mathf.FloorToInt(Mathf.Min(a.y, Mathf.Min(b.y, c.y))));
+                int maxY = Mathf.Min(resolution - 1, Mathf.CeilToInt(Mathf.Max(a.y, Mathf.Max(b.y, c.y))));
+
+                for (int py = minY; py <= maxY; py++)
+                {
+                    for (int px = minX; px <= maxX; px++)
+                    {
+                        if (IsPointInsideTriangle(new Vector2(px + 0.5f, py + 0.5f), a, b, c))
+                        {
+                            pixels[(py * resolution) + px] = fill;
+                        }
+                    }
+                }
+            }
+
+            Texture2D texture = new Texture2D(resolution, resolution, TextureFormat.ARGB32, false);
+            texture.SetPixels(pixels);
+            texture.Apply();
+
+            try
+            {
+                string directory = Path.GetDirectoryName(outputPath);
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                File.WriteAllBytes(outputPath, texture.EncodeToPNG());
+                Debug.Log($"ShadowDeformer: silhouette saved to {outputPath}");
+                return true;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"ShadowDeformer: silhouette PNG export failed: {exception.Message}");
+                return false;
+            }
+            finally
+            {
+                if (Application.isPlaying)
+                {
+                    Destroy(texture);
+                }
+                else
+                {
+                    DestroyImmediate(texture);
+                }
+            }
+        }
+
+        private static Vector2 NormalizeVertexToPixel(Vector3 vertex, Bounds bounds, float rangeX, float rangeY, int resolution)
+        {
+            float normalizedX = (vertex.x - bounds.min.x) / rangeX;
+            float normalizedY = (vertex.y - bounds.min.y) / rangeY;
+            return new Vector2(normalizedX * (resolution - 1), normalizedY * (resolution - 1));
         }
     }
 }
