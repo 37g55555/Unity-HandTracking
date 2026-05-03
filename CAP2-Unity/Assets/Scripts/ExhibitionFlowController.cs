@@ -33,7 +33,6 @@ namespace ShadowPrototype
         [SerializeField] private GameManager gameManager;
         [SerializeField] private LiveMeshLoader liveMeshLoader;
         [SerializeField] private HandLandmarkUdpReceiver handLandmarkUdpReceiver;
-        [SerializeField] private ShadowDeformer shadow;
 
         private readonly ConcurrentQueue<string> pendingLogs = new ConcurrentQueue<string>();
 
@@ -166,8 +165,6 @@ namespace ShadowPrototype
 
         private void ShadowMeshExtraction()
         {   
-            string path = "../../output/deformed_shadow.png";
-            shadow.SaveSilhouetteToPng(path, resolution: 1024, fillColor: Color.black, bgColor: Color.clear);
             gameManager?.OnShadowMeshExtracted();
         }
 
