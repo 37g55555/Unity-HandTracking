@@ -49,6 +49,8 @@ python shadow_capture.py --mode live --threshold 30
 
 기본값은 `--epsilon 0.002`, `--spacing 8`, `--boundary-spacing 8`입니다.
 
+Unity는 Y축이 위로 증가하고 OpenCV 이미지는 Y축이 아래로 증가하므로, 기본 출력 OBJ는 Unity용으로 Y축을 반전합니다. 원본 이미지 좌표 방향 그대로 OBJ를 만들고 싶으면 `--no-unity-flip-y`를 붙이면 됩니다.
+
 ### 4. 결과 시각화
 
 ```bash

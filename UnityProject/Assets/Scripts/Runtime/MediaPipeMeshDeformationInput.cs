@@ -23,15 +23,19 @@ namespace ShadowPrototype
         [SerializeField] private float trackedFrameHeight = 720.0f;
 
         [Header("Selection")]
-        [SerializeField] private float hoverSnapDistanceLocal = 0.18f;
-        [SerializeField] private float pointSmoothingSpeed = 16.0f;
+        [SerializeField] private float hoverSnapDistanceLocal = 0.3f;
+        [SerializeField] private float pointSmoothingSpeed = 10.0f;
 
         [Header("Grab / Pull")]
         [SerializeField] private float pinchEnterThresholdPixels = 65.0f;
         [SerializeField] private float pinchExitThresholdPixels = 95.0f;
-        [SerializeField] private float pullRadius = 0.22f;
-        [SerializeField] private float pullStrength = 1.0f;
-        [SerializeField] private float maxPullDeltaPerFrame = 0.045f;
+        [SerializeField] private float pullRadius = 0.3f;
+        [SerializeField] private float pullStrength = 0.65f;
+        [SerializeField] private float fixedDeformationAmountMultiplier = 0.24f;
+        [SerializeField] private float maxPullDeltaPerFrame = 0.018f;
+
+        private const float MinAffectedRadiusLocal = 0.12f;
+        private const float MaxAffectedRadiusLocal = 0.65f;
 
         private bool hasSmoothedPoints;
         private Vector2 smoothedThumbLocal;
@@ -58,11 +62,29 @@ namespace ShadowPrototype
         public Vector3 ActiveBoundaryWorldPoint { get; private set; }
         public bool IsGrabLocked => isGrabLocked;
         public float PullRadiusLocal => pullRadius;
+        public float AffectedRadiusLocal => pullRadius;
+        public float DeformationAmountMultiplier => fixedDeformationAmountMultiplier;
+
+        public void SetAffectedRadiusLocal(float value)
+        {
+            pullRadius = Mathf.Clamp(value, MinAffectedRadiusLocal, MaxAffectedRadiusLocal);
+        }
 
         public void Configure(ShadowDeformer deformer, HandLandmarkUdpReceiver receiver)
         {
             targetDeformer = deformer;
             handReceiver = receiver;
+            ApplyComfortTuning();
+        }
+
+        private void ApplyComfortTuning()
+        {
+            hoverSnapDistanceLocal = 0.3f;
+            pointSmoothingSpeed = 10.0f;
+            SetAffectedRadiusLocal(0.3f);
+            pullStrength = 0.65f;
+            maxPullDeltaPerFrame = 0.018f;
+            fixedDeformationAmountMultiplier = 0.24f;
         }
 
         private void Awake()
@@ -147,7 +169,11 @@ namespace ShadowPrototype
                     Vector2 pullDelta = Vector2.ClampMagnitude(GrabLocalPoint - previousGrabLocal, maxPullDeltaPerFrame);
                     if (pullDelta.sqrMagnitude > 0.0f)
                     {
-                        targetDeformer.ApplyPull(ActiveBoundaryLocalPoint, pullDelta, pullRadius, pullStrength);
+                        targetDeformer.ApplyPull(
+                            ActiveBoundaryLocalPoint,
+                            pullDelta,
+                            pullRadius,
+                            pullStrength * fixedDeformationAmountMultiplier);
                     }
                 }
 

@@ -9,8 +9,8 @@ namespace ShadowPrototype
         [SerializeField] private Camera targetCamera;
 
         [Header("Marker Look")]
-        [SerializeField] private float markerScaleMultiplier = 0.04f;
-        [SerializeField] private float minimumMarkerSize = 0.025f;
+        [SerializeField] private float markerScaleMultiplier = 0.032f;
+        [SerializeField] private float minimumMarkerSize = 0.02f;
         [SerializeField] private int ringSegments = 48;
 
         private Transform indexMarker;
@@ -26,6 +26,19 @@ namespace ShadowPrototype
         {
             deformationInput = input;
             targetDeformer = deformer;
+            ApplyCompactVisualDefaults();
+        }
+
+        private void ApplyCompactVisualDefaults()
+        {
+            markerScaleMultiplier = 0.032f;
+            minimumMarkerSize = 0.02f;
+
+            if (modeLabel != null)
+            {
+                modeLabel.characterSize = 0.055f;
+                modeLabel.fontSize = 24;
+            }
         }
 
         private void Awake()
@@ -145,10 +158,12 @@ namespace ShadowPrototype
                 modeLabel.text = string.Empty;
                 modeLabel.anchor = TextAnchor.MiddleCenter;
                 modeLabel.alignment = TextAlignment.Center;
-                modeLabel.characterSize = 0.1f;
-                modeLabel.fontSize = 32;
+                modeLabel.characterSize = 0.055f;
+                modeLabel.fontSize = 24;
                 modeLabel.color = Color.white;
             }
+
+            ApplyCompactVisualDefaults();
         }
 
         private void ResolveDependencies()

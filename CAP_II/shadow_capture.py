@@ -313,7 +313,7 @@ def resample_closed_contour(contour, spacing):
     return np.array(resampled, dtype=np.float64)
 
 
-def generate_mesh(contour, interior_spacing=8, boundary_spacing=8):
+def generate_mesh(contour, interior_spacing=8, boundary_spacing=8, flip_y_for_unity=True):
     """
     윤곽선 → 내부 점 생성 → Constrained Delaunay → OBJ 내보내기.
 
@@ -384,6 +384,10 @@ def generate_mesh(contour, interior_spacing=8, boundary_spacing=8):
     if scale > 0:
         vertices_normalized /= scale
 
+    if flip_y_for_unity:
+        # OpenCV image coordinates grow downward, while Unity's 2D plane uses upward Y.
+        vertices_normalized[:, 1] *= -1.0
+
     # z=0 평면
     vertices_3d = np.column_stack([
         vertices_normalized,
@@ -410,7 +414,8 @@ def save_obj(filepath, vertices, faces):
 
 
 def save_metadata(filepath, n_vertices, n_faces, n_boundary, center, scale,
-                  epsilon_ratio, interior_spacing, boundary_spacing):
+                  epsilon_ratio, interior_spacing, boundary_spacing,
+                  flip_y_for_unity):
     """메타데이터 JSON 저장."""
     metadata = {
         "n_vertices": n_vertices,
@@ -421,7 +426,8 @@ def save_metadata(filepath, n_vertices, n_faces, n_boundary, center, scale,
         "scale_factor": float(scale),
         "epsilon_ratio": epsilon_ratio,
         "interior_spacing": interior_spacing,
-        "boundary_spacing": boundary_spacing
+        "boundary_spacing": boundary_spacing,
+        "flip_y_for_unity": bool(flip_y_for_unity)
     }
 
     with open(filepath, 'w', encoding='utf-8') as f:
@@ -477,6 +483,7 @@ def visualize_mesh(vertices_2d, faces, boundary_n, image_size, output_path):
 
 def process_shadow(bg_frame, shadow_frame, epsilon_ratio=0.002,
                    interior_spacing=8, boundary_spacing=8,
+                   flip_y_for_unity=True,
                    threshold_value=None):
     """
     전체 파이프라인: 배경/그림자 프레임 → OBJ + 메타데이터.
@@ -497,7 +504,7 @@ def process_shadow(bg_frame, shadow_frame, epsilon_ratio=0.002,
 
     print("\n[3/4] 2D Mesh 생성...")
     vertices_3d, faces, n_boundary, center, scale = generate_mesh(
-        contour, interior_spacing, boundary_spacing
+        contour, interior_spacing, boundary_spacing, flip_y_for_unity
     )
 
     print("\n[4/4] 파일 저장...")
@@ -511,12 +518,15 @@ def process_shadow(bg_frame, shadow_frame, epsilon_ratio=0.002,
     meta_path = os.path.join(OUTPUT_DIR, "shadow_metadata.json")
     save_metadata(meta_path, len(vertices_3d), len(faces), n_boundary,
                   center, scale, epsilon_ratio, interior_spacing,
-                  boundary_spacing)
+                  boundary_spacing, flip_y_for_unity)
     print(f"  → {meta_path}")
 
     # mesh 시각화 (원본 좌표계)
     # vertices_3d를 다시 원본 픽셀 좌표로 역변환
-    vertices_pixel = vertices_3d[:, :2] * scale + center
+    vertices_pixel = vertices_3d[:, :2].copy()
+    if flip_y_for_unity:
+        vertices_pixel[:, 1] *= -1.0
+    vertices_pixel = vertices_pixel * scale + center
     visualize_mesh(vertices_pixel, faces, n_boundary,
                    (shadow_frame.shape[1], shadow_frame.shape[0]),
                    os.path.join(OUTPUT_DIR, "shadow_mesh_preview.png"))
@@ -550,6 +560,8 @@ def main():
                         help="내부 vertex 간격 px (기본: 8, 작을수록 vertex 증가)")
     parser.add_argument("--boundary-spacing", type=float, default=8,
                         help="경계 vertex 간격 px (기본: 8, 작을수록 boundary vertex 증가)")
+    parser.add_argument("--no-unity-flip-y", action="store_true",
+                        help="Unity 좌표계 보정용 Y축 반전을 끕니다.")
     parser.add_argument("--threshold", type=int, default=None,
                         help="이진화 threshold (기본: Otsu 자동)")
 
@@ -584,6 +596,7 @@ def main():
         epsilon_ratio=args.epsilon,
         interior_spacing=args.spacing,
         boundary_spacing=args.boundary_spacing,
+        flip_y_for_unity=not args.no_unity_flip_y,
         threshold_value=args.threshold
     )
 

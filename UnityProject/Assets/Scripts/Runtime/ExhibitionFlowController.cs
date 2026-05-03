@@ -23,6 +23,9 @@ namespace ShadowPrototype
         [SerializeField] private Color exportFillColor = default;
         [SerializeField] private Color exportBackgroundColor = new Color(0f, 0f, 0f, 0f);
 
+        [Header("Export Feedback")]
+        [SerializeField] private float exportStatusDuration = 2.0f;
+
         [Header("Capture")]
         [SerializeField] private bool launchCaptureInTerminal = true;
         [SerializeField] private string captureWorkingDirectory = string.Empty;
@@ -50,6 +53,8 @@ namespace ShadowPrototype
         private Process handTrackingProcess;
         private bool handTrackingStartedForCurrentCapture;
         private DateTime flowStartedUtc;
+        private string exportStatusMessage = string.Empty;
+        private float exportStatusUntil;
 
         public void Configure(
             GameManager manager,
@@ -103,12 +108,23 @@ namespace ShadowPrototype
             CheckProcessExit(ref captureProcess, "ShadowCapture");
             CheckProcessExit(ref handTrackingProcess, "HandTracking");
 
-            if (allowManualPngExport &&
-                Keyboard.current != null &&
-                (Keyboard.current.enterKey.wasPressedThisFrame || Keyboard.current.numpadEnterKey.wasPressedThisFrame))
+            if (allowManualPngExport && WasExportKeyPressed())
             {
                 ExportCurrentShadowSilhouette();
             }
+        }
+
+        private void OnGUI()
+        {
+            if (string.IsNullOrEmpty(exportStatusMessage) || Time.unscaledTime > exportStatusUntil)
+            {
+                return;
+            }
+
+            const float width = 520.0f;
+            const float height = 46.0f;
+            Rect rect = new Rect((Screen.width - width) * 0.5f, 24.0f, width, height);
+            GUI.Box(rect, exportStatusMessage);
         }
 
         private void OnDisable()
@@ -183,7 +199,9 @@ namespace ShadowPrototype
 
             if (mediaPipeScaleInput != null)
             {
-                mediaPipeScaleInput.enabled = true;
+                // Hand tracking should only deform mesh vertices in this prototype.
+                // Keep root transform scale/position control disabled so GRAB never resizes the object.
+                mediaPipeScaleInput.enabled = false;
             }
 
             gameManager?.OnHandTrackingStarted();
@@ -195,18 +213,25 @@ namespace ShadowPrototype
 
             if (shadowDeformer == null || !shadowDeformer.HasMesh)
             {
+                ShowExportStatus("PNG export skipped: no loaded shadow mesh.");
                 Debug.LogWarning("Shadow silhouette export skipped because there is no loaded mesh.");
                 return;
             }
 
             string outputPath = GetSilhouetteExportPath();
+            Debug.Log($"Shadow silhouette export requested: {outputPath}");
             if (shadowDeformer.SaveSilhouetteToPng(
                     outputPath,
                     exportResolution,
                     exportFillColor == default ? Color.black : exportFillColor,
                     exportBackgroundColor))
             {
+                ShowExportStatus($"Saved PNG: {outputPath}");
                 gameManager?.OnShadowMeshExtracted();
+            }
+            else
+            {
+                ShowExportStatus("PNG export failed. Check Unity Console.");
             }
         }
 
@@ -439,6 +464,26 @@ namespace ShadowPrototype
 
             string outputDirectory = Path.Combine(baseDirectory, "output");
             return Path.Combine(outputDirectory, exportFileName);
+        }
+
+        private static bool WasExportKeyPressed()
+        {
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null)
+            {
+                return false;
+            }
+
+            return keyboard.enterKey.wasPressedThisFrame ||
+                   keyboard.numpadEnterKey.wasPressedThisFrame ||
+                   keyboard.sKey.wasPressedThisFrame;
+        }
+
+        private void ShowExportStatus(string message)
+        {
+            exportStatusMessage = message;
+            exportStatusUntil = Time.unscaledTime + exportStatusDuration;
+            Debug.Log(message);
         }
 
         private void FlushPendingLogs()

@@ -35,6 +35,7 @@ namespace ShadowPrototype
             MediaPipeScaleInput mediaPipeScaleInput = GetOrAddComponent<MediaPipeScaleInput>(managers.gameObject);
             MediaPipeMeshDeformationInput mediaPipeMeshDeformationInput = GetOrAddComponent<MediaPipeMeshDeformationInput>(managers.gameObject);
             MediaPipeInteractionVisualizer mediaPipeInteractionVisualizer = GetOrAddComponent<MediaPipeInteractionVisualizer>(managers.gameObject);
+            DeformationControlPanel deformationControlPanel = GetOrAddComponent<DeformationControlPanel>(managers.gameObject);
             ExhibitionFlowController exhibitionFlowController = GetOrAddComponent<ExhibitionFlowController>(managers.gameObject);
 
             MeshFilter meshFilter = GetOrAddComponent<MeshFilter>(shadowMeshVisual.gameObject);
@@ -48,12 +49,15 @@ namespace ShadowPrototype
             mediaPipeScaleInput.enabled = false;
             mediaPipeMeshDeformationInput.Configure(shadowDeformer, handReceiver);
             mediaPipeInteractionVisualizer.Configure(mediaPipeMeshDeformationInput, shadowDeformer);
+            deformationControlPanel.Configure(mediaPipeMeshDeformationInput, handReceiver);
             exhibitionFlowController.Configure(gameManager, liveMeshLoader, handReceiver, mediaPipeScaleInput);
 
             shadowMeshRoot.localPosition = Vector3.zero;
             shadowMeshRoot.localRotation = Quaternion.identity;
+            shadowMeshRoot.localScale = Vector3.one;
             shadowMeshVisual.localPosition = Vector3.zero;
             shadowMeshVisual.localRotation = Quaternion.identity;
+            shadowMeshVisual.localScale = Vector3.one;
 
             if (meshRenderer.sharedMaterial == null)
             {
