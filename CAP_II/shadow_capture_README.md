@@ -16,7 +16,7 @@ pip install opencv-python numpy scipy triangle trimesh matplotlib
 python shadow_capture.py --mode test
 ```
 
-### 2. 웹캠 라이브 캡처 (맥북)
+### 2. 웹캠 라이브 캡처
 
 ```bash
 python shadow_capture.py --mode live
@@ -26,10 +26,22 @@ python shadow_capture.py --mode live
 2. **오브제를 놓아 그림자를 만들고** 다시 **스페이스바**
 3. 자동으로 처리 후 `output/` 폴더에 결과 저장
 
-**맥북 팁:**
+Windows 전시 세팅에서 웹캠 번호를 고정하려면:
+
+```bash
+python shadow_capture.py --mode live --camera 0 --no-camera-fallback
+```
+
+IP 카메라를 임시로 쓰려면:
+
+```bash
+python shadow_capture.py --mode live --camera-url http://192.168.0.12:8081/video
+```
+
+**촬영 팁:**
 - 조명: 스탠드 조명이나 스마트폰 플래시를 한쪽에서 비추면 선명한 그림자가 생김
 - 배경: 흰 종이나 밝은 책상 위에서 촬영
-- 카메라 권한: 시스템 설정 > 개인정보 보호 > 카메라 에서 터미널/VSCode 허용
+- 카메라 권한: Windows 설정 > 개인정보 및 보안 > 카메라에서 터미널/Python 허용
 
 ### 3. 파라미터 조절
 
@@ -44,7 +56,7 @@ python shadow_capture.py --mode test --spacing 5
 python shadow_capture.py --mode test --boundary-spacing 5
 
 # 수동 threshold (Otsu가 잘 안 먹힐 때)
-python shadow_capture.py --mode live --threshold 30
+python shadow_capture.py --mode live --camera 0 --no-camera-fallback --threshold 30
 ```
 
 기본값은 `--epsilon 0.002`, `--spacing 8`, `--boundary-spacing 8`입니다.

@@ -162,6 +162,13 @@ namespace ShadowPrototype
 
         private static string GetCapOutputDirectoryAbsolute()
         {
+            if (Application.platform == RuntimePlatform.WindowsEditor ||
+                Application.platform == RuntimePlatform.WindowsPlayer)
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                return Path.Combine(projectRoot, "sf3d_io", "live_shadow");
+            }
+
             string userHome = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
             return Path.Combine(userHome, "Downloads", "CAP_II", "output");
         }

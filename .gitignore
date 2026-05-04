@@ -4,6 +4,8 @@
 __pycache__/
 *.pyc
 .venv/
+logs/
+.sf3d_requirements_windows.tmp.txt
 
 # Unity generated files
 UnityProject/[Ll]ibrary/
@@ -18,6 +20,7 @@ UnityProject/*.csproj
 UnityProject/*.sln
 UnityProject/*.slnx
 UnityProject/sf3d_io/sf3d_outputs/
+UnityProject/sf3d_io/live_shadow/deformed_shadow.png
 
 # macOS / editor noise
 *.log
