@@ -20,7 +20,16 @@ fi
 
 echo "[setup] Installing API requirements..."
 "$PYTHON_BIN" -m pip install --upgrade pip
-"$PYTHON_BIN" -m pip install -r requirements_api.txt
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  FILTERED_REQUIREMENTS="$(mktemp)"
+  grep -v -E '^[[:space:]]*xformers([=<>!~ ].*)?$' requirements_api.txt > "$FILTERED_REQUIREMENTS"
+  echo "[setup] macOS detected: installing requirements without xformers."
+  "$PYTHON_BIN" -m pip install -r "$FILTERED_REQUIREMENTS"
+  rm -f "$FILTERED_REQUIREMENTS"
+else
+  "$PYTHON_BIN" -m pip install -r requirements_api.txt
+fi
 
 echo "[run] Starting SF3D API server at http://127.0.0.1:8000"
 echo "[run] Unity will send deformed_shadow.png to /generate-texture and /generate-3d"

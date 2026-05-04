@@ -31,6 +31,8 @@ SF3D worker는 별도 터미널에서 먼저 켜둡니다.
 ./run_sf3d_worker_mac.sh
 ```
 
+macOS에서는 `xformers`가 clang 빌드 에러를 내는 경우가 있어, 위 스크립트가 자동으로 `xformers`만 제외하고 requirements를 설치합니다. 이 의존성은 CUDA 최적화용이라 Mac/MPS 실행에는 필수로 쓰지 않습니다.
+
 기본 경로는 아래 폴더를 사용합니다.
 
 ```text
