@@ -17,6 +17,7 @@ UnityProject/.vscode/
 UnityProject/*.csproj
 UnityProject/*.sln
 UnityProject/*.slnx
+UnityProject/sf3d_io/sf3d_outputs/
 
 # macOS / editor noise
 *.log

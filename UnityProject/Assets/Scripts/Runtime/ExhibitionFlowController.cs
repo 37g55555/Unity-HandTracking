@@ -26,6 +26,10 @@ namespace ShadowPrototype
         [Header("Export Feedback")]
         [SerializeField] private float exportStatusDuration = 2.0f;
 
+        [Header("SF3D")]
+        [SerializeField] private bool autoStartSf3dAfterPngExport = true;
+        [SerializeField] private Sf3dPngPipelineClient sf3dPngPipelineClient;
+
         [Header("Capture")]
         [SerializeField] private bool launchCaptureInTerminal = true;
         [SerializeField] private string captureWorkingDirectory = string.Empty;
@@ -60,12 +64,14 @@ namespace ShadowPrototype
             GameManager manager,
             LiveMeshLoader meshLoader,
             HandLandmarkUdpReceiver udpReceiver,
-            MediaPipeScaleInput scaleInput)
+            MediaPipeScaleInput scaleInput,
+            Sf3dPngPipelineClient sf3dClient = null)
         {
             gameManager = manager;
             liveMeshLoader = meshLoader;
             handLandmarkUdpReceiver = udpReceiver;
             mediaPipeScaleInput = scaleInput;
+            sf3dPngPipelineClient = sf3dClient;
 
             string userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             if (string.IsNullOrWhiteSpace(captureWorkingDirectory))
@@ -227,12 +233,30 @@ namespace ShadowPrototype
                     exportBackgroundColor))
             {
                 ShowExportStatus($"Saved PNG: {outputPath}");
+                if (autoStartSf3dAfterPngExport)
+                {
+                    StartSf3dFromPng(outputPath);
+                }
+
                 gameManager?.OnShadowMeshExtracted();
             }
             else
             {
                 ShowExportStatus("PNG export failed. Check Unity Console.");
             }
+        }
+
+        private void StartSf3dFromPng(string pngPath)
+        {
+            ResolveDependencies();
+
+            if (sf3dPngPipelineClient == null)
+            {
+                Debug.LogWarning("SF3D auto-start skipped because Sf3dPngPipelineClient is missing.");
+                return;
+            }
+
+            sf3dPngPipelineClient.GenerateFromPng(pngPath);
         }
 
         private void LaunchCaptureProcess()
@@ -450,6 +474,11 @@ namespace ShadowPrototype
             if (shadowDeformer == null)
             {
                 shadowDeformer = UnityEngine.Object.FindAnyObjectByType<ShadowDeformer>();
+            }
+
+            if (sf3dPngPipelineClient == null)
+            {
+                sf3dPngPipelineClient = UnityEngine.Object.FindAnyObjectByType<Sf3dPngPipelineClient>();
             }
         }
 

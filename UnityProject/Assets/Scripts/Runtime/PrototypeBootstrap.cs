@@ -36,6 +36,7 @@ namespace ShadowPrototype
             MediaPipeMeshDeformationInput mediaPipeMeshDeformationInput = GetOrAddComponent<MediaPipeMeshDeformationInput>(managers.gameObject);
             MediaPipeInteractionVisualizer mediaPipeInteractionVisualizer = GetOrAddComponent<MediaPipeInteractionVisualizer>(managers.gameObject);
             DeformationControlPanel deformationControlPanel = GetOrAddComponent<DeformationControlPanel>(managers.gameObject);
+            Sf3dPngPipelineClient sf3dPngPipelineClient = GetOrAddComponent<Sf3dPngPipelineClient>(managers.gameObject);
             ExhibitionFlowController exhibitionFlowController = GetOrAddComponent<ExhibitionFlowController>(managers.gameObject);
 
             MeshFilter meshFilter = GetOrAddComponent<MeshFilter>(shadowMeshVisual.gameObject);
@@ -50,7 +51,7 @@ namespace ShadowPrototype
             mediaPipeMeshDeformationInput.Configure(shadowDeformer, handReceiver);
             mediaPipeInteractionVisualizer.Configure(mediaPipeMeshDeformationInput, shadowDeformer);
             deformationControlPanel.Configure(mediaPipeMeshDeformationInput, handReceiver);
-            exhibitionFlowController.Configure(gameManager, liveMeshLoader, handReceiver, mediaPipeScaleInput);
+            exhibitionFlowController.Configure(gameManager, liveMeshLoader, handReceiver, mediaPipeScaleInput, sf3dPngPipelineClient);
 
             shadowMeshRoot.localPosition = Vector3.zero;
             shadowMeshRoot.localRotation = Quaternion.identity;
