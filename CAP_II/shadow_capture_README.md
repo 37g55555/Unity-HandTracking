@@ -1,78 +1,120 @@
 # 환골 — 그림자 캡처 및 Mesh 생성
 
+`shadow_capture.py`는 배경 프레임과 그림자 프레임을 비교해서 그림자 영역을 추출하고, Unity가 런타임 로드할 수 있는 2D OBJ mesh를 생성합니다.
+
 ## 설치
 
 ```bash
-pip install opencv-python numpy scipy triangle trimesh matplotlib
+pip install -r requirements.txt
 ```
 
-## 사용법
+## Windows 전시 실행
 
-### 1. 테스트 모드 (웹캠 없이)
+전시에서는 repository root의 `run_exhibition.sh`로 실행하는 것을 권장합니다.
 
-합성 그림자로 파이프라인 전체를 테스트:
+```bash
+cd ..
+chmod +x run_exhibition.sh
+./run_exhibition.sh
+```
+
+`run_exhibition.sh`는 아래 작업을 순서대로 처리합니다.
+
+1. `CAP_II/.venv` 생성 및 requirements 설치
+2. 그림자 캡처 창 실행
+3. `output/shadow_mesh.obj` 생성
+4. Windows Unity 프로젝트의 `sf3d_io/live_shadow/`로 OBJ/metadata 복사
+5. MediaPipe hand tracking 실행
+
+## IP Camera Live Capture
+
+iOS IP Camera 앱의 MJPEG stream 주소를 사용합니다.
+
+```bash
+python shadow_capture.py --mode live --camera-url http://192.168.0.12:8081/video
+```
+
+path 없이 입력해도 자동으로 `/video`가 붙습니다.
+
+```bash
+python shadow_capture.py --mode live --camera-url 192.168.0.12:8081
+```
+
+캡처 순서:
+
+1. 카메라 창이 뜨면 오브제 없이 빈 배경 상태에서 스페이스바를 누릅니다.
+2. 오브제를 놓아 그림자를 만든 뒤 다시 스페이스바를 누릅니다.
+3. 처리 후 `output/` 폴더에 결과가 저장됩니다.
+4. ESC를 누르면 취소합니다.
+
+## USB Webcam Live Capture
+
+IP camera 대신 USB webcam을 직접 사용할 수도 있습니다.
+
+```bash
+python shadow_capture.py --mode live --camera 0 --no-camera-fallback
+```
+
+- `--camera 0`: 사용할 카메라 번호
+- `--no-camera-fallback`: 지정한 카메라가 실패해도 다른 카메라를 자동으로 잡지 않음
+
+카메라 번호 확인:
+
+```bash
+python ../tools/list_cameras.py
+```
+
+## Test Mode
+
+웹캠 없이 합성 그림자로 파이프라인을 테스트합니다.
 
 ```bash
 python shadow_capture.py --mode test
 ```
 
-### 2. 웹캠 라이브 캡처 (맥북)
+## File Mode
+
+이미 저장된 배경 이미지와 그림자 이미지를 입력으로 사용할 수 있습니다.
 
 ```bash
-python shadow_capture.py --mode live
+python shadow_capture.py --mode file --bg background.png --input shadow.png
 ```
 
-1. 카메라 창이 뜨면, **오브제 없이 빈 배경 상태**에서 **스페이스바**
-2. **오브제를 놓아 그림자를 만들고** 다시 **스페이스바**
-3. 자동으로 처리 후 `output/` 폴더에 결과 저장
-
-**맥북 팁:**
-- 조명: 스탠드 조명이나 스마트폰 플래시를 한쪽에서 비추면 선명한 그림자가 생김
-- 배경: 흰 종이나 밝은 책상 위에서 촬영
-- 카메라 권한: 시스템 설정 > 개인정보 보호 > 카메라 에서 터미널/VSCode 허용
-
-### 3. 파라미터 조절
+## Mesh Density Parameters
 
 ```bash
-# 전체 vertex를 더 많이 생성 (기본값보다 촘촘함)
-python shadow_capture.py --mode test --spacing 5 --boundary-spacing 5 --epsilon 0.0015
-
-# 내부 vertex만 더 촘촘하게 (변형 부드러움 증가, 성능 감소)
-python shadow_capture.py --mode test --spacing 5
-
-# 경계 vertex만 더 촘촘하게 (외곽선 형태 보존 증가)
-python shadow_capture.py --mode test --boundary-spacing 5
-
-# 수동 threshold (Otsu가 잘 안 먹힐 때)
-python shadow_capture.py --mode live --threshold 30
+python shadow_capture.py --mode live --spacing 5 --boundary-spacing 5 --epsilon 0.0015
 ```
+
+- `--spacing`: 내부 vertex 간격입니다. 작을수록 내부 vertex가 많아집니다.
+- `--boundary-spacing`: 윤곽선 vertex 간격입니다. 작을수록 외곽선 vertex가 많아집니다.
+- `--epsilon`: 윤곽선 단순화 비율입니다. 작을수록 원본 윤곽선을 더 많이 유지합니다.
+- `--threshold`: Otsu 자동 threshold가 잘 안 먹을 때 직접 이진화 값을 지정합니다.
 
 기본값은 `--epsilon 0.002`, `--spacing 8`, `--boundary-spacing 8`입니다.
 
-Unity는 Y축이 위로 증가하고 OpenCV 이미지는 Y축이 아래로 증가하므로, 기본 출력 OBJ는 Unity용으로 Y축을 반전합니다. 원본 이미지 좌표 방향 그대로 OBJ를 만들고 싶으면 `--no-unity-flip-y`를 붙이면 됩니다.
+## Unity Coordinate Notes
 
-### 4. 결과 시각화
+Unity는 Y축이 위로 증가하고 OpenCV 이미지는 Y축이 아래로 증가합니다. 그래서 기본 출력 OBJ는 Unity용으로 Y축을 반전합니다.
+
+Y축 반전 시 mesh normal이 뒤집히지 않도록 face winding도 함께 반전합니다.
+
+원본 이미지 좌표 방향 그대로 OBJ를 만들고 싶으면 아래 옵션을 사용합니다.
 
 ```bash
-python view_mesh.py
+python shadow_capture.py --mode live --no-unity-flip-y
 ```
 
-## 출력 파일
+## Output Files
+
+결과 파일은 `output/`에 저장됩니다.
 
 | 파일 | 설명 |
 |------|------|
-| `output/shadow_mesh.obj` | Unity 로드용 2D mesh (z=0 평면) |
-| `output/shadow_metadata.json` | boundary 인덱스, vertex 수, 스케일 등 |
+| `output/shadow_mesh.obj` | Unity 로드용 2D mesh |
+| `output/shadow_metadata.json` | boundary index, vertex 수, triangle 수 |
 | `output/shadow_mask.png` | 이진 마스크 |
-| `output/shadow_contour.png` | 윤곽선 + vertex 시각화 |
-| `output/shadow_mesh_preview.png` | 삼각분할 시각화 |
+| `output/shadow_contour.png` | 윤곽선 및 vertex 확인 이미지 |
+| `output/shadow_mesh_preview.png` | 삼각분할 preview |
 
-## Unity에서 사용
-
-1. `shadow_mesh.obj`를 Unity 프로젝트의 Assets 폴더에 복사
-2. Import Settings → **Read/Write Enabled = True**
-3. Scene에 배치 → Material: Unlit/Color (Black)
-4. `ShadowDeformer.cs` 컴포넌트 추가
-
-또는 런타임 로드 (`LiveMeshLoader` + `ObjParser`)를 사용하면
-Assets에 복사할 필요 없이 자동으로 로드됨.
+Unity 전시 실행에서는 이 중 `shadow_mesh.obj`와 `shadow_metadata.json`이 `sf3d_io/live_shadow/`로 복사되어 `LiveMeshLoader`가 감지합니다.

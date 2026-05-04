@@ -10,11 +10,14 @@ namespace ShadowPrototype
 {
     public class ExhibitionFlowController : MonoBehaviour
     {
+        private const string DefaultIpCameraUrl = "http://192.168.0.12:8081/video";
+
         [Header("Flow")]
         [SerializeField] private bool autoStartOnPlay = true;
         [SerializeField] private bool suppressExistingMeshOnPlay = true;
         [SerializeField] private bool autoStartHandTrackingAfterMeshLoad = true;
         [SerializeField] private bool stopProcessesOnDisable = true;
+        [SerializeField] private bool useExternalBackendOnWindows = true;
 
         [Header("Export")]
         [SerializeField] private bool allowManualPngExport = true;
@@ -31,14 +34,14 @@ namespace ShadowPrototype
         [SerializeField] private string captureWorkingDirectory = string.Empty;
         [SerializeField] private string capturePythonRelativePath = ".venv/bin/python";
         [SerializeField] private string captureScriptName = "shadow_capture.py";
-        [SerializeField] private string captureArguments = "--mode live";
+        [SerializeField] private string captureArguments = "--mode live --camera-url http://192.168.0.12:8081/video";
 
         [Header("Hand Tracking")]
         [SerializeField] private bool launchHandTrackingInTerminal = true;
         [SerializeField] private string handTrackingWorkingDirectory = string.Empty;
         [SerializeField] private string handTrackingPythonRelativePath = ".venv/bin/python";
         [SerializeField] private string handTrackingScriptName = "main.py";
-        [SerializeField] private string handTrackingArguments = string.Empty;
+        [SerializeField] private string handTrackingArguments = "--camera-url http://192.168.0.12:8081/video --udp-host 127.0.0.1";
 
         [Header("Dependencies")]
         [SerializeField] private GameManager gameManager;
@@ -78,16 +81,46 @@ namespace ShadowPrototype
                 handTrackingWorkingDirectory = Path.Combine(userHome, "Downloads", "Unity-HandTracking-master", "3d Hand Tracking");
             }
 
+            ApplyDefaultCameraArguments();
+
             flowStartedUtc = DateTime.UtcNow;
+            if (IsExternalBackendModeForCurrentPlatform())
+            {
+                suppressExistingMeshOnPlay = false;
+            }
+
             if (suppressExistingMeshOnPlay && liveMeshLoader != null)
             {
                 liveMeshLoader.SetLoadExistingMeshOnStart(false);
                 liveMeshLoader.SetMinimumAcceptedMeshWriteTimeUtc(flowStartedUtc);
             }
+            else if (liveMeshLoader != null)
+            {
+                liveMeshLoader.SetLoadExistingMeshOnStart(true);
+                liveMeshLoader.ClearMinimumAcceptedMeshWriteTimeUtc();
+            }
 
             if (mediaPipeScaleInput != null)
             {
                 mediaPipeScaleInput.enabled = false;
+            }
+        }
+
+        private void ApplyDefaultCameraArguments()
+        {
+            string trimmedCaptureArguments = captureArguments == null ? string.Empty : captureArguments.Trim();
+            if (string.IsNullOrWhiteSpace(trimmedCaptureArguments) ||
+                trimmedCaptureArguments == "--mode live" ||
+                trimmedCaptureArguments == "--mode live --camera 0 --no-camera-fallback")
+            {
+                captureArguments = $"--mode live --camera-url {DefaultIpCameraUrl}";
+            }
+
+            string trimmedHandTrackingArguments = handTrackingArguments == null ? string.Empty : handTrackingArguments.Trim();
+            if (string.IsNullOrWhiteSpace(trimmedHandTrackingArguments) ||
+                trimmedHandTrackingArguments == "--camera 1 --no-camera-fallback")
+            {
+                handTrackingArguments = $"--camera-url {DefaultIpCameraUrl} --udp-host 127.0.0.1";
             }
         }
 
@@ -162,7 +195,14 @@ namespace ShadowPrototype
             }
 
             gameManager.OnShadowCaptureStarted();
-            LaunchCaptureProcess();
+            if (ShouldLaunchBackendProcesses())
+            {
+                LaunchCaptureProcess();
+            }
+            else
+            {
+                Debug.Log("External backend mode is active. Unity will not launch ShadowCapture; waiting for OBJ output.");
+            }
         }
 
         private void SubscribeEvents()
@@ -190,7 +230,14 @@ namespace ShadowPrototype
             }
 
             handTrackingStartedForCurrentCapture = true;
-            LaunchHandTrackingProcess();
+            if (ShouldLaunchBackendProcesses())
+            {
+                LaunchHandTrackingProcess();
+            }
+            else
+            {
+                Debug.Log("External backend mode is active. Unity will not launch HandTracking; listening for UDP packets.");
+            }
 
             if (handLandmarkUdpReceiver != null)
             {
@@ -205,6 +252,18 @@ namespace ShadowPrototype
             }
 
             gameManager?.OnHandTrackingStarted();
+        }
+
+        private bool ShouldLaunchBackendProcesses()
+        {
+            return !IsExternalBackendModeForCurrentPlatform();
+        }
+
+        private bool IsExternalBackendModeForCurrentPlatform()
+        {
+            return useExternalBackendOnWindows &&
+                   (Application.platform == RuntimePlatform.WindowsEditor ||
+                    Application.platform == RuntimePlatform.WindowsPlayer);
         }
 
         private void ExportCurrentShadowSilhouette()
@@ -284,7 +343,7 @@ namespace ShadowPrototype
                 return null;
             }
 
-            string pythonPath = Path.Combine(workingDirectory, pythonRelativePath);
+            string pythonPath = ResolvePythonPath(workingDirectory, pythonRelativePath);
             string scriptPath = Path.Combine(workingDirectory, scriptName);
             if (!File.Exists(pythonPath))
             {
@@ -366,7 +425,7 @@ namespace ShadowPrototype
                 return;
             }
 
-            string pythonPath = Path.Combine(workingDirectory, pythonRelativePath);
+            string pythonPath = ResolvePythonPath(workingDirectory, pythonRelativePath);
             string scriptPath = Path.Combine(workingDirectory, scriptName);
             if (!File.Exists(pythonPath))
             {
@@ -377,6 +436,13 @@ namespace ShadowPrototype
             if (!File.Exists(scriptPath))
             {
                 Debug.LogWarning($"{processLabel} script was not found: {scriptPath}");
+                return;
+            }
+
+            if (Application.platform == RuntimePlatform.WindowsEditor ||
+                Application.platform == RuntimePlatform.WindowsPlayer)
+            {
+                LaunchProcessInWindowsTerminal(processLabel, workingDirectory, pythonPath, scriptPath, scriptArguments);
                 return;
             }
 
@@ -422,6 +488,45 @@ namespace ShadowPrototype
             finally
             {
                 process.Dispose();
+            }
+        }
+
+        private void LaunchProcessInWindowsTerminal(
+            string processLabel,
+            string workingDirectory,
+            string pythonPath,
+            string scriptPath,
+            string scriptArguments)
+        {
+            string arguments =
+                $"/c start \"{processLabel}\" /D {EscapeWindowsArgument(workingDirectory)} " +
+                $"{EscapeWindowsArgument(pythonPath)} {EscapeWindowsArgument(scriptPath)}";
+
+            if (!string.IsNullOrWhiteSpace(scriptArguments))
+            {
+                arguments += $" {scriptArguments}";
+            }
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = arguments,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            using var process = new Process { StartInfo = startInfo };
+            try
+            {
+                process.Start();
+                process.WaitForExit(1000);
+                Debug.Log($"{processLabel} launched in Windows terminal: {pythonPath} \"{scriptPath}\" {scriptArguments}");
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"{processLabel} Windows terminal launch failed: {exception.Message}");
             }
         }
 
@@ -542,6 +647,12 @@ namespace ShadowPrototype
 
         private static void StopProcessByScriptPath(string workingDirectory, string scriptName, string processLabel)
         {
+            if (Application.platform == RuntimePlatform.WindowsEditor ||
+                Application.platform == RuntimePlatform.WindowsPlayer)
+            {
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(workingDirectory) || string.IsNullOrWhiteSpace(scriptName))
             {
                 return;
@@ -575,9 +686,43 @@ namespace ShadowPrototype
             }
         }
 
+        private static string ResolvePythonPath(string workingDirectory, string preferredRelativePath)
+        {
+            string preferredPath = Path.Combine(workingDirectory, preferredRelativePath);
+            if (File.Exists(preferredPath))
+            {
+                return preferredPath;
+            }
+
+            string[] fallbackRelativePaths =
+            {
+                Path.Combine(".venv", "Scripts", "python.exe"),
+                Path.Combine(".venv", "bin", "python"),
+                "python.exe",
+                "python3",
+                "python"
+            };
+
+            foreach (string relativePath in fallbackRelativePaths)
+            {
+                string candidatePath = Path.Combine(workingDirectory, relativePath);
+                if (File.Exists(candidatePath))
+                {
+                    return candidatePath;
+                }
+            }
+
+            return preferredPath;
+        }
+
         private static string EscapeShellArgument(string value)
         {
             return $"'{value.Replace("'", "'\"'\"'")}'";
+        }
+
+        private static string EscapeWindowsArgument(string value)
+        {
+            return $"\"{value.Replace("\"", "\\\"")}\"";
         }
 
         private static string EscapeAppleScriptString(string value)

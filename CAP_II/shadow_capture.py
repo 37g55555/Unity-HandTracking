@@ -27,35 +27,98 @@ import os
 import sys
 import argparse
 import time
+from urllib.parse import urlparse
 import triangle as tr
 import trimesh
 
 OUTPUT_DIR = "output"
+DEFAULT_IP_CAMERA_URL = os.environ.get("IP_CAMERA_URL", "")
 
 
 # ============================================================
 # Phase A: 그림자 캡처 — 배경 차분으로 그림자 영역 추출
 # ============================================================
 
-def open_camera(camera_id=0, width=1280, height=720):
-    """
-    macOS에서 카메라 장치 순서가 자주 바뀌는 편이라
-    AVFoundation + 여러 camera index를 순서대로 재시도한다.
-    """
+def build_camera_backend_candidates():
+    backend_candidates = []
+    if sys.platform.startswith("win"):
+        if hasattr(cv2, "CAP_DSHOW"):
+            backend_candidates.append(("DirectShow", cv2.CAP_DSHOW))
+        if hasattr(cv2, "CAP_MSMF"):
+            backend_candidates.append(("MSMF", cv2.CAP_MSMF))
+    elif sys.platform == "darwin" and hasattr(cv2, "CAP_AVFOUNDATION"):
+        backend_candidates.append(("AVFoundation", cv2.CAP_AVFOUNDATION))
+
+    backend_candidates.append(("Default", None))
+    return backend_candidates
+
+
+def build_camera_id_candidates(camera_id=0, allow_fallback=True):
     candidate_ids = []
     if camera_id is not None and camera_id >= 0:
         candidate_ids.append(camera_id)
 
-    for fallback_id in [0, 1, 2, 3]:
-        if fallback_id not in candidate_ids:
-            candidate_ids.append(fallback_id)
+    if allow_fallback:
+        for fallback_id in range(6):
+            if fallback_id not in candidate_ids:
+                candidate_ids.append(fallback_id)
 
-    backend_candidates = []
-    if hasattr(cv2, "CAP_AVFOUNDATION"):
-        backend_candidates.append(("AVFoundation", cv2.CAP_AVFOUNDATION))
-    backend_candidates.append(("Default", None))
+    return candidate_ids
 
+
+def normalize_camera_url(camera_url):
+    if not camera_url:
+        return ""
+
+    camera_url = camera_url.strip()
+    if "://" not in camera_url:
+        camera_url = f"http://{camera_url}"
+
+    parsed = urlparse(camera_url)
+    if parsed.path in ("", "/"):
+        camera_url = camera_url.rstrip("/") + "/video"
+
+    return camera_url
+
+
+def open_ip_camera(camera_url, width=1280, height=720):
+    resolved_url = normalize_camera_url(camera_url)
+    print(f"[INFO] IP camera stream: {resolved_url}")
+
+    cap = cv2.VideoCapture(resolved_url)
+    if cap is None or not cap.isOpened():
+        if cap is not None:
+            cap.release()
+        print(f"[ERROR] IP 카메라 스트림을 열지 못했습니다: {resolved_url}")
+        return None, resolved_url, "IPCamera"
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+    for _ in range(30):
+        ok, frame = cap.read()
+        if ok and frame is not None and frame.size > 0:
+            print(f"[OK] IP 카메라 연결 성공: {resolved_url}")
+            return cap, resolved_url, "IPCamera"
+        time.sleep(0.1)
+
+    cap.release()
+    print(f"[ERROR] IP 카메라에서 프레임을 읽지 못했습니다: {resolved_url}")
+    return None, resolved_url, "IPCamera"
+
+
+def open_camera(camera_id=0, width=1280, height=720, allow_fallback=True, camera_url=""):
+    """
+    Windows 전시 세팅에서는 DirectShow/MSMF를 우선 사용하고,
+    macOS 개발 세팅에서는 AVFoundation을 우선 사용한다.
+    """
+    if camera_url:
+        return open_ip_camera(camera_url, width, height)
+
+    candidate_ids = build_camera_id_candidates(camera_id, allow_fallback)
+    backend_candidates = build_camera_backend_candidates()
     tried = []
+
     for candidate_id in candidate_ids:
         for backend_name, backend in backend_candidates:
             try:
@@ -92,20 +155,23 @@ def open_camera(camera_id=0, width=1280, height=720):
     print("[ERROR] 사용 가능한 카메라를 열지 못했습니다.")
     print(f"        시도한 조합: {', '.join(tried)}")
     print("        확인할 것:")
-    print("        1) 다른 Python/Unity/Photo Booth가 카메라를 잡고 있지 않은지")
-    print("        2) 시스템 설정 > 개인정보 보호 및 보안 > 카메라 권한")
-    print("        3) 아이폰 연속성 카메라가 우선 선택되고 있지 않은지")
+    print("        1) 다른 Python/Unity/카메라 앱이 카메라를 잡고 있지 않은지")
+    print("        2) Windows 설정 > 개인정보 및 보안 > 카메라 권한")
+    print("        3) IP 카메라 사용 시 같은 네트워크이고 URL이 /video 스트림인지")
     return None, None, None
 
 
-def capture_live(camera_id=0):
+def capture_live(camera_id=0, allow_camera_fallback=True, camera_url=""):
     """
     웹캠 라이브 캡처.
     1) 스페이스바: 배경 캡처 (오브제 없는 상태)
     2) 오브제를 놓고 스페이스바: 그림자 캡처
     3) ESC: 종료
     """
-    cap, resolved_camera_id, backend_name = open_camera(camera_id)
+    cap, resolved_camera_id, backend_name = open_camera(
+        camera_id,
+        allow_fallback=allow_camera_fallback,
+        camera_url=camera_url)
     if cap is None:
         return None, None
 
@@ -122,7 +188,7 @@ def capture_live(camera_id=0):
     print("  [Step 2] 오브제를 놓아 그림자를 만든 뒤")
     print("           스페이스바를 눌러 그림자를 캡처하세요.")
     print()
-    print(f"  Camera: id={resolved_camera_id}, backend={backend_name}")
+    print(f"  Camera: {resolved_camera_id}, backend={backend_name}")
     print()
     print("  ESC: 종료")
     print("=" * 60)
@@ -387,6 +453,7 @@ def generate_mesh(contour, interior_spacing=8, boundary_spacing=8, flip_y_for_un
     if flip_y_for_unity:
         # OpenCV image coordinates grow downward, while Unity's 2D plane uses upward Y.
         vertices_normalized[:, 1] *= -1.0
+        valid_faces = valid_faces[:, [0, 2, 1]]
 
     # z=0 평면
     vertices_3d = np.column_stack([
@@ -554,6 +621,10 @@ def main():
                         help="file 모드: 배경 이미지 경로")
     parser.add_argument("--camera", type=int, default=0,
                         help="live 모드: 카메라 ID (기본: 0)")
+    parser.add_argument("--camera-url", type=str, default=DEFAULT_IP_CAMERA_URL,
+                        help="MJPEG/IP 카메라 URL. 예: http://192.168.0.12:8081/video")
+    parser.add_argument("--no-camera-fallback", action="store_true",
+                        help="지정한 카메라 ID만 사용합니다. 웹캠 2대 전시 세팅에서 권장.")
     parser.add_argument("--epsilon", type=float, default=0.002,
                         help="윤곽선 단순화 비율 (기본: 0.002)")
     parser.add_argument("--spacing", type=float, default=8,
@@ -573,7 +644,10 @@ def main():
         parser.error("--boundary-spacing은 0보다 커야 합니다.")
 
     if args.mode == "live":
-        bg_frame, shadow_frame = capture_live(args.camera)
+        bg_frame, shadow_frame = capture_live(
+            args.camera,
+            allow_camera_fallback=not args.no_camera_fallback,
+            camera_url=args.camera_url)
         if bg_frame is None or shadow_frame is None:
             sys.exit(1)
 

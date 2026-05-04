@@ -16,6 +16,9 @@ namespace ShadowPrototype
         [SerializeField] private bool startOnEnable = true;
         [SerializeField] private bool printPacketsToConsole;
         [SerializeField] private float staleAfterSeconds = 1.0f;
+        [SerializeField] private bool logFirstPacket = true;
+        [SerializeField] private bool logStatusToConsole;
+        [SerializeField] private float statusLogInterval = 1.0f;
 
         private readonly object dataLock = new object();
 
@@ -26,6 +29,10 @@ namespace ShadowPrototype
         private string latestPacket = string.Empty;
         private DateTime latestPacketUtc = DateTime.MinValue;
         private string pendingError;
+        private string pendingInfo;
+        private string latestSender = string.Empty;
+        private bool hasLoggedFirstPacket;
+        private float nextStatusLogTime;
 
         public bool HasRecentData
         {
@@ -50,6 +57,22 @@ namespace ShadowPrototype
                 lock (dataLock)
                 {
                     return latestLandmarks.Length / LandmarksPerHand;
+                }
+            }
+        }
+
+        public double LastPacketAgeSeconds
+        {
+            get
+            {
+                lock (dataLock)
+                {
+                    if (latestPacketUtc == DateTime.MinValue)
+                    {
+                        return double.PositiveInfinity;
+                    }
+
+                    return (DateTime.UtcNow - latestPacketUtc).TotalSeconds;
                 }
             }
         }
@@ -90,13 +113,25 @@ namespace ShadowPrototype
 
         private void Update()
         {
-            if (string.IsNullOrEmpty(pendingError))
+            if (!string.IsNullOrEmpty(pendingError))
             {
-                return;
+                Debug.LogWarning(pendingError);
+                pendingError = null;
             }
 
-            Debug.LogWarning(pendingError);
-            pendingError = null;
+            if (!string.IsNullOrEmpty(pendingInfo))
+            {
+                Debug.Log(pendingInfo);
+                pendingInfo = null;
+            }
+
+            if (logStatusToConsole && Time.unscaledTime >= nextStatusLogTime)
+            {
+                nextStatusLogTime = Time.unscaledTime + Mathf.Max(statusLogInterval, 0.25f);
+                Debug.Log(
+                    $"HandLandmarkUdpReceiver status: running={isRunning}, hands={HandCount}, " +
+                    $"recent={HasRecentData}, age={LastPacketAgeSeconds:0.00}s, sender={latestSender}");
+            }
         }
 
         private void OnDisable()
@@ -117,6 +152,7 @@ namespace ShadowPrototype
             }
 
             isRunning = true;
+            hasLoggedFirstPacket = false;
             receiveThread = new Thread(ReceiveLoop);
             receiveThread.IsBackground = true;
             receiveThread.Start();
@@ -175,6 +211,15 @@ namespace ShadowPrototype
                         latestPacket = packet;
                         latestLandmarks = parsedLandmarks;
                         latestPacketUtc = DateTime.UtcNow;
+                        latestSender = anyIP.ToString();
+                    }
+
+                    if (logFirstPacket && !hasLoggedFirstPacket)
+                    {
+                        hasLoggedFirstPacket = true;
+                        pendingInfo =
+                            $"HandLandmarkUdpReceiver received first packet from {anyIP} " +
+                            $"({parsedLandmarks.Length} landmarks).";
                     }
 
                     if (printPacketsToConsole)

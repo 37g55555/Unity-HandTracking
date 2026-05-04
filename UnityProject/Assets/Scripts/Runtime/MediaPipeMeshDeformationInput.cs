@@ -11,6 +11,12 @@ namespace ShadowPrototype
             Pull
         }
 
+        public enum ProjectionMode
+        {
+            MeshBounds,
+            CameraPlane
+        }
+
         private const int LandmarksPerHand = 21;
         private const int ThumbTipIndex = 4;
         private const int IndexTipIndex = 8;
@@ -21,6 +27,14 @@ namespace ShadowPrototype
         [SerializeField] private int controllingHandIndex;
         [SerializeField] private float trackedFrameWidth = 1280.0f;
         [SerializeField] private float trackedFrameHeight = 720.0f;
+
+        [Header("Projection")]
+        [SerializeField] private ProjectionMode projectionMode = ProjectionMode.MeshBounds;
+        [SerializeField] private float meshBoundsPaddingRatio = 0.12f;
+        [SerializeField] private bool invertTrackedX;
+        [SerializeField] private bool invertTrackedY;
+        [SerializeField] private bool logProjectionDebug;
+        [SerializeField] private float projectionDebugInterval = 1.0f;
 
         [Header("Selection")]
         [SerializeField] private float hoverSnapDistanceLocal = 0.3f;
@@ -46,6 +60,7 @@ namespace ShadowPrototype
         private int lockedBoundaryArrayIndex = -1;
         private bool hasPreviousGrabPoint;
         private Vector2 previousGrabLocal;
+        private float nextProjectionDebugTime;
 
         public InteractionMode CurrentMode { get; private set; }
         public bool HasProjectedPoints { get; private set; }
@@ -277,15 +292,26 @@ namespace ShadowPrototype
         {
             localPoint = Vector2.zero;
 
+            if (!TryGetNormalizedTrackedPoint(trackedPoint, out Vector2 normalizedPoint))
+            {
+                return false;
+            }
+
+            if (projectionMode == ProjectionMode.MeshBounds && TryProjectTrackedPointToMeshBounds(normalizedPoint, out localPoint))
+            {
+                LogProjectionDebug(trackedPoint, normalizedPoint, localPoint, "MeshBounds");
+                return true;
+            }
+
             Camera camera = ResolveCamera();
-            if (camera == null || trackedFrameWidth <= 0.0f || trackedFrameHeight <= 0.0f)
+            if (camera == null)
             {
                 return false;
             }
 
             Vector3 viewportPoint = new Vector3(
-                Mathf.Clamp01(trackedPoint.x / trackedFrameWidth),
-                Mathf.Clamp01(trackedPoint.y / trackedFrameHeight),
+                normalizedPoint.x,
+                normalizedPoint.y,
                 0.0f);
 
             Ray ray = camera.ViewportPointToRay(viewportPoint);
@@ -298,7 +324,73 @@ namespace ShadowPrototype
             Vector3 worldPoint = ray.GetPoint(enter);
             Vector3 localPoint3 = targetDeformer.transform.InverseTransformPoint(worldPoint);
             localPoint = new Vector2(localPoint3.x, localPoint3.y);
+            LogProjectionDebug(trackedPoint, normalizedPoint, localPoint, "CameraPlane");
             return true;
+        }
+
+        private bool TryGetNormalizedTrackedPoint(Vector2 trackedPoint, out Vector2 normalizedPoint)
+        {
+            normalizedPoint = Vector2.zero;
+            if (trackedFrameWidth <= 0.0f || trackedFrameHeight <= 0.0f)
+            {
+                return false;
+            }
+
+            float normalizedX = Mathf.Clamp01(trackedPoint.x / trackedFrameWidth);
+            float normalizedY = Mathf.Clamp01(trackedPoint.y / trackedFrameHeight);
+
+            if (invertTrackedX)
+            {
+                normalizedX = 1.0f - normalizedX;
+            }
+
+            if (invertTrackedY)
+            {
+                normalizedY = 1.0f - normalizedY;
+            }
+
+            normalizedPoint = new Vector2(normalizedX, normalizedY);
+            return true;
+        }
+
+        private bool TryProjectTrackedPointToMeshBounds(Vector2 normalizedPoint, out Vector2 localPoint)
+        {
+            localPoint = Vector2.zero;
+            if (targetDeformer == null || targetDeformer.CurrentMesh == null)
+            {
+                return false;
+            }
+
+            Bounds bounds = targetDeformer.CurrentMesh.bounds;
+            if (bounds.size.x <= 0.0001f || bounds.size.y <= 0.0001f)
+            {
+                return false;
+            }
+
+            float paddingX = bounds.size.x * Mathf.Max(meshBoundsPaddingRatio, 0.0f);
+            float paddingY = bounds.size.y * Mathf.Max(meshBoundsPaddingRatio, 0.0f);
+            float minX = bounds.min.x - paddingX;
+            float maxX = bounds.max.x + paddingX;
+            float minY = bounds.min.y - paddingY;
+            float maxY = bounds.max.y + paddingY;
+
+            localPoint = new Vector2(
+                Mathf.Lerp(minX, maxX, normalizedPoint.x),
+                Mathf.Lerp(minY, maxY, normalizedPoint.y));
+            return true;
+        }
+
+        private void LogProjectionDebug(Vector2 trackedPoint, Vector2 normalizedPoint, Vector2 localPoint, string mode)
+        {
+            if (!logProjectionDebug || Time.unscaledTime < nextProjectionDebugTime)
+            {
+                return;
+            }
+
+            nextProjectionDebugTime = Time.unscaledTime + Mathf.Max(projectionDebugInterval, 0.1f);
+            Debug.Log(
+                $"MediaPipe projection [{mode}] tracked={trackedPoint} normalized={normalizedPoint} local={localPoint} " +
+                $"hasTarget={HasActiveBoundaryTarget} mode={CurrentMode}");
         }
 
         private Vector3 LocalToWorld(Vector2 localPoint)

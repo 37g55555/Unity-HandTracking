@@ -19,12 +19,17 @@ namespace ShadowPrototype
         [SerializeField] private bool autoFrameTargetCameraOnLoad;
         [SerializeField] private string absoluteWatchDirectoryOverride = string.Empty;
         [SerializeField] private bool loadExistingMeshOnStart = true;
+        [SerializeField] private bool enablePollingFallback = true;
+        [SerializeField] private float pollingIntervalSeconds = 1.0f;
+        [SerializeField] private bool forceBlackDoubleSidedMaterial = true;
 
         private FileSystemWatcher watcher;
         private readonly object pendingLock = new object();
         private string pendingMeshPath;
         private Coroutine activeLoadRoutine;
         private DateTime? minimumAcceptedMeshWriteTimeUtc;
+        private DateTime lastPolledMeshWriteTimeUtc = DateTime.MinValue;
+        private float nextPollTime;
 
         public string WatchDirectoryAbsolute => GetWatchDirectoryAbsolute();
 
@@ -68,6 +73,8 @@ namespace ShadowPrototype
 
         private void Update()
         {
+            PollMeshFileIfNeeded();
+
             if (activeLoadRoutine != null)
             {
                 return;
@@ -159,6 +166,7 @@ namespace ShadowPrototype
                 {
                     int[] boundaryIndices = TryReadBoundaryIndices(meshPath);
                     shadowDeformer.ReplaceMesh(mesh, boundaryIndices);
+                    EnsureShadowMaterial();
                     if (autoFrameTargetCameraOnLoad)
                     {
                         FrameTargetCamera();
@@ -196,6 +204,80 @@ namespace ShadowPrototype
 
             DateTime meshWriteTimeUtc = File.GetLastWriteTimeUtc(meshPath);
             return meshWriteTimeUtc >= minimumAcceptedMeshWriteTimeUtc.Value;
+        }
+
+        private void PollMeshFileIfNeeded()
+        {
+            if (!enablePollingFallback || Time.unscaledTime < nextPollTime)
+            {
+                return;
+            }
+
+            nextPollTime = Time.unscaledTime + Mathf.Max(pollingIntervalSeconds, 0.25f);
+
+            string meshPath = Path.Combine(GetWatchDirectoryAbsolute(), meshFilename);
+            if (!File.Exists(meshPath) || !ShouldAcceptMesh(meshPath))
+            {
+                return;
+            }
+
+            DateTime writeTimeUtc = File.GetLastWriteTimeUtc(meshPath);
+            if (writeTimeUtc <= lastPolledMeshWriteTimeUtc)
+            {
+                return;
+            }
+
+            lastPolledMeshWriteTimeUtc = writeTimeUtc;
+            QueueMeshLoad(meshPath);
+        }
+
+        private void EnsureShadowMaterial()
+        {
+            if (!forceBlackDoubleSidedMaterial || shadowDeformer == null)
+            {
+                return;
+            }
+
+            MeshRenderer renderer = shadowDeformer.GetComponent<MeshRenderer>();
+            if (renderer == null)
+            {
+                return;
+            }
+
+            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader == null)
+            {
+                shader = Shader.Find("Unlit/Color");
+            }
+
+            if (shader == null)
+            {
+                Debug.LogWarning("LiveMeshLoader could not find a runtime unlit shader for the shadow material.");
+                return;
+            }
+
+            Material material = new Material(shader)
+            {
+                name = "RuntimeBlackShadowMaterial",
+                hideFlags = HideFlags.DontSave
+            };
+
+            if (material.HasProperty("_BaseColor"))
+            {
+                material.SetColor("_BaseColor", Color.black);
+            }
+
+            if (material.HasProperty("_Color"))
+            {
+                material.SetColor("_Color", Color.black);
+            }
+
+            if (material.HasProperty("_Cull"))
+            {
+                material.SetFloat("_Cull", 0.0f);
+            }
+
+            renderer.sharedMaterial = material;
         }
 
         private int[] TryReadBoundaryIndices(string meshPath)
