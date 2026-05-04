@@ -26,6 +26,8 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
   grep -v -E '^[[:space:]]*xformers([=<>!~ ].*)?$' requirements_api.txt > "$FILTERED_REQUIREMENTS"
   echo "[setup] macOS detected: installing requirements without xformers."
   "$PYTHON_BIN" -m pip install -r "$FILTERED_REQUIREMENTS"
+  echo "[setup] Installing rembg CPU backend for macOS."
+  "$PYTHON_BIN" -m pip install "rembg[cpu]"
   rm -f "$FILTERED_REQUIREMENTS"
 else
   "$PYTHON_BIN" -m pip install -r requirements_api.txt
@@ -33,4 +35,6 @@ fi
 
 echo "[run] Starting SF3D API server at http://127.0.0.1:8000"
 echo "[run] Unity will send deformed_shadow.png to /generate-texture and /generate-3d"
-PYTORCH_ENABLE_MPS_FALLBACK=1 "$PYTHON_BIN" app.py
+NUMBA_CACHE_DIR="${NUMBA_CACHE_DIR:-/tmp/sf3d_numba_cache}" \
+PYTORCH_ENABLE_MPS_FALLBACK=1 \
+"$PYTHON_BIN" app.py
