@@ -1,11 +1,38 @@
 .DS_Store
+Thumbs.db
 
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.Python
 .venv/
+venv/
+env/
+ENV/
 logs/
+Logs/
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .sf3d_requirements_windows.tmp.txt
+
+# SF3D generated/runtime files
+sf3d_worker/.venv/
+sf3d_worker/temp_outputs/
+sf3d_worker/comfyui/
+sf3d_worker/demo_files/
+sf3d_worker/**/build/
+sf3d_worker/**/*.egg-info/
+sf3d_worker/**/*.pyd
+sf3d_worker/**/*.dll
+sf3d_worker/**/*.exp
+sf3d_worker/**/*.lib
+sf3d_worker/**/*.obj
+sf3d_worker/**/*.o
+sf3d_worker/**/*.so
+sf3d_worker/cuda-keyring_*.deb
 
 # Unity generated files
 UnityProject/[Ll]ibrary/
@@ -15,12 +42,29 @@ UnityProject/[Bb]uild/
 UnityProject/[Bb]uilds/
 UnityProject/[Ll]ogs/
 UnityProject/[Uu]ser[Ss]ettings/
+UnityProject/[Mm]emoryCaptures/
+UnityProject/Recordings/
+UnityProject/.vs/
 UnityProject/.vscode/
 UnityProject/*.csproj
 UnityProject/*.sln
 UnityProject/*.slnx
+UnityProject/*.user
+UnityProject/*.pidb
+UnityProject/*.booproj
+UnityProject/*.svd
+UnityProject/*.pdb
+UnityProject/*.mdb
+UnityProject/*.opendb
+UnityProject/*.VC.db
+UnityProject/sysinfo.txt
+
+# Unity runtime outputs
+UnityProject/output/
 UnityProject/sf3d_io/sf3d_outputs/
 UnityProject/sf3d_io/live_shadow/deformed_shadow.png
 
-# macOS / editor noise
-*.log
+# Local capture / generated outputs
+CAP_II/output/
+CAP_II/output.zip
+capstone_mp4/

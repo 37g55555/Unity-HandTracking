@@ -27,12 +27,14 @@ import os
 import sys
 import argparse
 import time
-from urllib.parse import urlparse
 import triangle as tr
 import trimesh
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 OUTPUT_DIR = "output"
-DEFAULT_IP_CAMERA_URL = os.environ.get("IP_CAMERA_URL", "")
 
 
 # ============================================================
@@ -53,7 +55,7 @@ def build_camera_backend_candidates():
     return backend_candidates
 
 
-def build_camera_id_candidates(camera_id=0, allow_fallback=True):
+def build_camera_id_candidates(camera_id, allow_fallback):
     candidate_ids = []
     if camera_id is not None and camera_id >= 0:
         candidate_ids.append(camera_id)
@@ -66,55 +68,11 @@ def build_camera_id_candidates(camera_id=0, allow_fallback=True):
     return candidate_ids
 
 
-def normalize_camera_url(camera_url):
-    if not camera_url:
-        return ""
-
-    camera_url = camera_url.strip()
-    if "://" not in camera_url:
-        camera_url = f"http://{camera_url}"
-
-    parsed = urlparse(camera_url)
-    if parsed.path in ("", "/"):
-        camera_url = camera_url.rstrip("/") + "/video"
-
-    return camera_url
-
-
-def open_ip_camera(camera_url, width=1280, height=720):
-    resolved_url = normalize_camera_url(camera_url)
-    print(f"[INFO] IP camera stream: {resolved_url}")
-
-    cap = cv2.VideoCapture(resolved_url)
-    if cap is None or not cap.isOpened():
-        if cap is not None:
-            cap.release()
-        print(f"[ERROR] IP 카메라 스트림을 열지 못했습니다: {resolved_url}")
-        return None, resolved_url, "IPCamera"
-
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-
-    for _ in range(30):
-        ok, frame = cap.read()
-        if ok and frame is not None and frame.size > 0:
-            print(f"[OK] IP 카메라 연결 성공: {resolved_url}")
-            return cap, resolved_url, "IPCamera"
-        time.sleep(0.1)
-
-    cap.release()
-    print(f"[ERROR] IP 카메라에서 프레임을 읽지 못했습니다: {resolved_url}")
-    return None, resolved_url, "IPCamera"
-
-
-def open_camera(camera_id=0, width=1280, height=720, allow_fallback=True, camera_url=""):
+def open_camera(camera_id=0, width=640, height=480, fps=15, allow_fallback=True):
     """
-    Windows 전시 세팅에서는 DirectShow/MSMF를 우선 사용하고,
-    macOS 개발 세팅에서는 AVFoundation을 우선 사용한다.
+    macOS에서 카메라 장치 순서가 자주 바뀌는 편이라
+    AVFoundation + 여러 camera index를 순서대로 재시도한다.
     """
-    if camera_url:
-        return open_ip_camera(camera_url, width, height)
-
     candidate_ids = build_camera_id_candidates(camera_id, allow_fallback)
     backend_candidates = build_camera_backend_candidates()
 
@@ -135,8 +93,12 @@ def open_camera(camera_id=0, width=1280, height=720, allow_fallback=True, camera
                     cap.release()
                 continue
 
+            if hasattr(cv2, "VideoWriter_fourcc"):
+                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            cap.set(cv2.CAP_PROP_FPS, fps)
 
             success = False
             for _ in range(12):
@@ -155,14 +117,13 @@ def open_camera(camera_id=0, width=1280, height=720, allow_fallback=True, camera
     print("[ERROR] 사용 가능한 카메라를 열지 못했습니다.")
     print(f"        시도한 조합: {', '.join(tried)}")
     print("        확인할 것:")
-    print("        1) 다른 Python/Unity/카메라 앱이 카메라를 잡고 있지 않은지")
-    print("        2) Windows 설정 > 개인정보 및 보안 > 카메라 권한")
-    print("        3) 웹캠 2대 사용 시 --camera 번호가 맞는지")
-    print("        4) IP 카메라 사용 시 같은 네트워크이고 URL이 /video 스트림인지")
+    print("        1) 다른 Python/Unity/Photo Booth가 카메라를 잡고 있지 않은지")
+    print("        2) 시스템 설정 > 개인정보 보호 및 보안 > 카메라 권한")
+    print("        3) 아이폰 연속성 카메라가 우선 선택되고 있지 않은지")
     return None, None, None
 
 
-def capture_live(camera_id=0, allow_camera_fallback=True, camera_url=""):
+def capture_live(camera_id=0, width=640, height=480, fps=15, allow_camera_fallback=True):
     """
     웹캠 라이브 캡처.
     1) 스페이스바: 배경 캡처 (오브제 없는 상태)
@@ -171,8 +132,10 @@ def capture_live(camera_id=0, allow_camera_fallback=True, camera_url=""):
     """
     cap, resolved_camera_id, backend_name = open_camera(
         camera_id,
-        allow_fallback=allow_camera_fallback,
-        camera_url=camera_url)
+        width=width,
+        height=height,
+        fps=fps,
+        allow_fallback=allow_camera_fallback)
     if cap is None:
         return None, None
 
@@ -189,7 +152,7 @@ def capture_live(camera_id=0, allow_camera_fallback=True, camera_url=""):
     print("  [Step 2] 오브제를 놓아 그림자를 만든 뒤")
     print("           스페이스바를 눌러 그림자를 캡처하세요.")
     print()
-    print(f"  Camera: {resolved_camera_id}, backend={backend_name}")
+    print(f"  Camera: id={resolved_camera_id}, backend={backend_name}")
     print()
     print("  ESC: 종료")
     print("=" * 60)
@@ -352,45 +315,15 @@ def extract_contour(mask, epsilon_ratio=0.005):
 # Phase B: 2D Mesh 생성 — Constrained Delaunay Triangulation
 # ============================================================
 
-def resample_closed_contour(contour, spacing):
-    """
-    닫힌 윤곽선을 일정 간격으로 재샘플링해 boundary vertex를 늘림.
-    spacing이 작을수록 외곽선 vertex가 촘촘해진다.
-    """
-    if spacing is None or spacing <= 0 or len(contour) < 2:
-        return contour.astype(np.float64)
-
-    pts = contour.astype(np.float64)
-    resampled = []
-
-    for start, end in zip(pts, np.roll(pts, -1, axis=0)):
-        segment = end - start
-        length = np.linalg.norm(segment)
-        if length <= 1e-6:
-            continue
-
-        n_steps = max(1, int(np.ceil(length / spacing)))
-        for i in range(n_steps):
-            t = i / n_steps
-            resampled.append(start + segment * t)
-
-    if len(resampled) == 0:
-        return pts
-
-    return np.array(resampled, dtype=np.float64)
-
-
-def generate_mesh(contour, interior_spacing=8, boundary_spacing=8, flip_y_for_unity=True):
+def generate_mesh(contour, interior_spacing=15):
     """
     윤곽선 → 내부 점 생성 → Constrained Delaunay → OBJ 내보내기.
 
-    Input: 윤곽선 (N×2), 내부 점 간격 (px), 경계 점 간격 (px)
+    Input: 윤곽선 (N×2), 내부 점 간격 (px)
     Output: vertices_3d, faces, n_boundary
     """
-    boundary_base = contour.astype(np.float64)
-    boundary = resample_closed_contour(boundary_base, boundary_spacing)
+    boundary = contour.astype(np.float64)
     n_boundary = len(boundary)
-    print(f"  경계 vertex: {len(boundary_base)} → {n_boundary}개 (spacing={boundary_spacing}px)")
 
     # ── 내부 점 생성 (균일 그리드 + 내부 판정) ──
     x_min, y_min = boundary.min(axis=0)
@@ -451,9 +384,10 @@ def generate_mesh(contour, interior_spacing=8, boundary_spacing=8, flip_y_for_un
     if scale > 0:
         vertices_normalized /= scale
 
-    if flip_y_for_unity:
-        # OpenCV image coordinates grow downward, while Unity's 2D plane uses upward Y.
-        vertices_normalized[:, 1] *= -1.0
+    # OpenCV image coordinates grow downward on Y, while Unity grows upward.
+    # Flip only the exported mesh coordinates so the captured shadow is upright in Unity.
+    vertices_normalized[:, 1] *= -1.0
+    if len(valid_faces) > 0:
         valid_faces = valid_faces[:, [0, 2, 1]]
 
     # z=0 평면
@@ -467,23 +401,29 @@ def generate_mesh(contour, interior_spacing=8, boundary_spacing=8, flip_y_for_un
 
 def save_obj(filepath, vertices, faces):
     """OBJ 파일 저장."""
-    with open(filepath, 'w') as f:
-        f.write("# 환골 — Shadow Mesh\n")
-        f.write(f"# Vertices: {len(vertices)}, Faces: {len(faces)}\n\n")
+    temp_filepath = f"{filepath}.tmp"
+    try:
+        with open(temp_filepath, 'w', encoding='utf-8', newline='\n') as f:
+            f.write("# Hwangol Shadow Mesh\n")
+            f.write(f"# Vertices: {len(vertices)}, Faces: {len(faces)}\n\n")
 
-        for v in vertices:
-            f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
+            for v in vertices:
+                f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
 
-        f.write("\n")
+            f.write("\n")
 
-        for face in faces:
-            # OBJ는 1-indexed
-            f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
+            for face in faces:
+                # OBJ는 1-indexed
+                f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
+
+        os.replace(temp_filepath, filepath)
+    finally:
+        if os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
 
 
 def save_metadata(filepath, n_vertices, n_faces, n_boundary, center, scale,
-                  epsilon_ratio, interior_spacing, boundary_spacing,
-                  flip_y_for_unity):
+                  epsilon_ratio, interior_spacing):
     """메타데이터 JSON 저장."""
     metadata = {
         "n_vertices": n_vertices,
@@ -493,9 +433,7 @@ def save_metadata(filepath, n_vertices, n_faces, n_boundary, center, scale,
         "center_offset": center.tolist(),
         "scale_factor": float(scale),
         "epsilon_ratio": epsilon_ratio,
-        "interior_spacing": interior_spacing,
-        "boundary_spacing": boundary_spacing,
-        "flip_y_for_unity": bool(flip_y_for_unity)
+        "interior_spacing": interior_spacing
     }
 
     with open(filepath, 'w', encoding='utf-8') as f:
@@ -549,10 +487,8 @@ def visualize_mesh(vertices_2d, faces, boundary_n, image_size, output_path):
 # 메인
 # ============================================================
 
-def process_shadow(bg_frame, shadow_frame, epsilon_ratio=0.002,
-                   interior_spacing=8, boundary_spacing=8,
-                   flip_y_for_unity=True,
-                   threshold_value=None):
+def process_shadow(bg_frame, shadow_frame, epsilon_ratio=0.005,
+                   interior_spacing=15, threshold_value=None):
     """
     전체 파이프라인: 배경/그림자 프레임 → OBJ + 메타데이터.
     """
@@ -572,7 +508,7 @@ def process_shadow(bg_frame, shadow_frame, epsilon_ratio=0.002,
 
     print("\n[3/4] 2D Mesh 생성...")
     vertices_3d, faces, n_boundary, center, scale = generate_mesh(
-        contour, interior_spacing, boundary_spacing, flip_y_for_unity
+        contour, interior_spacing
     )
 
     print("\n[4/4] 파일 저장...")
@@ -585,16 +521,14 @@ def process_shadow(bg_frame, shadow_frame, epsilon_ratio=0.002,
     # 메타데이터 저장
     meta_path = os.path.join(OUTPUT_DIR, "shadow_metadata.json")
     save_metadata(meta_path, len(vertices_3d), len(faces), n_boundary,
-                  center, scale, epsilon_ratio, interior_spacing,
-                  boundary_spacing, flip_y_for_unity)
+                  center, scale, epsilon_ratio, interior_spacing)
     print(f"  → {meta_path}")
 
     # mesh 시각화 (원본 좌표계)
     # vertices_3d를 다시 원본 픽셀 좌표로 역변환
-    vertices_pixel = vertices_3d[:, :2].copy()
-    if flip_y_for_unity:
-        vertices_pixel[:, 1] *= -1.0
-    vertices_pixel = vertices_pixel * scale + center
+    vertices_preview = vertices_3d[:, :2].copy()
+    vertices_preview[:, 1] *= -1.0
+    vertices_pixel = vertices_preview * scale + center
     visualize_mesh(vertices_pixel, faces, n_boundary,
                    (shadow_frame.shape[1], shadow_frame.shape[0]),
                    os.path.join(OUTPUT_DIR, "shadow_mesh_preview.png"))
@@ -622,33 +556,30 @@ def main():
                         help="file 모드: 배경 이미지 경로")
     parser.add_argument("--camera", type=int, default=0,
                         help="live 모드: 카메라 ID (기본: 0)")
-    parser.add_argument("--camera-url", type=str, default=DEFAULT_IP_CAMERA_URL,
-                        help="MJPEG/IP 카메라 URL. 예: http://192.168.0.12:8081/video")
     parser.add_argument("--no-camera-fallback", action="store_true",
-                        help="지정한 카메라 ID만 사용합니다. 웹캠 2대 전시 세팅에서 권장.")
-    parser.add_argument("--epsilon", type=float, default=0.002,
-                        help="윤곽선 단순화 비율 (기본: 0.002)")
-    parser.add_argument("--spacing", type=float, default=8,
-                        help="내부 vertex 간격 px (기본: 8, 작을수록 vertex 증가)")
-    parser.add_argument("--boundary-spacing", type=float, default=8,
-                        help="경계 vertex 간격 px (기본: 8, 작을수록 boundary vertex 증가)")
-    parser.add_argument("--no-unity-flip-y", action="store_true",
-                        help="Unity 좌표계 보정용 Y축 반전을 끕니다.")
+                        help="지정한 카메라 ID만 사용합니다. 웹캠 2대 세팅에서 권장.")
+    parser.add_argument("--width", type=int, default=640,
+                        help="live mode camera width.")
+    parser.add_argument("--height", type=int, default=480,
+                        help="live mode camera height.")
+    parser.add_argument("--fps", type=int, default=15,
+                        help="live mode camera FPS.")
+    parser.add_argument("--epsilon", type=float, default=0.005,
+                        help="윤곽선 단순화 비율 (기본: 0.005)")
+    parser.add_argument("--spacing", type=int, default=15,
+                        help="내부 vertex 간격 px (기본: 15)")
     parser.add_argument("--threshold", type=int, default=None,
                         help="이진화 threshold (기본: Otsu 자동)")
 
     args = parser.parse_args()
 
-    if args.spacing <= 0:
-        parser.error("--spacing은 0보다 커야 합니다.")
-    if args.boundary_spacing <= 0:
-        parser.error("--boundary-spacing은 0보다 커야 합니다.")
-
     if args.mode == "live":
         bg_frame, shadow_frame = capture_live(
             args.camera,
-            allow_camera_fallback=not args.no_camera_fallback,
-            camera_url=args.camera_url)
+            width=args.width,
+            height=args.height,
+            fps=args.fps,
+            allow_camera_fallback=not args.no_camera_fallback)
         if bg_frame is None or shadow_frame is None:
             sys.exit(1)
 
@@ -670,8 +601,6 @@ def main():
         bg_frame, shadow_frame,
         epsilon_ratio=args.epsilon,
         interior_spacing=args.spacing,
-        boundary_spacing=args.boundary_spacing,
-        flip_y_for_unity=not args.no_unity_flip_y,
         threshold_value=args.threshold
     )
 

@@ -1,0 +1,220 @@
+using System;
+using System.Collections;
+using System.IO;
+using UnityEngine;
+using UnityEngine.Networking;
+
+namespace ShadowPrototype
+{
+    public class Sf3dPngPipelineClient : MonoBehaviour
+    {
+        [Header("Server")]
+        [SerializeField] private string baseUrl = "http://127.0.0.1:8000";
+        [SerializeField] private string textureEndpoint = "/generate-texture";
+        [SerializeField] private string modelEndpoint = "/generate-3d";
+        [SerializeField] private int requestTimeoutSeconds = 3600;
+
+        [Header("Pipeline")]
+        [SerializeField] private bool runTextureGenerationFirst = true;
+        [SerializeField] private bool preventConcurrentRequests = true;
+
+        [Header("Output")]
+        [SerializeField] private string outputDirectoryRelative = "sf3d_io/sf3d_outputs";
+        [SerializeField] private string outputGlbPrefix = "shadow_asteroid";
+        [SerializeField] private bool saveTexturePreview = true;
+        [SerializeField] private string texturePreviewFileName = "last_texture.png";
+
+        [Header("After GLB")]
+        [SerializeField] private bool loadSceneAfterGlbGenerated = true;
+        [SerializeField] private string sceneToLoadAfterGlbGenerated = "hologramOut";
+
+        private Coroutine activeRoutine;
+
+        public bool IsRunning => activeRoutine != null;
+        public string LastInputPngPath { get; private set; } = string.Empty;
+        public string LastTexturePath { get; private set; } = string.Empty;
+        public string LastGeneratedGlbPath { get; private set; } = string.Empty;
+        public event Action<string> GlbGenerated;
+
+        public void GenerateFromPng(string pngPath)
+        {
+            if (string.IsNullOrWhiteSpace(pngPath))
+            {
+                Debug.LogWarning("SF3D generation skipped because PNG path is empty.");
+                return;
+            }
+
+            if (!File.Exists(pngPath))
+            {
+                Debug.LogWarning($"SF3D generation skipped because PNG does not exist: {pngPath}");
+                return;
+            }
+
+            if (preventConcurrentRequests && activeRoutine != null)
+            {
+                Debug.LogWarning("SF3D generation is already running. Ignoring duplicate request.");
+                return;
+            }
+
+            activeRoutine = StartCoroutine(GenerateFromPngCoroutine(pngPath));
+        }
+
+        public void GenerateFromPngBytes(byte[] pngBytes, string sourceFileName = "deformed_shadow.png")
+        {
+            if (pngBytes == null || pngBytes.Length == 0)
+            {
+                Debug.LogWarning("SF3D generation skipped because PNG bytes are empty.");
+                return;
+            }
+
+            if (preventConcurrentRequests && activeRoutine != null)
+            {
+                Debug.LogWarning("SF3D generation is already running. Ignoring duplicate request.");
+                return;
+            }
+
+            string cleanSourceFileName = string.IsNullOrWhiteSpace(sourceFileName) ? "deformed_shadow.png" : sourceFileName;
+            activeRoutine = StartCoroutine(GenerateFromPngBytesCoroutine(pngBytes, cleanSourceFileName, $"memory:{cleanSourceFileName}"));
+        }
+
+        private IEnumerator GenerateFromPngCoroutine(string pngPath)
+        {
+            byte[] pngBytes;
+            try
+            {
+                pngBytes = File.ReadAllBytes(pngPath);
+            }
+            catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException)
+            {
+                Debug.LogWarning($"SF3D could not read PNG '{pngPath}': {exception.Message}");
+                activeRoutine = null;
+                yield break;
+            }
+
+            yield return GenerateFromPngBytesCoroutine(pngBytes, Path.GetFileName(pngPath), pngPath);
+        }
+
+        private IEnumerator GenerateFromPngBytesCoroutine(byte[] pngBytes, string sourceFileName, string sourceDescription)
+        {
+            LastInputPngPath = sourceDescription;
+            LastTexturePath = string.Empty;
+            LastGeneratedGlbPath = string.Empty;
+
+            Debug.Log($"SF3D pipeline started from PNG bytes: {sourceDescription}");
+
+            byte[] sf3dInputBytes = pngBytes;
+            if (runTextureGenerationFirst)
+            {
+                UnityWebRequest textureRequest = CreateImagePostRequest(BuildUrl(textureEndpoint), pngBytes, sourceFileName);
+                yield return textureRequest.SendWebRequest();
+
+                if (HasRequestError(textureRequest))
+                {
+                    Debug.LogWarning($"SF3D texture generation failed: {GetRequestErrorMessage(textureRequest)}");
+                    textureRequest.Dispose();
+                    activeRoutine = null;
+                    yield break;
+                }
+
+                sf3dInputBytes = textureRequest.downloadHandler.data;
+                if (saveTexturePreview)
+                {
+                    LastTexturePath = SaveBytesToOutput(sf3dInputBytes, texturePreviewFileName);
+                    Debug.Log($"SF3D texture preview saved: {LastTexturePath}");
+                }
+
+                textureRequest.Dispose();
+            }
+
+            UnityWebRequest modelRequest = CreateImagePostRequest(BuildUrl(modelEndpoint), sf3dInputBytes, "sf3d_input.png");
+            yield return modelRequest.SendWebRequest();
+
+            if (HasRequestError(modelRequest))
+            {
+                Debug.LogWarning($"SF3D model generation failed: {GetRequestErrorMessage(modelRequest)}");
+                modelRequest.Dispose();
+                activeRoutine = null;
+                yield break;
+            }
+
+            string glbFileName = $"{outputGlbPrefix}_{DateTime.Now:yyyyMMdd_HHmmss}.glb";
+            LastGeneratedGlbPath = SaveBytesToOutput(modelRequest.downloadHandler.data, glbFileName);
+            Debug.Log($"SF3D GLB saved: {LastGeneratedGlbPath}");
+
+            modelRequest.Dispose();
+            activeRoutine = null;
+
+            HandleGlbGenerated(LastGeneratedGlbPath);
+        }
+
+        private void HandleGlbGenerated(string glbPath)
+        {
+            GlbGenerated?.Invoke(glbPath);
+
+            if (!loadSceneAfterGlbGenerated)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(sceneToLoadAfterGlbGenerated))
+            {
+                Debug.LogWarning("GLB was generated, but the target scene name is empty.");
+                return;
+            }
+
+            UnityEngine.SceneManagement.SceneManager.LoadScene(sceneToLoadAfterGlbGenerated);
+        }
+
+        private UnityWebRequest CreateImagePostRequest(string url, byte[] imageBytes, string fileName)
+        {
+            var form = new WWWForm();
+            form.AddBinaryData("file", imageBytes, fileName, "image/png");
+
+            UnityWebRequest request = UnityWebRequest.Post(url, form);
+            request.timeout = Mathf.Max(requestTimeoutSeconds, 1);
+            return request;
+        }
+
+        private string SaveBytesToOutput(byte[] bytes, string fileName)
+        {
+            string outputDirectory = GetOutputDirectoryAbsolute();
+            Directory.CreateDirectory(outputDirectory);
+
+            string path = Path.Combine(outputDirectory, fileName);
+            File.WriteAllBytes(path, bytes);
+            return path;
+        }
+
+        private string GetOutputDirectoryAbsolute()
+        {
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            return Path.GetFullPath(Path.Combine(projectRoot, outputDirectoryRelative));
+        }
+
+        private string BuildUrl(string endpoint)
+        {
+            string cleanBase = string.IsNullOrWhiteSpace(baseUrl) ? "http://127.0.0.1:8000" : baseUrl.TrimEnd('/');
+            string cleanEndpoint = string.IsNullOrWhiteSpace(endpoint) ? string.Empty : endpoint.TrimStart('/');
+            return $"{cleanBase}/{cleanEndpoint}";
+        }
+
+        private static bool HasRequestError(UnityWebRequest request)
+        {
+            return request.result == UnityWebRequest.Result.ConnectionError ||
+                   request.result == UnityWebRequest.Result.ProtocolError ||
+                   request.result == UnityWebRequest.Result.DataProcessingError;
+        }
+
+        private static string GetRequestErrorMessage(UnityWebRequest request)
+        {
+            string message = string.IsNullOrWhiteSpace(request.error) ? request.result.ToString() : request.error;
+            string responseText = request.downloadHandler?.text;
+            if (!string.IsNullOrWhiteSpace(responseText))
+            {
+                message = $"{message}: {responseText}";
+            }
+
+            return message;
+        }
+    }
+}

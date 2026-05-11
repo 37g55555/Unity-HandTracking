@@ -1,0 +1,21 @@
+fastapi
+uvicorn
+python-multipart
+# 하단은 원본 SF3D requirements
+torch
+torchvision
+torchaudio
+rembg
+Pillow
+tqdm
+huggingface_hub
+xformers
+trimesh
+einops
+omegaconf
+pygltflib
+jaxtyping
+diffusers
+transformers
+accelerate
+opencv-python
