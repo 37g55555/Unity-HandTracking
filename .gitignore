@@ -1,0 +1,13 @@
+UnityProject/Library/
+UnityProject/Temp/
+UnityProject/Logs/
+UnityProject/UserSettings/
+UnityProject/obj/
+UnityProject/.vs/
+UnityProject/.vsconfig
+UnityProject/*.csproj
+UnityProject/*.sln
+output/sf3d/
+output/recordings/
+__pycache__/
+*.pyc
