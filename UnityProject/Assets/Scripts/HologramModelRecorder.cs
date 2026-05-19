@@ -167,7 +167,7 @@ public class HologramModelRecorder : MonoBehaviour
             return;
         }
 
-        loadedModel = new GameObject("PlanetObject");
+        loadedModel = new GameObject("HologramObject");
         await gltf.InstantiateMainSceneAsync(loadedModel.transform);
         CenterAndNormalize(loadedModel);
         StartRecording();

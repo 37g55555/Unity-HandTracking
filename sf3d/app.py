@@ -14,7 +14,7 @@ from PIL import Image, ImageEnhance
 
 from sf3d.system import SF3D
 from sf3d.utils import get_device, remove_background, resize_foreground
-from silhouette_labeler import infer_silhouette_label, unload_labeler
+from silhouette_labeler import get_labeler, infer_silhouette_label, unload_labeler
 
 
 app = FastAPI(
@@ -23,7 +23,7 @@ app = FastAPI(
 )
 
 device = get_device()
-if not (torch.cuda.is_available() or torch.backends.mps.is_available()):
+if not torch.cuda.is_available():
     device = "cpu"
 
 model = None
@@ -86,7 +86,7 @@ def brighten_storybook_texture(texture: Image.Image) -> Image.Image:
     return texture_rgb
 
 
-def thicken_mesh_for_asteroid(mesh):
+def thicken_mesh_depth(mesh):
     if mesh is None or len(mesh.vertices) == 0:
         return mesh
 
@@ -160,13 +160,8 @@ def unload_texture_pipeline():
 def build_texture_prompt(label: str) -> str:
     clean_label = label.strip().lower() if label else "object"
     return (
-        f"A whimsical miniature {clean_label}-inspired rocky planet texture "
-        "inspired by a poetic children's storybook, "
-        "soft watercolor and gouache, visible stone surface, subtle craters, gentle rock grain, "
-        "rounded asteroid planet, warm beige stone, dusty rose, muted teal, pale yellow, "
-        "soft gradient color bands, hand-painted brush strokes, delicate star speckles, "
-        "charming but still planet-like, centered single object inside the provided silhouette, "
-        "transparent background, 3D asset texture"
+        f"one {clean_label}, a single {clean_label} object shaped to match the silhouette, "
+        "one continuous form filling the silhouette, clear readable object, transparent background"
     )
 
 
@@ -232,7 +227,7 @@ def get_texture_pipeline():
             torch_dtype=dtype,
         )
         cn_pipe = StableDiffusionControlNetPipeline.from_pretrained(
-            "runwayml/stable-diffusion-v1-5",
+            "stable-diffusion-v1-5/stable-diffusion-v1-5",
             controlnet=controlnet,
             torch_dtype=dtype,
         )
@@ -249,7 +244,24 @@ async def health():
         "device": device,
         "cuda": torch.cuda.is_available(),
         "sf3d_loaded": model is not None,
+        "texture_loaded": cn_pipe is not None,
     }
+
+
+@app.post("/warmup-labeler")
+async def warmup_labeler():
+    print("Received Qwen labeler warmup request.", flush=True)
+    get_labeler(device)
+    print("Qwen labeler warmup complete.", flush=True)
+    return {"ok": True}
+
+
+@app.post("/warmup-texture")
+async def warmup_texture():
+    print("Received ControlNet texture warmup request.", flush=True)
+    get_texture_pipeline()
+    print("ControlNet texture warmup complete.", flush=True)
+    return {"ok": True}
 
 
 @app.post("/classify-silhouette")
@@ -282,11 +294,11 @@ async def generate_texture(file: UploadFile = File(...), label: str = Form("obje
     control_image.save("temp_outputs/last_control_edges.png", format="PNG")
 
     prompt = build_texture_prompt(label)
+    print(f"Texture prompt label: {label}", flush=True)
+    print(f"Texture prompt: {prompt}", flush=True)
     negative_prompt = (
         "low quality, worst quality, text, watermark, extra objects, duplicate object, "
-        "background scenery, dark, dull, muddy colors, black texture, monochrome, gloomy, horror, "
-        "neon, rainbow, candy, plastic, flat poster, overly saturated, pure gray asteroid, "
-        "realistic dirty stone"
+        "multiple objects, pattern, repeated objects, collage, background scenery"
     )
 
     pipe = get_texture_pipeline()
@@ -340,7 +352,7 @@ async def generate_3d(file: UploadFile = File(...)):
                 vertex_count=-1,
             )
 
-    mesh = thicken_mesh_for_asteroid(mesh)
+    mesh = thicken_mesh_depth(mesh)
 
     out_mesh_path = os.path.join("temp_outputs", f"{uuid.uuid4()}.glb")
     mesh.export(out_mesh_path, include_normals=True)

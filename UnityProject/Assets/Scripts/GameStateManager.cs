@@ -16,11 +16,24 @@ namespace ShadowPrototype
             Error
         }
 
-        private PipelineState currentState = PipelineState.Idle;
+        [SerializeField] private PipelineState currentState = PipelineState.Idle;
+        [SerializeField] private string currentStateName = nameof(PipelineState.Idle);
         public event Action<string, int, int> ShadowMeshLoaded;
         public event Action<string> ShadowMeshLoadFailed;
 
         public PipelineState CurrentState => currentState;
+        public string CurrentStateName => currentStateName;
+
+        private void Awake()
+        {
+            ResetToIdle();
+        }
+
+        public void ResetToIdle()
+        {
+            currentState = PipelineState.Idle;
+            currentStateName = currentState.ToString();
+        }
 
         public void OnShadowCaptureStarted()
         {
@@ -68,6 +81,7 @@ namespace ShadowPrototype
             }
 
             currentState = nextState;
+            currentStateName = currentState.ToString();
             Debug.Log($"GameStateManager: state changed to {currentState}.");
         }
     }

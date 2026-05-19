@@ -1,7 +1,7 @@
 import glob
 import os
+import platform
 
-import torch
 from setuptools import find_packages, setup
 from torch.utils.cpp_extension import (
     BuildExtension,
@@ -16,26 +16,22 @@ def get_extensions():
     if debug_mode:
         print("Compiling in debug mode")
 
-    is_mac = True if torch.backends.mps.is_available() else False
-    use_native_arch = not is_mac and os.getenv("USE_NATIVE_ARCH", "1") == "1"
+    if platform.system() != "Windows":
+        raise RuntimeError("uv_unwrapper build is configured for Windows only.")
+
     extension = CppExtension
 
     extra_link_args = []
     extra_compile_args = {
         "cxx": [
-            "-O3" if not debug_mode else "-O0",
-            "-fdiagnostics-color=always",
-            ("-Xclang " if is_mac else "") + "-fopenmp",
-        ]
-        + ["-march=native"]
-        if use_native_arch
-        else []
-        + ["-mmacosx-version-min=10.15"] if is_mac else [],
+            "/O2" if not debug_mode else "/Od",
+            "/std:c++17",
+            "/Zc:preprocessor",
+        ],
     }
     if debug_mode:
-        extra_compile_args["cxx"].append("-g")
-        extra_compile_args["cxx"].append("-UNDEBUG")
-        extra_link_args.extend(["-O0", "-g"])
+        extra_compile_args["cxx"].append("/Z7")
+        extra_link_args.extend(["/DEBUG"])
 
     define_macros = []
     extensions = []
@@ -56,9 +52,7 @@ def get_extensions():
             define_macros=define_macros,
             extra_compile_args=extra_compile_args,
             extra_link_args=extra_link_args,
-            libraries=["c10", "torch", "torch_cpu", "torch_python"] + ["omp"]
-            if is_mac
-            else [],
+            libraries=["c10", "torch", "torch_cpu", "torch_python"],
         )
     )
 

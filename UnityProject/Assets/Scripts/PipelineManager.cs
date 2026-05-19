@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using UnityEngine;
@@ -17,7 +18,7 @@ namespace ShadowPrototype
         private const int ExportResolution = 1024;
         private const float ExportStatusDuration = 2.0f;
         private const float Sf3dHealthCheckIntervalSeconds = 1.0f;
-        private const float Sf3dStartupTimeoutSeconds = 60.0f;
+        private const float Sf3dStartupTimeoutSeconds = 30.0f;
         private static readonly Color ExportFillColor = Color.black;
         private static readonly Color ExportBackgroundColor = new Color(0f, 0f, 0f, 0f);
 
@@ -45,6 +46,7 @@ namespace ShadowPrototype
         private float exportStatusUntil;
         private bool sf3dServerReady;
         private bool sf3dServerStarting;
+        private readonly List<Process> launchedProcesses = new List<Process>();
 
         private void Start()
         {
@@ -93,11 +95,13 @@ namespace ShadowPrototype
         private void OnDisable()
         {
             UnsubscribeEvents();
+            StopLaunchedProcesses();
         }
 
         private void OnDestroy()
         {
             UnsubscribeEvents();
+            StopLaunchedProcesses();
         }
 
         public void StartPipeline()
@@ -108,10 +112,24 @@ namespace ShadowPrototype
                 return;
             }
 
+            stateManager.ResetToIdle();
             handTrackingStartedForCurrentCapture = false;
-            StartCoroutine(StartSf3dServerRoutine());
+            exportStatusMessage = string.Empty;
+            exportStatusUntil = 0.0f;
+            sf3dClient?.ResetSilhouetteLabel();
 
-            if (IsCaptureFileMode())
+            bool isCaptureFileMode = IsCaptureFileMode();
+            if (!isCaptureFileMode && !IsCameraAvailable(GetCaptureCameraId()))
+            {
+                Debug.LogWarning("PipelineManager: ShadowMesh camera was not found; capture process will not start.");
+                stateManager.OnShadowMeshLoadFailed("ShadowMesh camera was not found.");
+                return;
+            }
+
+            StartCoroutine(StartSf3dServerRoutine());
+            StartCoroutine(WarmupLabelerWhenSf3dReady());
+
+            if (isCaptureFileMode)
             {
                 meshFileLoader?.LoadExistingMesh();
             }
@@ -171,11 +189,20 @@ namespace ShadowPrototype
             }
 
             handTrackingStartedForCurrentCapture = true;
-            LaunchHandTrackingProcess();
+            bool shouldStartHandTracking = IsCameraAvailable(GetHandTrackingCameraId());
 
-            if (mediaPipeReceiver != null)
+            if (shouldStartHandTracking)
             {
-                mediaPipeReceiver.StartReceiver();
+                LaunchHandTrackingProcess();
+
+                if (mediaPipeReceiver != null)
+                {
+                    mediaPipeReceiver.StartReceiver();
+                }
+            }
+            else
+            {
+                Debug.Log("PipelineManager: MediaPipe camera was not found; skipping hand tracking.");
             }
 
             stateManager?.OnMediaPipeTrackingStarted();
@@ -201,6 +228,18 @@ namespace ShadowPrototype
 
         private void RequestShadowSilhouetteExport()
         {
+            if (sf3dClient != null && sf3dClient.IsClassifying)
+            {
+                ShowExportStatus("Silhouette classification is still running.");
+                return;
+            }
+
+            if (sf3dClient != null && !sf3dClient.HasSilhouetteLabel)
+            {
+                ShowExportStatus("Silhouette classification is not ready.");
+                return;
+            }
+
             if (sf3dClient != null &&
                 sf3dClient.IsRunning)
             {
@@ -302,6 +341,21 @@ namespace ShadowPrototype
         private void HandleSilhouetteClassified(string label)
         {
             Debug.Log($"PipelineManager: silhouette label ready for texture prompt: {label}");
+            sf3dClient?.WarmupTexturePipeline();
+        }
+
+        private IEnumerator WarmupLabelerWhenSf3dReady()
+        {
+            if (sf3dClient == null)
+            {
+                yield break;
+            }
+
+            yield return EnsureSf3dServerReady();
+            if (sf3dServerReady)
+            {
+                sf3dClient.WarmupLabeler();
+            }
         }
 
         private void LaunchCaptureProcess()
@@ -317,6 +371,51 @@ namespace ShadowPrototype
             }
 
             return captureArguments.IndexOf("--mode file", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private int GetCaptureCameraId()
+        {
+            return ParseCameraId(captureArguments, 0);
+        }
+
+        private int GetHandTrackingCameraId()
+        {
+            return ParseCameraId(handTrackingArguments, 1);
+        }
+
+        private static int ParseCameraId(string arguments, int fallback)
+        {
+            if (string.IsNullOrWhiteSpace(arguments))
+            {
+                return fallback;
+            }
+
+            string[] tokens = arguments.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int index = 0; index < tokens.Length; index++)
+            {
+                string token = tokens[index];
+                if (token.Equals("--camera", StringComparison.OrdinalIgnoreCase) &&
+                    index + 1 < tokens.Length &&
+                    int.TryParse(tokens[index + 1], out int spacedValue))
+                {
+                    return spacedValue;
+                }
+
+                const string cameraPrefix = "--camera=";
+                if (token.StartsWith(cameraPrefix, StringComparison.OrdinalIgnoreCase) &&
+                    int.TryParse(token.Substring(cameraPrefix.Length), out int assignedValue))
+                {
+                    return assignedValue;
+                }
+            }
+
+            return fallback;
+        }
+
+        private static bool IsCameraAvailable(int cameraId)
+        {
+            WebCamDevice[] devices = WebCamTexture.devices;
+            return cameraId >= 0 && cameraId < devices.Length;
         }
 
         private void LaunchHandTrackingProcess()
@@ -490,22 +589,50 @@ namespace ShadowPrototype
             var startInfo = new ProcessStartInfo
             {
                 FileName = "powershell.exe",
-                Arguments = $"-NoExit -ExecutionPolicy Bypass -Command {EscapeWindowsArgument(command)}",
+                Arguments = $"-NoExit -NoProfile -ExecutionPolicy Bypass -Command {EscapeWindowsArgument(command)}",
                 UseShellExecute = true,
                 WorkingDirectory = workingDirectory,
                 CreateNoWindow = false,
                 WindowStyle = ProcessWindowStyle.Normal
             };
 
-            using var process = new Process { StartInfo = startInfo };
+            var process = new Process { StartInfo = startInfo };
             try
             {
                 process.Start();
+                launchedProcesses.Add(process);
                 process.WaitForExit(1000);
             }
             catch (Exception exception)
             {
                 Debug.LogWarning($"{processLabel}: Windows terminal launch failed: {exception.Message}");
+                process.Dispose();
+            }
+        }
+
+        private void StopLaunchedProcesses()
+        {
+            for (int index = launchedProcesses.Count - 1; index >= 0; index--)
+            {
+                Process process = launchedProcesses[index];
+                launchedProcesses.RemoveAt(index);
+
+                try
+                {
+                    if (process == null || process.HasExited)
+                    {
+                        process?.Dispose();
+                        continue;
+                    }
+
+                    process.Kill();
+                    process.Dispose();
+                }
+                catch (Exception exception) when (exception is InvalidOperationException || exception is System.ComponentModel.Win32Exception)
+                {
+                    Debug.LogWarning($"PipelineManager: launched process cleanup failed: {exception.Message}");
+                    process.Dispose();
+                }
             }
         }
 

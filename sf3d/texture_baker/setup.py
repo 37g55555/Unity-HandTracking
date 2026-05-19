@@ -17,59 +17,34 @@ library_name = "texture_baker"
 def get_extensions():
     debug_mode = os.getenv("DEBUG", "0") == "1"
     use_cuda = os.getenv("USE_CUDA", "1" if torch.cuda.is_available() else "0") == "1"
-    use_metal = (
-        os.getenv("USE_METAL", "1" if torch.backends.mps.is_available() else "0") == "1"
-    )
-    use_native_arch = os.getenv("USE_NATIVE_ARCH", "1") == "1"
     if debug_mode:
         print("Compiling in debug mode")
 
+    if platform.system() != "Windows":
+        raise RuntimeError("texture_baker build is configured for Windows only.")
+
     use_cuda = use_cuda and CUDA_HOME is not None
     extension = CUDAExtension if use_cuda else CppExtension
-    is_windows = platform.system() == "Windows"
-
-    is_hip_extension = True if ((os.environ.get('ROCM_HOME') is not None) and (torch.version.hip is not None)) else False
 
     extra_link_args = []
-    if is_windows:
-        extra_compile_args = {
-            "cxx": [
-                "/O2" if not debug_mode else "/Od",
-                "/std:c++17",
-                "/Zc:preprocessor",
-            ],
-            "nvcc": [
-                "-O3" if not debug_mode else "-O0",
-                "-allow-unsupported-compiler",
-                "-Xcompiler=/Zc:preprocessor",
-            ],
-        }
-    else:
-        extra_compile_args = {
-            "cxx": [
-                "-O3" if not debug_mode else "-O0",
-                "-fdiagnostics-color=always",
-                "-fopenmp",
-            ]
-            + ["-march=native"]
-            if use_native_arch
-            else [],
-            "nvcc": [
-                "-O3" if not debug_mode else "-O0",
-            ],
-        }
+    extra_compile_args = {
+        "cxx": [
+            "/O2" if not debug_mode else "/Od",
+            "/std:c++17",
+            "/Zc:preprocessor",
+        ],
+        "nvcc": [
+            "-O3" if not debug_mode else "-O0",
+            "-allow-unsupported-compiler",
+            "-Xcompiler=/Zc:preprocessor",
+        ],
+    }
     if debug_mode:
-        extra_compile_args["cxx"].append("-g")
-        if is_windows:
-            extra_compile_args["cxx"].append("/Z7")
-            extra_compile_args["cxx"].append("/Od")
-            extra_link_args.extend(["/DEBUG"])
-        if not is_windows:
-            extra_compile_args["cxx"].append("-UNDEBUG")
+        extra_compile_args["cxx"].append("/Z7")
+        extra_compile_args["cxx"].append("/Od")
+        extra_link_args.extend(["/DEBUG"])
         extra_compile_args["nvcc"].append("-UNDEBUG")
         extra_compile_args["nvcc"].append("-g")
-        if not is_windows:
-            extra_link_args.extend(["-O0", "-g"])
 
     define_macros = []
     extensions = []
@@ -94,30 +69,24 @@ def get_extensions():
             os.path.join(this_dir, library_name, "csrc", "**", "*.cu"), recursive=True
         )
 
-        if not is_hip_extension:
-            libraries += ["cudart", "c10_cuda"]
-            include_dirs += [
-                os.path.join(CUDA_HOME, "Library", "include"),
-                os.path.join(CUDA_HOME, "Library", "include", "targets", "x64"),
-                os.path.join(CUDA_HOME, "Library", "include", "targets", "x64", "cccl"),
-            ]
-            library_dirs += [
-                os.path.join(CUDA_HOME, "lib", "x64"),
-                os.path.join(CUDA_HOME, "lib64"),
-                os.path.join(CUDA_HOME, "lib"),
-                os.path.join(CUDA_HOME, "libs"),
-                os.path.join(CUDA_HOME, "bin"),
-            ]
-
-    if use_metal:
-        define_macros += [
-            ("WITH_MPS", None),
-        ]
-        sources += glob.glob(
-            os.path.join(this_dir, library_name, "csrc", "**", "*.mm"), recursive=True
+        cuda_include_root = (
+            os.path.join(CUDA_HOME, "Library", "include")
+            if os.path.isdir(os.path.join(CUDA_HOME, "Library", "include"))
+            else os.path.join(CUDA_HOME, "include")
         )
-        extra_compile_args.update({"cxx": ["-O3", "-arch", "arm64", "-mmacosx-version-min=10.15"]})
-        extra_link_args += ["-arch", "arm64"]
+        libraries += ["cudart", "c10_cuda"]
+        include_dirs += [
+            cuda_include_root,
+            os.path.join(cuda_include_root, "targets", "x64"),
+            os.path.join(cuda_include_root, "targets", "x64", "cccl"),
+        ]
+        library_dirs += [
+            os.path.join(CUDA_HOME, "lib", "x64"),
+            os.path.join(CUDA_HOME, "lib64"),
+            os.path.join(CUDA_HOME, "lib"),
+            os.path.join(CUDA_HOME, "libs"),
+            os.path.join(CUDA_HOME, "bin"),
+        ]
 
     extensions.append(
         extension(
@@ -138,10 +107,6 @@ def get_extensions():
         )
     )
 
-    if not is_windows:
-        for ext in extensions:
-            ext.libraries = ["cudart_static" if x == "cudart" else x for x in ext.libraries]
-
     print(extensions)
 
     return extensions
@@ -155,7 +120,7 @@ setup(
     ext_modules=get_extensions(),
     install_requires=[],
     package_data={
-        library_name: [os.path.join("csrc", "*.h"), os.path.join("csrc", "*.metal")],
+        library_name: [os.path.join("csrc", "*.h")],
     },
     description="Small texture baker which rasterizes barycentric coordinates to a tensor.",
     url="https://github.com/Stability-AI/texture_baker",

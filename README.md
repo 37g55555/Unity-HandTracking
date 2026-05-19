@@ -1,18 +1,52 @@
 ## Setup
 
-기준 실행 환경: Windows PC 1대, 웹캠 2대
+기준 실행 환경: Windows PC 1대, 웹캠 2대, Visual Studio 2022 C++ Build Tools
 
 ```powershell
-# 저장소 클론
 git clone https://github.com/37g55555/Unity-HandTracking.git
 cd Unity-HandTracking
 
-# Conda 가상환경 생성
 conda env create -f environment.yml
 conda activate artifact
 
+# Visual Studio 2022 C++ Build Tools
+if exist "%CONDA_PREFIX%\etc\conda\activate.d\vs2017_compiler_vars.bat" ren "%CONDA_PREFIX%\etc\conda\activate.d\vs2017_compiler_vars.bat" vs2017_compiler_vars.bat.disabled
+if exist "%CONDA_PREFIX%\etc\conda\activate.d\vs2017_get_vsinstall_dir.bat" ren "%CONDA_PREFIX%\etc\conda\activate.d\vs2017_get_vsinstall_dir.bat" vs2017_get_vsinstall_dir.bat.disabled
+conda activate artifact
+call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+where cl
+
+#Build SF3D local extension
+python -m pip install --no-build-isolation ./sf3d/texture_baker ./sf3d/uv_unwrapper
+
 # Hugging Face
-huggingface-cli login
+hf auth login
+
+hf download Qwen/Qwen2.5-VL-3B-Instruct
+hf download stabilityai/stable-fast-3d
+hf download lllyasviel/sd-controlnet-canny
+hf download stable-diffusion-v1-5/stable-diffusion-v1-5
+```
+
+### 모델 파일 확인
+
+Qwen VLM 모델은 `sf3d/app.py` 실행 중 Hugging Face/transformers를 통해 로드된다.
+SF3D와 ControlNet 모델은 `sf3d/app.py` 실행 중 Hugging Face/diffusers를 통해 로드된다.
+
+### Hugging Face 인증
+
+실행 전 가상환경에서 Hugging Face 로그인을 완료한다.
+토큰은 Hugging Face의 Settings > Access Tokens에서 Read 권한으로 생성한다.
+```text
+https://huggingface.co/settings/tokens
+```
+
+아래 모델 페이지에서 필요한 경우 접근 약관을 수락한다.
+```text
+https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct
+https://huggingface.co/stabilityai/stable-fast-3d
+https://huggingface.co/lllyasviel/sd-controlnet-canny
+https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5
 ```
 
 
@@ -45,27 +79,6 @@ Unity-HandTracking
 ```
 `output\sf3d`, `output\recordings` 폴더는 실행 시 자동으로 생성된다.
 
-### 모델 파일 확인
-
-Qwen VLM 모델은 `sf3d/app.py` 실행 중 Hugging Face/transformers를 통해 로드된다.  
-SF3D와 ControlNet 모델은 `sf3d/app.py` 실행 중 Hugging Face/diffusers를 통해 로드된다.
-
-### Hugging Face 인증
-
-실행 전 가상환경에서 Hugging Face 로그인을 완료한다.  
-토큰은 Hugging Face의 Settings > Access Tokens에서 Read 권한으로 생성한다.
-```text
-https://huggingface.co/settings/tokens
-```
-
-아래 모델 페이지에서 필요한 경우 접근 약관을 수락한다.
-```text
-https://huggingface.co/stabilityai/stable-fast-3d
-https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct
-https://huggingface.co/lllyasviel/sd-controlnet-canny
-https://huggingface.co/runwayml/stable-diffusion-v1-5
-```
-
 ### Unity 프로젝트 열기
 
 Unity Hub에서 `UnityProject` 폴더를 프로젝트로 연다.
@@ -97,7 +110,7 @@ Unity Hub에서 `UnityProject` 폴더를 프로젝트로 연다.
 | `MediaPipeMeshDeformationInput.cs` | MediaPipe 손 좌표를 그림자 메쉬 변형 입력으로 변환. |
 | `MediaPipeInteractionVisualizer.cs` | 손 입력, hover, grab 상태를 시각화. |
 | `SF3DGenerationClient.cs` | SF3D FastAPI 서버에 texture/model 생성 요청을 보내고 GLB 결과를 저장. |
-| `HologramDisplayManager.cs` | 홀로그램 출력 씬에서 표시 관련 제어를 담당. |
+| `HologramSceneManager.cs` | hologramOut 씬에서 Enter 입력 시 Main 씬으로 돌아감. |
 | `HologramModelRecorder.cs` | 생성된 GLB를 불러오고 회전/녹화 출력을 담당. |
 
 ### Python Scripts
@@ -164,7 +177,7 @@ D:\Unity-HandTracking
 | `MediaPipeTracking` | Unity Main 씬 | Enter | 관객이 그림자를 변형하는 동안 Qwen 실루엣 분류를 백그라운드로 진행하고, Enter 입력 시 메쉬 추출 | `MeshExtracting` |
 | `MeshExtracting` | Unity Main 씬 | - | 변형된 그림자 PNG 추출 | `Reconstructing3D` |
 | `Reconstructing3D` | Unity Main 씬 | - | SF3D 3D 재구성 진행 | `HologramOutput` |
-| `HologramOutput` | Unity hologramOut 씬 | - | GLB 생성 완료 및 홀로그램 출력 | `Idle` |
+| `HologramOutput` | Unity hologramOut 씬 | Enter | GLB 생성 완료 및 홀로그램 출력, Enter 입력 시 Main 씬으로 복귀 | `Idle` |
 
 
 ## Outputs
@@ -195,7 +208,7 @@ output\sf3d
 | --- | --- |
 | `deformed_shadow.png` | Unity에서 추출한 변형 그림자 실루엣 |
 | `last_texture.png` | ControlNet으로 생성된 texture preview |
-| `shadow_asteroid_*.glb` | SF3D로 생성된 3D 모델 |
+| `shadow_model_*.glb` | SF3D로 생성된 3D 모델 |
 
 ### Hologram Recording 출력
 
@@ -219,9 +232,7 @@ output\recordings
 - ShadowMesh용 카메라 번호: `captureArguments`의 `--camera 0`
 - MediaPipe용 카메라 번호: `handTrackingArguments`의 `--camera 1`
 - 두 카메라가 반대로 잡히면 두 값을 서로 바꾼다.
-
 예:
-
 ```text
 captureArguments: --mode live --camera 1
 handTrackingArguments: --camera 0

@@ -310,6 +310,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9821d2f4fb2932e488f67aeac3579b1b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  currentState: 0
+  currentStateName: Idle
 --- !u!114 &775207381
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -414,7 +416,7 @@ MonoBehaviour:
   textureEndpoint: /generate-texture
   modelEndpoint: /generate-3d
   outputDirectoryRelative: ../output/sf3d
-  generatedGlbFilePrefix: shadow_asteroid
+  generatedGlbFilePrefix: shadow_model
   texturePreviewFileName: last_texture.png
   targetSceneAfterGeneration: hologramOut
 --- !u!114 &775207388

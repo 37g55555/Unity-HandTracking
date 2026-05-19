@@ -14,12 +14,9 @@ def get_device():
     if os.environ.get("SF3D_USE_CPU", "0") == "1":
         return "cpu"
 
-    device = "cpu"
     if torch.cuda.is_available():
-        device = "cuda"
-    elif torch.backends.mps.is_available():
-        device = "mps"
-    return device
+        return "cuda"
+    return "cpu"
 
 
 def create_intrinsic_from_fov_deg(fov_deg: float, cond_height: int, cond_width: int):

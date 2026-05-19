@@ -235,12 +235,8 @@ class Unwrapper(nn.Module):
             # t_nrm_idx is always the same as t_pos_idx
             vn_idx[i] = triangle_idxs[:, i]
 
-        if(torch.backends.mps.is_available()):
-            tangents = torch.zeros_like(vertex_normals).contiguous()
-            tansum = torch.zeros_like(vertex_normals).contiguous()
-        else:
-            tangents = torch.zeros_like(vertex_normals)
-            tansum = torch.zeros_like(vertex_normals)
+        tangents = torch.zeros_like(vertex_normals)
+        tansum = torch.zeros_like(vertex_normals)
 
         # Compute tangent space for each triangle
         duv1 = tex[1] - tex[0]
