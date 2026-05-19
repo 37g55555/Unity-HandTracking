@@ -410,6 +410,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   baseUrl: http://127.0.0.1:8000
+  classifyEndpoint: /classify-silhouette
   textureEndpoint: /generate-texture
   modelEndpoint: /generate-3d
   outputDirectoryRelative: ../output/sf3d

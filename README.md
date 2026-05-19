@@ -6,9 +6,13 @@
 # 저장소 클론
 git clone https://github.com/37g55555/Unity-HandTracking.git
 cd Unity-HandTracking
+
 # Conda 가상환경 생성
 conda env create -f environment.yml
 conda activate artifact
+
+# Hugging Face
+huggingface-cli login
 ```
 
 
@@ -30,6 +34,7 @@ Unity-HandTracking
 │  └─ MediaPipe.task
 ├─ sf3d
 │  ├─ app.py
+│  ├─ silhouette_labeler.py
 │  ├─ sf3d
 │  ├─ texture_baker
 │  └─ uv_unwrapper
@@ -40,14 +45,30 @@ Unity-HandTracking
 ```
 `output\sf3d`, `output\recordings` 폴더는 실행 시 자동으로 생성된다.
 
+### 모델 파일 확인
+
+Qwen VLM 모델은 `sf3d/app.py` 실행 중 Hugging Face/transformers를 통해 로드된다.  
+SF3D와 ControlNet 모델은 `sf3d/app.py` 실행 중 Hugging Face/diffusers를 통해 로드된다.
+
+### Hugging Face 인증
+
+실행 전 가상환경에서 Hugging Face 로그인을 완료한다.  
+토큰은 Hugging Face의 Settings > Access Tokens에서 Read 권한으로 생성한다.
+```text
+https://huggingface.co/settings/tokens
+```
+
+아래 모델 페이지에서 필요한 경우 접근 약관을 수락한다.
+```text
+https://huggingface.co/stabilityai/stable-fast-3d
+https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct
+https://huggingface.co/lllyasviel/sd-controlnet-canny
+https://huggingface.co/runwayml/stable-diffusion-v1-5
+```
+
 ### Unity 프로젝트 열기
 
 Unity Hub에서 `UnityProject` 폴더를 프로젝트로 연다.
-
-### 모델 파일 확인
-
-SF3D와 ControlNet 모델은 `sf3d/app.py` 실행 중 Hugging Face/diffusers를 통해 로드된다. 
-필요한 모델 접근 권한이나 Hugging Face 로그인이 필요한 경우, 먼저 해당 가상환경에서 인증을 마쳐야 한다.
 
 
 ## Execution Flow
@@ -85,7 +106,8 @@ SF3D와 ControlNet 모델은 `sf3d/app.py` 실행 중 Hugging Face/diffusers를 
 | --- | --- |
 | `python/ShadowMesh.py` | 웹캠으로 배경/그림자를 캡처해 2D shadow mesh를 생성. |
 | `python/MediaPipeTracking.py` | 웹캠 손 추적 결과를 UDP로 Unity에 전송. |
-| `sf3d/app.py` | FastAPI 서버. ControlNet 기반 texture 생성과 SF3D 기반 GLB 생성을 담당. |
+| `sf3d/app.py` | FastAPI 서버. Qwen 기반 실루엣 분류, ControlNet 기반 texture 생성, SF3D 기반 GLB 생성을 담당. |
+| `sf3d/silhouette_labeler.py` | `Qwen/Qwen2.5-VL-3B-Instruct`로 그림자 실루엣과 가장 닮은 동물/사물 이름을 한 단어로 추론. |
 
 
 ## Unity Inspector Settings
@@ -139,7 +161,7 @@ D:\Unity-HandTracking
 | --- | --- | --- | --- | --- |
 | `Idle` | ShadowMesh 웹캠 창 | Enter | 배경 캡처 | `ShadowCapturing` |
 | `ShadowCapturing` | ShadowMesh 웹캠 창 | Enter | 그림자 캡처 | `MediaPipeTracking` |
-| `MediaPipeTracking` | Unity Main 씬 | Enter | 그림자 메쉬 변형을 종료하고 메쉬 추출 | `MeshExtracting` |
+| `MediaPipeTracking` | Unity Main 씬 | Enter | 관객이 그림자를 변형하는 동안 Qwen 실루엣 분류를 백그라운드로 진행하고, Enter 입력 시 메쉬 추출 | `MeshExtracting` |
 | `MeshExtracting` | Unity Main 씬 | - | 변형된 그림자 PNG 추출 | `Reconstructing3D` |
 | `Reconstructing3D` | Unity Main 씬 | - | SF3D 3D 재구성 진행 | `HologramOutput` |
 | `HologramOutput` | Unity hologramOut 씬 | - | GLB 생성 완료 및 홀로그램 출력 | `Idle` |

@@ -120,8 +120,6 @@ namespace ShadowPrototype
                 stateManager.OnShadowCaptureStarted();
                 LaunchCaptureProcess();
             }
-
-            StartHandTrackingIfNeeded();
         }
 
         private void SubscribeEvents()
@@ -136,6 +134,8 @@ namespace ShadowPrototype
             {
                 sf3dClient.GlbGenerated -= HandleGlbGenerated;
                 sf3dClient.GlbGenerated += HandleGlbGenerated;
+                sf3dClient.SilhouetteClassified -= HandleSilhouetteClassified;
+                sf3dClient.SilhouetteClassified += HandleSilhouetteClassified;
             }
         }
 
@@ -149,6 +149,7 @@ namespace ShadowPrototype
             if (sf3dClient != null)
             {
                 sf3dClient.GlbGenerated -= HandleGlbGenerated;
+                sf3dClient.SilhouetteClassified -= HandleSilhouetteClassified;
             }
         }
 
@@ -178,6 +179,24 @@ namespace ShadowPrototype
             }
 
             stateManager?.OnMediaPipeTrackingStarted();
+            StartCoroutine(ClassifySilhouetteWhenSf3dReady());
+        }
+
+        private IEnumerator ClassifySilhouetteWhenSf3dReady()
+        {
+            if (sf3dClient == null)
+            {
+                yield break;
+            }
+
+            yield return EnsureSf3dServerReady();
+            if (!sf3dServerReady)
+            {
+                yield break;
+            }
+
+            string contourPath = Path.Combine(captureWorkingDirectory, "output", "shadowmesh", "shadow_contour.png");
+            sf3dClient.ClassifySilhouette(contourPath);
         }
 
         private void RequestShadowSilhouetteExport()
@@ -278,6 +297,11 @@ namespace ShadowPrototype
         private void HandleGlbGenerated(string glbPath)
         {
             stateManager?.OnHologramOutputStarted();
+        }
+
+        private void HandleSilhouetteClassified(string label)
+        {
+            Debug.Log($"PipelineManager: silhouette label ready for texture prompt: {label}");
         }
 
         private void LaunchCaptureProcess()

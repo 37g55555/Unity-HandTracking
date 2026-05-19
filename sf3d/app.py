@@ -8,12 +8,13 @@ import cv2
 import numpy as np
 import rembg
 import torch
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, ImageEnhance
 
 from sf3d.system import SF3D
 from sf3d.utils import get_device, remove_background, resize_foreground
+from silhouette_labeler import infer_silhouette_label, unload_labeler
 
 
 app = FastAPI(
@@ -156,6 +157,19 @@ def unload_texture_pipeline():
     clear_memory()
 
 
+def build_texture_prompt(label: str) -> str:
+    clean_label = label.strip().lower() if label else "object"
+    return (
+        f"A whimsical miniature {clean_label}-inspired rocky planet texture "
+        "inspired by a poetic children's storybook, "
+        "soft watercolor and gouache, visible stone surface, subtle craters, gentle rock grain, "
+        "rounded asteroid planet, warm beige stone, dusty rose, muted teal, pale yellow, "
+        "soft gradient color bands, hand-painted brush strokes, delicate star speckles, "
+        "charming but still planet-like, centered single object inside the provided silhouette, "
+        "transparent background, 3D asset texture"
+    )
+
+
 def unload_sf3d_model():
     global model
     if model is not None:
@@ -238,8 +252,26 @@ async def health():
     }
 
 
+@app.post("/classify-silhouette")
+async def classify_silhouette(file: UploadFile = File(...)):
+    print(f"Received silhouette classification request: {file.filename}", flush=True)
+
+    image_bytes = await file.read()
+    image = Image.open(io.BytesIO(image_bytes))
+    silhouette_mask = extract_silhouette_mask(image)
+
+    try:
+        label = infer_silhouette_label(silhouette_mask.convert("RGB"), device)
+    finally:
+        unload_labeler()
+        clear_memory()
+
+    print(f"Silhouette label: {label}", flush=True)
+    return {"label": label}
+
+
 @app.post("/generate-texture")
-async def generate_texture(file: UploadFile = File(...)):
+async def generate_texture(file: UploadFile = File(...), label: str = Form("object")):
     print(f"Received texture request: {file.filename}", flush=True)
 
     image_bytes = await file.read()
@@ -249,14 +281,7 @@ async def generate_texture(file: UploadFile = File(...)):
     silhouette_mask.save("temp_outputs/last_silhouette_mask.png", format="PNG")
     control_image.save("temp_outputs/last_control_edges.png", format="PNG")
 
-    prompt = (
-        "A whimsical miniature rocky planet texture inspired by a poetic children's storybook, "
-        "soft watercolor and gouache, visible stone surface, subtle craters, gentle rock grain, "
-        "rounded asteroid planet, warm beige stone, dusty rose, muted teal, pale yellow, "
-        "soft gradient color bands, hand-painted brush strokes, delicate star speckles, "
-        "charming but still planet-like, centered single object inside the provided silhouette, "
-        "transparent background, 3D asset texture"
-    )
+    prompt = build_texture_prompt(label)
     negative_prompt = (
         "low quality, worst quality, text, watermark, extra objects, duplicate object, "
         "background scenery, dark, dull, muddy colors, black texture, monochrome, gloomy, horror, "
