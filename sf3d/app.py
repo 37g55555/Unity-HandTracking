@@ -1,3 +1,4 @@
+import asyncio
 import gc
 import io
 import os
@@ -35,6 +36,22 @@ sf3d_min_depth_ratio = float(os.getenv("SF3D_MIN_DEPTH_RATIO", "0.70"))
 sf3d_max_depth_scale = float(os.getenv("SF3D_MAX_DEPTH_SCALE", "6.0"))
 
 os.makedirs("temp_outputs", exist_ok=True)
+
+
+@app.on_event("startup")
+async def warmup_labeler_after_startup():
+    asyncio.create_task(warmup_labeler_in_background())
+
+
+async def warmup_labeler_in_background():
+    print("Starting Qwen labeler warmup after server startup.", flush=True)
+    try:
+        await asyncio.to_thread(get_labeler, device)
+    except Exception as exception:
+        print(f"Qwen labeler warmup failed: {exception}", flush=True)
+        return
+
+    print("Qwen labeler warmup complete.", flush=True)
 
 
 def extract_silhouette_mask(image: Image.Image) -> Image.Image:

@@ -1,4 +1,5 @@
 import re
+import threading
 
 import torch
 from PIL import Image
@@ -11,22 +12,24 @@ FALLBACK_LABEL = "object"
 
 model = None
 processor = None
+labeler_lock = threading.Lock()
 
 
 def get_labeler(device: str):
     global model, processor
 
-    if model is None or processor is None:
-        dtype = torch.float16 if device == "cuda" else torch.float32
-        processor = AutoProcessor.from_pretrained(MODEL_ID)
-        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            MODEL_ID,
-            torch_dtype=dtype,
-            device_map="auto" if device == "cuda" else None,
-        )
-        if device != "cuda":
-            model.to(device)
-        model.eval()
+    with labeler_lock:
+        if model is None or processor is None:
+            dtype = torch.float16 if device == "cuda" else torch.float32
+            processor = AutoProcessor.from_pretrained(MODEL_ID)
+            model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                MODEL_ID,
+                torch_dtype=dtype,
+                device_map="auto" if device == "cuda" else None,
+            )
+            if device != "cuda":
+                model.to(device)
+            model.eval()
 
     return model, processor
 
@@ -34,11 +37,12 @@ def get_labeler(device: str):
 def unload_labeler():
     global model, processor
 
-    if model is not None:
-        del model
-        model = None
+    with labeler_lock:
+        if model is not None:
+            del model
+            model = None
 
-    processor = None
+        processor = None
 
     if torch.cuda.is_available():
         try:

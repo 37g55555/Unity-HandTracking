@@ -9,5 +9,6 @@ UnityProject/*.csproj
 UnityProject/*.sln
 output/sf3d/
 output/recordings/
+sf3d/temp_outputs/
 __pycache__/
 *.pyc

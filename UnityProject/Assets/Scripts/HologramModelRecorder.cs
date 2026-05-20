@@ -4,14 +4,10 @@ using UnityEditor.Recorder;
 using UnityEditor.Recorder.Encoder;
 using UnityEditor.Recorder.Input;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 public class HologramModelRecorder : MonoBehaviour
 {
     private const float RecordingDurationSeconds = 15f;
-    private const bool ForceLightingOnStart = true;
-    private const float MinimumDirectionalLightIntensity = 2f;
-    private static readonly Color FallbackAmbientLight = new Color(0.42f, 0.42f, 0.42f, 1f);
 
     [Header("Paths")]
     [SerializeField] private string inputDirectory = "D:/Unity-HandTracking/output/sf3d";
@@ -27,11 +23,6 @@ public class HologramModelRecorder : MonoBehaviour
 
     private void Start()
     {
-        if (ForceLightingOnStart)
-        {
-            ApplyHologramLighting();
-        }
-
         mainCamera = Camera.main;
         if (mainCamera == null)
         {
@@ -64,11 +55,6 @@ public class HologramModelRecorder : MonoBehaviour
 
     private void StartRecording()
     {
-        if (ForceLightingOnStart)
-        {
-            ApplyHologramLighting();
-        }
-
         pivotTarget = CreateCenteredPivot(loadedModel);
         FitCameraToObject(mainCamera, pivotTarget);
 
@@ -171,31 +157,6 @@ public class HologramModelRecorder : MonoBehaviour
         await gltf.InstantiateMainSceneAsync(loadedModel.transform);
         CenterAndNormalize(loadedModel);
         StartRecording();
-    }
-
-    private static void ApplyHologramLighting()
-    {
-        Light directional = null;
-        foreach (Light light in FindObjectsOfType<Light>())
-        {
-            if (light.type == LightType.Directional)
-            {
-                directional = light;
-                break;
-            }
-        }
-
-        if (directional != null)
-        {
-            directional.enabled = true;
-            directional.intensity = Mathf.Max(directional.intensity, MinimumDirectionalLightIntensity);
-            RenderSettings.sun = directional;
-        }
-
-        RenderSettings.ambientMode = AmbientMode.Flat;
-        RenderSettings.ambientLight = FallbackAmbientLight;
-        RenderSettings.ambientIntensity = 1f;
-        RenderSettings.reflectionIntensity = Mathf.Max(RenderSettings.reflectionIntensity, 1f);
     }
 
     private static GameObject CreateCenteredPivot(GameObject model)

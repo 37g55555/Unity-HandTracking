@@ -16,9 +16,8 @@ namespace ShadowPrototype
         private const string DefaultHandTrackingCameraArguments = "--camera 1";
         private const string DefaultSf3dServerArguments = "-m uvicorn app:app --host 127.0.0.1 --port 8000";
         private const int ExportResolution = 1024;
-        private const float ExportStatusDuration = 2.0f;
         private const float Sf3dHealthCheckIntervalSeconds = 1.0f;
-        private const float Sf3dStartupTimeoutSeconds = 30.0f;
+        private const float Sf3dStartupTimeoutSeconds = 60.0f;
         private static readonly Color ExportFillColor = Color.black;
         private static readonly Color ExportBackgroundColor = new Color(0f, 0f, 0f, 0f);
 
@@ -42,10 +41,9 @@ namespace ShadowPrototype
 
         private bool handTrackingStartedForCurrentCapture;
         private DateTime flowStartedUtc;
-        private string exportStatusMessage = string.Empty;
-        private float exportStatusUntil;
         private bool sf3dServerReady;
         private bool sf3dServerStarting;
+        private bool sf3dServerReadyLogged;
         private readonly List<Process> launchedProcesses = new List<Process>();
 
         private void Start()
@@ -79,19 +77,6 @@ namespace ShadowPrototype
             }
         }
 
-        private void OnGUI()
-        {
-            if (string.IsNullOrEmpty(exportStatusMessage) || Time.unscaledTime > exportStatusUntil)
-            {
-                return;
-            }
-
-            const float width = 520.0f;
-            const float height = 46.0f;
-            Rect rect = new Rect((Screen.width - width) * 0.5f, 24.0f, width, height);
-            GUI.Box(rect, exportStatusMessage);
-        }
-
         private void OnDisable()
         {
             UnsubscribeEvents();
@@ -114,8 +99,6 @@ namespace ShadowPrototype
 
             stateManager.ResetToIdle();
             handTrackingStartedForCurrentCapture = false;
-            exportStatusMessage = string.Empty;
-            exportStatusUntil = 0.0f;
             sf3dClient?.ResetSilhouetteLabel();
 
             bool isCaptureFileMode = IsCaptureFileMode();
@@ -491,7 +474,6 @@ namespace ShadowPrototype
                 yield return CheckSf3dServerReady();
                 if (sf3dServerReady)
                 {
-                    Debug.Log("PipelineManager: SF3D server is ready.");
                     yield break;
                 }
 
@@ -509,6 +491,21 @@ namespace ShadowPrototype
             yield return request.SendWebRequest();
 
             sf3dServerReady = request.result == UnityWebRequest.Result.Success;
+            if (sf3dServerReady)
+            {
+                LogSf3dServerReadyOnce();
+            }
+        }
+
+        private void LogSf3dServerReadyOnce()
+        {
+            if (sf3dServerReadyLogged)
+            {
+                return;
+            }
+
+            sf3dServerReadyLogged = true;
+            Debug.Log("PipelineManager: SF3D server is ready.");
         }
 
         private void LaunchPythonScriptInTerminal(
@@ -658,8 +655,7 @@ namespace ShadowPrototype
 
         private void ShowExportStatus(string message)
         {
-            exportStatusMessage = message;
-            exportStatusUntil = Time.unscaledTime + ExportStatusDuration;
+            Debug.Log($"PipelineManager: {message}");
         }
 
         private string ResolvePythonPath(string workingDirectory)
