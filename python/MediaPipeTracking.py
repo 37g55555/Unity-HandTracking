@@ -9,11 +9,11 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 
-CAMERA_WIDTH = 320
-CAMERA_HEIGHT = 240
-CAMERA_FPS = 10
-PACKET_WIDTH = 640
-PACKET_HEIGHT = 480
+CAMERA_WIDTH = 1920
+CAMERA_HEIGHT = 1080
+CAMERA_FPS = 30
+PACKET_WIDTH = 1920
+PACKET_HEIGHT = 1080
 UDP_HOST = "127.0.0.1"
 UDP_PORT = 5053
 MODEL_PATH = Path(__file__).resolve().parent / "MediaPipe.task"

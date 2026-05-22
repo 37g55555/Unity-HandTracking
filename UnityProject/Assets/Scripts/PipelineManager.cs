@@ -44,7 +44,7 @@ namespace ShadowPrototype
         private bool sf3dServerReady;
         private bool sf3dServerStarting;
         private bool sf3dServerReadyLogged;
-        private readonly List<Process> launchedProcesses = new List<Process>();
+        private readonly List<LaunchedProcess> launchedProcesses = new List<LaunchedProcess>();
 
         private void Start()
         {
@@ -86,6 +86,11 @@ namespace ShadowPrototype
         private void OnDestroy()
         {
             UnsubscribeEvents();
+            StopLaunchedProcesses();
+        }
+
+        private void OnApplicationQuit()
+        {
             StopLaunchedProcesses();
         }
 
@@ -236,6 +241,7 @@ namespace ShadowPrototype
         private void ExportCurrentShadowSilhouette()
         {
             stateManager?.OnMeshExtractionStarted();
+            StopHandTrackingProcess();
 
             if (shadowMeshDeformer == null || !shadowMeshDeformer.HasMesh)
             {
@@ -597,7 +603,7 @@ namespace ShadowPrototype
             try
             {
                 process.Start();
-                launchedProcesses.Add(process);
+                launchedProcesses.Add(new LaunchedProcess(processLabel, process));
                 process.WaitForExit(1000);
             }
             catch (Exception exception)
@@ -607,12 +613,30 @@ namespace ShadowPrototype
             }
         }
 
+        private void StopHandTrackingProcess()
+        {
+            mediaPipeReceiver?.StopReceiver();
+            StopLaunchedProcesses("HandTracking");
+        }
+
         private void StopLaunchedProcesses()
+        {
+            StopLaunchedProcesses(null);
+        }
+
+        private void StopLaunchedProcesses(string processLabel)
         {
             for (int index = launchedProcesses.Count - 1; index >= 0; index--)
             {
-                Process process = launchedProcesses[index];
+                LaunchedProcess launchedProcess = launchedProcesses[index];
+                if (!string.IsNullOrEmpty(processLabel) &&
+                    !string.Equals(launchedProcess.Label, processLabel, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 launchedProcesses.RemoveAt(index);
+                Process process = launchedProcess.Process;
 
                 try
                 {
@@ -622,7 +646,7 @@ namespace ShadowPrototype
                         continue;
                     }
 
-                    process.Kill();
+                    KillProcessTree(process.Id);
                     process.Dispose();
                 }
                 catch (Exception exception) when (exception is InvalidOperationException || exception is System.ComponentModel.Win32Exception)
@@ -631,6 +655,32 @@ namespace ShadowPrototype
                     process.Dispose();
                 }
             }
+        }
+
+        private readonly struct LaunchedProcess
+        {
+            public LaunchedProcess(string label, Process process)
+            {
+                Label = label;
+                Process = process;
+            }
+
+            public string Label { get; }
+            public Process Process { get; }
+        }
+
+        private static void KillProcessTree(int processId)
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "taskkill.exe",
+                Arguments = $"/PID {processId} /T /F",
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using Process taskkill = Process.Start(startInfo);
+            taskkill?.WaitForExit(2000);
         }
 
         private string GetSilhouetteExportPath()

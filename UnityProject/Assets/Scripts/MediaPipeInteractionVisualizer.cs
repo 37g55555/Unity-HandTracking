@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace ShadowPrototype
@@ -8,27 +9,57 @@ namespace ShadowPrototype
         [SerializeField] private ShadowMeshDeformer targetMeshDeformer;
         [SerializeField] private Camera targetCamera;
 
-        private const float MarkerScaleMultiplier = 0.04f;
+        [Header("Hand Shadow")]
+        [SerializeField] private bool showHandShadow = true;
+        [SerializeField] private Color handShadowColor = new Color(0.42f, 0.42f, 0.42f, 0.48f);
+        [SerializeField] private float screenHandShadowDistance = 2.0f;
+        [SerializeField] private float screenHandShadowScale = 1.0f;
+        [SerializeField] private float handShadowFingerWidthScale = 0.055f;
+        [SerializeField] private Color handShadowOutlineColor = Color.white;
+        [SerializeField] private float handShadowOutlineScale = 1.08f;
+
+        private static readonly Color HoverColor = new Color(1.0f, 0.56f, 0.16f);
+        private static readonly Color PullColor = new Color(0.23f, 1.0f, 0.5f);
+
         private const float MinimumMarkerSize = 0.025f;
+        private const float FixedMarkerSize = 0.35f;
         private const int RingSegments = 48;
+        private const int JointCapSegments = 14;
+        private const float HandShadowSmoothingSpeed = 18.0f;
+        private const float MinimumHandShadowWidthLocal = 0.025f;
 
-        private Transform indexMarker;
-        private Transform thumbMarker;
-        private Transform grabMarker;
-        private Transform boundaryMarker;
-        private LineRenderer handLink;
-        private LineRenderer boundaryLink;
-        private LineRenderer radiusRing;
-        private TextMesh modeLabel;
-
-        private void ApplyCompactVisualDefaults()
+        private static readonly int[][] FingerChains =
         {
-            if (modeLabel != null)
-            {
-                modeLabel.characterSize = 0.055f;
-                modeLabel.fontSize = 24;
-            }
-        }
+            new[] { 2, 3, 4 },
+            new[] { 5, 6, 7, 8 },
+            new[] { 9, 10, 11, 12 },
+            new[] { 13, 14, 15, 16 },
+            new[] { 17, 18, 19, 20 }
+        };
+
+        private static readonly int[] PalmLandmarkIndices = { 0, 1, 2, 5, 9, 13, 17 };
+
+        private readonly Transform[] boundaryMarkers = new Transform[MediaPipeMeshDeformationInput.MaxHands];
+        private readonly LineRenderer[] handLinks = new LineRenderer[MediaPipeMeshDeformationInput.MaxHands];
+        private readonly LineRenderer[] boundaryLinks = new LineRenderer[MediaPipeMeshDeformationInput.MaxHands];
+        private readonly LineRenderer[] radiusRings = new LineRenderer[MediaPipeMeshDeformationInput.MaxHands];
+
+        private GameObject handShadowObject;
+        private Mesh handShadowMesh;
+        private Mesh handShadowOutlineMesh;
+        private MeshFilter handShadowMeshFilter;
+        private MeshFilter handShadowOutlineMeshFilter;
+        private MeshRenderer handShadowMeshRenderer;
+        private MeshRenderer handShadowOutlineMeshRenderer;
+        private Material handShadowMaterial;
+        private Material handShadowOutlineMaterial;
+        private readonly Vector2[][] rawHandShadowPoints = CreateHandPointBuffer();
+        private readonly Vector2[][] smoothedHandShadowPoints = CreateHandPointBuffer();
+        private readonly bool[] activeHandShadows = new bool[MediaPipeMeshDeformationInput.MaxHands];
+        private readonly bool[] hasSmoothedHandShadow = new bool[MediaPipeMeshDeformationInput.MaxHands];
+        private readonly List<Vector3> handShadowVertices = new List<Vector3>(256);
+        private readonly List<int> handShadowTriangles = new List<int>(512);
+        private float handShadowVertexZ;
 
         private void Awake()
         {
@@ -40,124 +71,458 @@ namespace ShadowPrototype
         {
             EnsureVisualObjects();
 
-            if (deformationInput == null || targetMeshDeformer == null || !targetMeshDeformer.HasMesh || !deformationInput.HasProjectedPoints)
+            if (deformationInput == null || targetMeshDeformer == null || !targetMeshDeformer.HasMesh)
             {
                 SetVisible(false);
                 return;
             }
 
-            SetVisible(true);
+            UpdateHandShadow();
+            SetInteractionVisible(false);
 
             float markerSize = ComputeMarkerSize();
-            UpdateMarker(indexMarker, deformationInput.IndexWorldPoint, markerSize, new Color(1.0f, 0.76f, 0.15f));
-            UpdateMarker(thumbMarker, deformationInput.ThumbWorldPoint, markerSize, new Color(0.18f, 0.89f, 1.0f));
-            UpdateMarker(grabMarker, deformationInput.GrabWorldPoint, markerSize * 0.85f, new Color(0.2f, 1.0f, 0.45f));
-
-            handLink.enabled = false;
-            boundaryLink.enabled = false;
-            radiusRing.enabled = false;
-            boundaryMarker.gameObject.SetActive(false);
-
-            if (deformationInput.HasActiveBoundaryTarget)
+            for (int handIndex = 0; handIndex < MediaPipeMeshDeformationInput.MaxHands; handIndex++)
             {
-                Color boundaryColor = deformationInput.IsGrabLocked
-                    ? new Color(0.15f, 1.0f, 0.52f)
-                    : new Color(1.0f, 0.36f, 0.12f);
+                if (!deformationInput.TryGetHandInteractionState(
+                        handIndex,
+                        out MediaPipeMeshDeformationInput.HandInteractionSnapshot handState))
+                {
+                    continue;
+                }
 
-                UpdateMarker(boundaryMarker, deformationInput.ActiveBoundaryWorldPoint, markerSize * 1.2f, boundaryColor);
-
-                Vector3 linkStart = deformationInput.IsGrabLocked
-                    ? deformationInput.GrabWorldPoint
-                    : deformationInput.IndexWorldPoint;
-
-                DrawLine(boundaryLink, linkStart, deformationInput.ActiveBoundaryWorldPoint, boundaryColor, markerSize * 0.12f);
+                UpdateHandInteractionVisual(handIndex, handState, markerSize);
             }
 
-            switch (deformationInput.CurrentMode)
-            {
-                case MediaPipeMeshDeformationInput.InteractionMode.Hover:
-                    thumbMarker.gameObject.SetActive(false);
-                    grabMarker.gameObject.SetActive(false);
-                    DrawRing(deformationInput.ActiveBoundaryLocalPoint, deformationInput.PullRadiusLocal * 0.7f, new Color(1.0f, 0.56f, 0.16f), markerSize * 0.12f);
-                    SetLabel("PINCH TO GRAB", deformationInput.ActiveBoundaryWorldPoint, new Color(1.0f, 0.56f, 0.16f), markerSize);
-                    break;
-
-                case MediaPipeMeshDeformationInput.InteractionMode.Pull:
-                    grabMarker.gameObject.SetActive(true);
-                    DrawLine(handLink, deformationInput.ThumbWorldPoint, deformationInput.IndexWorldPoint, new Color(0.23f, 1.0f, 0.5f), markerSize * 0.18f);
-                    DrawRing(deformationInput.ActiveBoundaryLocalPoint, deformationInput.PullRadiusLocal, new Color(0.23f, 1.0f, 0.5f), markerSize * 0.15f);
-                    SetLabel("GRAB", deformationInput.ActiveBoundaryWorldPoint, new Color(0.23f, 1.0f, 0.5f), markerSize);
-                    break;
-
-                default:
-                    thumbMarker.gameObject.SetActive(false);
-                    grabMarker.gameObject.SetActive(false);
-                    modeLabel.gameObject.SetActive(false);
-                    break;
-            }
-
-            OrientLabelToCamera();
         }
 
         private void EnsureVisualObjects()
         {
-            if (indexMarker == null)
+            for (int i = 0; i < MediaPipeMeshDeformationInput.MaxHands; i++)
             {
-                indexMarker = CreateMarker("Index Marker", Color.yellow).transform;
+                if (boundaryMarkers[i] == null)
+                {
+                    boundaryMarkers[i] = CreateMarker($"Hand {i + 1} Boundary Marker", HoverColor).transform;
+                }
+
+                if (handLinks[i] == null)
+                {
+                    handLinks[i] = CreateLineRenderer($"Hand {i + 1} Link");
+                }
+
+                if (boundaryLinks[i] == null)
+                {
+                    boundaryLinks[i] = CreateLineRenderer($"Hand {i + 1} Boundary Link");
+                }
+
+                if (radiusRings[i] == null)
+                {
+                    radiusRings[i] = CreateLineRenderer($"Hand {i + 1} Radius Ring");
+                    radiusRings[i].loop = true;
+                }
+
             }
 
-            if (thumbMarker == null)
+            if (showHandShadow)
             {
-                thumbMarker = CreateMarker("Thumb Marker", Color.cyan).transform;
+                EnsureHandShadowObject();
             }
 
-            if (grabMarker == null)
-            {
-                grabMarker = CreateMarker("Grab Marker", Color.green).transform;
-            }
-
-            if (boundaryMarker == null)
-            {
-                boundaryMarker = CreateMarker("Boundary Marker", new Color(1.0f, 0.36f, 0.12f)).transform;
-            }
-
-            if (handLink == null)
-            {
-                handLink = CreateLineRenderer("Hand Link");
-            }
-
-            if (boundaryLink == null)
-            {
-                boundaryLink = CreateLineRenderer("Boundary Link");
-            }
-
-            if (radiusRing == null)
-            {
-                radiusRing = CreateLineRenderer("Radius Ring");
-                radiusRing.loop = true;
-            }
-
-            if (modeLabel == null)
-            {
-                GameObject textObject = new GameObject("Interaction Label");
-                textObject.transform.SetParent(transform, false);
-                modeLabel = textObject.AddComponent<TextMesh>();
-                modeLabel.text = string.Empty;
-                modeLabel.anchor = TextAnchor.MiddleCenter;
-                modeLabel.alignment = TextAlignment.Center;
-                modeLabel.characterSize = 0.055f;
-                modeLabel.fontSize = 24;
-                modeLabel.color = Color.white;
-            }
-
-            ApplyCompactVisualDefaults();
         }
 
         private float ComputeMarkerSize()
         {
-            Bounds bounds = targetMeshDeformer.GetWorldBounds();
-            float largestExtent = Mathf.Max(bounds.size.x, bounds.size.y);
-            return Mathf.Max(MinimumMarkerSize, largestExtent * MarkerScaleMultiplier);
+            return Mathf.Max(MinimumMarkerSize, FixedMarkerSize);
+        }
+
+        private void UpdateHandInteractionVisual(
+            int handIndex,
+            MediaPipeMeshDeformationInput.HandInteractionSnapshot handState,
+            float markerSize)
+        {
+            if (handState.HasActiveBoundaryTarget)
+            {
+                Color boundaryColor = handState.IsGrabLocked ? PullColor : HoverColor;
+
+                UpdateMarker(boundaryMarkers[handIndex], handState.ActiveBoundaryWorldPoint, markerSize, boundaryColor);
+
+                Vector3 linkStart = handState.IsGrabLocked
+                    ? handState.GrabWorldPoint
+                    : handState.IndexWorldPoint;
+
+                DrawLine(boundaryLinks[handIndex], linkStart, handState.ActiveBoundaryWorldPoint, boundaryColor, markerSize * 0.12f);
+            }
+
+            switch (handState.CurrentMode)
+            {
+                case MediaPipeMeshDeformationInput.InteractionMode.Hover:
+                    DrawRing(
+                        radiusRings[handIndex],
+                        handState.ActiveBoundaryLocalPoint,
+                        deformationInput.PullRadiusLocal * 0.7f,
+                        HoverColor,
+                        markerSize * 0.12f);
+                    break;
+
+                case MediaPipeMeshDeformationInput.InteractionMode.Pull:
+                    DrawLine(
+                        handLinks[handIndex],
+                        handState.ThumbWorldPoint,
+                        handState.IndexWorldPoint,
+                        PullColor,
+                        markerSize * 0.18f);
+                    DrawRing(
+                        radiusRings[handIndex],
+                        handState.ActiveBoundaryLocalPoint,
+                        deformationInput.PullRadiusLocal,
+                        PullColor,
+                        markerSize * 0.15f);
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        private void UpdateHandShadow()
+        {
+            if (!showHandShadow || deformationInput == null || targetMeshDeformer == null)
+            {
+                SetHandShadowVisible(false);
+                return;
+            }
+
+            EnsureHandShadowObject();
+            MediaPipeUdpReceiver receiver = deformationInput.Receiver;
+            if (receiver == null || !receiver.TryGetLatestLandmarks(out Vector3[] landmarks))
+            {
+                SetHandShadowVisible(false);
+                return;
+            }
+
+            int handCount = Mathf.Min(
+                MediaPipeMeshDeformationInput.MaxHands,
+                landmarks.Length / MediaPipeMeshDeformationInput.LandmarksPerHand);
+            bool hasAnyHandShadow = false;
+
+            for (int handIndex = 0; handIndex < activeHandShadows.Length; handIndex++)
+            {
+                activeHandShadows[handIndex] = false;
+
+                if (handIndex >= handCount ||
+                    !TryUpdateHandShadowPoints(handIndex, landmarks, rawHandShadowPoints[handIndex]))
+                {
+                    hasSmoothedHandShadow[handIndex] = false;
+                    continue;
+                }
+
+                SmoothHandShadowPoints(handIndex);
+                activeHandShadows[handIndex] = true;
+                hasAnyHandShadow = true;
+            }
+
+            if (!hasAnyHandShadow)
+            {
+                SetHandShadowVisible(false);
+                return;
+            }
+
+            BuildHandShadowMesh();
+            SetHandShadowVisible(true, false);
+        }
+
+        private bool TryUpdateHandShadowPoints(int handIndex, Vector3[] landmarks, Vector2[] points)
+        {
+            int startIndex = handIndex * MediaPipeMeshDeformationInput.LandmarksPerHand;
+            for (int landmarkIndex = 0; landmarkIndex < MediaPipeMeshDeformationInput.LandmarksPerHand; landmarkIndex++)
+            {
+                int absoluteIndex = startIndex + landmarkIndex;
+                if (absoluteIndex < 0 || absoluteIndex >= landmarks.Length)
+                {
+                    return false;
+                }
+
+                Vector2 trackedPoint = new Vector2(landmarks[absoluteIndex].x, landmarks[absoluteIndex].y);
+                if (!TryProjectHandShadowPoint(trackedPoint, out Vector2 localPoint))
+                {
+                    return false;
+                }
+
+                points[landmarkIndex] = localPoint;
+            }
+
+            return true;
+        }
+
+        private bool TryProjectHandShadowPoint(Vector2 trackedPoint, out Vector2 localPoint)
+        {
+            localPoint = Vector2.zero;
+            if (targetCamera == null)
+            {
+                return false;
+            }
+
+            Vector3 viewportPoint = new Vector3(
+                Mathf.Clamp01(trackedPoint.x / MediaPipeMeshDeformationInput.TrackedFrameWidth),
+                Mathf.Clamp01(trackedPoint.y / MediaPipeMeshDeformationInput.TrackedFrameHeight),
+                screenHandShadowDistance);
+            Vector3 worldPoint = targetCamera.ViewportToWorldPoint(viewportPoint);
+            Vector3 cameraLocalPoint = targetCamera.transform.InverseTransformPoint(worldPoint);
+            handShadowVertexZ = cameraLocalPoint.z;
+            localPoint = new Vector2(cameraLocalPoint.x, cameraLocalPoint.y) * screenHandShadowScale;
+            return true;
+        }
+
+        private void SmoothHandShadowPoints(int handIndex)
+        {
+            if (!hasSmoothedHandShadow[handIndex])
+            {
+                CopyHandShadowPoints(rawHandShadowPoints[handIndex], smoothedHandShadowPoints[handIndex]);
+                hasSmoothedHandShadow[handIndex] = true;
+                return;
+            }
+
+            float blend = 1.0f - Mathf.Exp(-HandShadowSmoothingSpeed * Time.deltaTime);
+            for (int i = 0; i < MediaPipeMeshDeformationInput.LandmarksPerHand; i++)
+            {
+                smoothedHandShadowPoints[handIndex][i] = Vector2.Lerp(
+                    smoothedHandShadowPoints[handIndex][i],
+                    rawHandShadowPoints[handIndex][i],
+                    blend);
+            }
+        }
+
+        private static void CopyHandShadowPoints(Vector2[] source, Vector2[] destination)
+        {
+            for (int i = 0; i < source.Length; i++)
+            {
+                destination[i] = source[i];
+            }
+        }
+
+        private void BuildHandShadowMesh()
+        {
+            if (handShadowMesh == null)
+            {
+                return;
+            }
+
+            handShadowVertices.Clear();
+            handShadowTriangles.Clear();
+            List<Vector3> outlineVertices = new List<Vector3>(256);
+
+            for (int handIndex = 0; handIndex < activeHandShadows.Length; handIndex++)
+            {
+                if (activeHandShadows[handIndex])
+                {
+                    int firstHandVertexIndex = handShadowVertices.Count;
+                    AddHandShadowGeometry(smoothedHandShadowPoints[handIndex]);
+                    AddHandOutlineVertices(firstHandVertexIndex, outlineVertices);
+                }
+            }
+
+            handShadowMesh.Clear();
+            handShadowMesh.SetVertices(handShadowVertices);
+            handShadowMesh.SetTriangles(handShadowTriangles, 0);
+            handShadowMesh.RecalculateBounds();
+
+            UpdateHandShadowOutlineMesh(outlineVertices);
+        }
+
+        private void AddHandOutlineVertices(int firstHandVertexIndex, List<Vector3> outlineVertices)
+        {
+            int handVertexCount = handShadowVertices.Count - firstHandVertexIndex;
+            if (handVertexCount <= 0)
+            {
+                return;
+            }
+
+            Vector3 center = Vector3.zero;
+            for (int i = firstHandVertexIndex; i < handShadowVertices.Count; i++)
+            {
+                center += handShadowVertices[i];
+            }
+
+            center /= handVertexCount;
+            for (int i = firstHandVertexIndex; i < handShadowVertices.Count; i++)
+            {
+                Vector3 vertex = handShadowVertices[i];
+                Vector3 offset = vertex - center;
+                outlineVertices.Add(center + (offset * handShadowOutlineScale));
+            }
+        }
+
+        private void UpdateHandShadowOutlineMesh(List<Vector3> outlineVertices)
+        {
+            if (handShadowOutlineMesh == null)
+            {
+                return;
+            }
+
+            handShadowOutlineMesh.Clear();
+            if (outlineVertices.Count == 0)
+            {
+                return;
+            }
+
+            handShadowOutlineMesh.SetVertices(outlineVertices);
+            handShadowOutlineMesh.SetTriangles(handShadowTriangles, 0);
+            handShadowOutlineMesh.RecalculateBounds();
+        }
+
+        private void AddHandShadowGeometry(Vector2[] points)
+        {
+            float capWidth = ComputeHandShadowCapWidth(points);
+            float fingerWidth = ComputeHandShadowFingerWidth(points);
+            AddPalmShadow(points, capWidth * 1.15f);
+
+            for (int i = 0; i < FingerChains.Length; i++)
+            {
+                int[] chain = FingerChains[i];
+                for (int j = 0; j < chain.Length - 1; j++)
+                {
+                    AddSegmentShadow(points[chain[j]], points[chain[j + 1]], fingerWidth);
+                }
+            }
+
+            for (int i = 0; i < points.Length; i++)
+            {
+                if (i == 0 || i == 1)
+                {
+                    continue;
+                }
+
+                float radius = capWidth * 0.52f;
+                if (IsFingerTip(i))
+                {
+                    radius = capWidth * 0.68f;
+                }
+
+                AddDiscShadow(points[i], radius, JointCapSegments);
+            }
+        }
+
+        private float ComputeHandShadowCapWidth(Vector2[] points)
+        {
+            Vector2 min = points[0];
+            Vector2 max = points[0];
+            for (int i = 1; i < points.Length; i++)
+            {
+                min = new Vector2(Mathf.Min(min.x, points[i].x), Mathf.Min(min.y, points[i].y));
+                max = new Vector2(Mathf.Max(max.x, points[i].x), Mathf.Max(max.y, points[i].y));
+            }
+
+            float span = Mathf.Max(max.x - min.x, max.y - min.y);
+            return Mathf.Max(MinimumHandShadowWidthLocal, span * 0.055f);
+        }
+
+        private float ComputeHandShadowFingerWidth(Vector2[] points)
+        {
+            Vector2 min = points[0];
+            Vector2 max = points[0];
+            for (int i = 1; i < points.Length; i++)
+            {
+                min = new Vector2(Mathf.Min(min.x, points[i].x), Mathf.Min(min.y, points[i].y));
+                max = new Vector2(Mathf.Max(max.x, points[i].x), Mathf.Max(max.y, points[i].y));
+            }
+
+            float span = Mathf.Max(max.x - min.x, max.y - min.y);
+            return Mathf.Max(MinimumHandShadowWidthLocal, span * handShadowFingerWidthScale);
+        }
+
+        private void AddPalmShadow(Vector2[] points, float padding)
+        {
+            List<Vector2> palmPoints = new List<Vector2>(PalmLandmarkIndices.Length);
+            for (int i = 0; i < PalmLandmarkIndices.Length; i++)
+            {
+                palmPoints.Add(points[PalmLandmarkIndices[i]]);
+            }
+
+            List<Vector2> hull = BuildConvexHull(palmPoints);
+            if (hull.Count < 3)
+            {
+                return;
+            }
+
+            Vector2 center = Vector2.zero;
+            for (int i = 0; i < hull.Count; i++)
+            {
+                center += hull[i];
+            }
+
+            center /= hull.Count;
+            int centerIndex = AddHandShadowVertex(center);
+            int firstOuterIndex = handShadowVertices.Count;
+            for (int i = 0; i < hull.Count; i++)
+            {
+                Vector2 direction = hull[i] - center;
+                if (direction.sqrMagnitude > 0.000001f)
+                {
+                    direction.Normalize();
+                }
+
+                AddHandShadowVertex(hull[i] + (direction * padding));
+            }
+
+            for (int i = 0; i < hull.Count; i++)
+            {
+                int current = firstOuterIndex + i;
+                int next = firstOuterIndex + ((i + 1) % hull.Count);
+                handShadowTriangles.Add(centerIndex);
+                handShadowTriangles.Add(current);
+                handShadowTriangles.Add(next);
+            }
+        }
+
+        private void AddSegmentShadow(Vector2 start, Vector2 end, float width)
+        {
+            Vector2 direction = end - start;
+            if (direction.sqrMagnitude <= 0.000001f)
+            {
+                return;
+            }
+
+            direction.Normalize();
+            Vector2 normal = new Vector2(-direction.y, direction.x) * (width * 0.5f);
+            int baseIndex = handShadowVertices.Count;
+            AddHandShadowVertex(start + normal);
+            AddHandShadowVertex(end + normal);
+            AddHandShadowVertex(end - normal);
+            AddHandShadowVertex(start - normal);
+
+            handShadowTriangles.Add(baseIndex);
+            handShadowTriangles.Add(baseIndex + 1);
+            handShadowTriangles.Add(baseIndex + 2);
+            handShadowTriangles.Add(baseIndex);
+            handShadowTriangles.Add(baseIndex + 2);
+            handShadowTriangles.Add(baseIndex + 3);
+        }
+
+        private void AddDiscShadow(Vector2 center, float radius, int segmentCount)
+        {
+            int centerIndex = AddHandShadowVertex(center);
+            int firstOuterIndex = handShadowVertices.Count;
+
+            for (int i = 0; i < segmentCount; i++)
+            {
+                float t = (float)i / segmentCount;
+                float angle = t * Mathf.PI * 2.0f;
+                AddHandShadowVertex(center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius);
+            }
+
+            for (int i = 0; i < segmentCount; i++)
+            {
+                int current = firstOuterIndex + i;
+                int next = firstOuterIndex + ((i + 1) % segmentCount);
+                handShadowTriangles.Add(centerIndex);
+                handShadowTriangles.Add(current);
+                handShadowTriangles.Add(next);
+            }
+        }
+
+        private int AddHandShadowVertex(Vector2 localPoint)
+        {
+            handShadowVertices.Add(new Vector3(localPoint.x, localPoint.y, handShadowVertexZ));
+            return handShadowVertices.Count - 1;
         }
 
         private void UpdateMarker(Transform marker, Vector3 position, float markerSize, Color color)
@@ -193,14 +558,14 @@ namespace ShadowPrototype
             line.SetPosition(1, end);
         }
 
-        private void DrawRing(Vector2 localCenter, float localRadius, Color color, float width)
+        private void DrawRing(LineRenderer ring, Vector2 localCenter, float localRadius, Color color, float width)
         {
-            radiusRing.enabled = true;
-            radiusRing.positionCount = RingSegments;
-            radiusRing.startColor = color;
-            radiusRing.endColor = color;
-            radiusRing.startWidth = width;
-            radiusRing.endWidth = width;
+            ring.enabled = true;
+            ring.positionCount = RingSegments;
+            ring.startColor = color;
+            ring.endColor = color;
+            ring.startWidth = width;
+            ring.endWidth = width;
 
             for (int i = 0; i < RingSegments; i++)
             {
@@ -210,39 +575,136 @@ namespace ShadowPrototype
                     localCenter.x + (Mathf.Cos(angle) * localRadius),
                     localCenter.y + (Mathf.Sin(angle) * localRadius),
                     0.0f);
-                radiusRing.SetPosition(i, targetMeshDeformer.transform.TransformPoint(localPoint));
+                ring.SetPosition(i, targetMeshDeformer.transform.TransformPoint(localPoint));
             }
-        }
-
-        private void SetLabel(string text, Vector3 anchorWorldPoint, Color color, float markerSize)
-        {
-            modeLabel.gameObject.SetActive(true);
-            modeLabel.text = text;
-            modeLabel.color = color;
-            modeLabel.characterSize = markerSize * 0.7f;
-            modeLabel.transform.position = anchorWorldPoint + new Vector3(0.0f, markerSize * 2.2f, 0.0f);
-        }
-
-        private void OrientLabelToCamera()
-        {
-            if (modeLabel == null || targetCamera == null || !modeLabel.gameObject.activeSelf)
-            {
-                return;
-            }
-
-            modeLabel.transform.rotation = targetCamera.transform.rotation;
         }
 
         private void SetVisible(bool visible)
         {
-            if (indexMarker != null) indexMarker.gameObject.SetActive(visible);
-            if (thumbMarker != null) thumbMarker.gameObject.SetActive(false);
-            if (grabMarker != null) grabMarker.gameObject.SetActive(false);
-            if (boundaryMarker != null) boundaryMarker.gameObject.SetActive(false);
-            if (handLink != null) handLink.enabled = false;
-            if (boundaryLink != null) boundaryLink.enabled = false;
-            if (radiusRing != null) radiusRing.enabled = false;
-            if (modeLabel != null) modeLabel.gameObject.SetActive(false);
+            SetInteractionVisible(visible);
+            if (!visible)
+            {
+                SetHandShadowVisible(false);
+            }
+        }
+
+        private void SetInteractionVisible(bool visible)
+        {
+            for (int i = 0; i < MediaPipeMeshDeformationInput.MaxHands; i++)
+            {
+                if (boundaryMarkers[i] != null) boundaryMarkers[i].gameObject.SetActive(false);
+                if (handLinks[i] != null) handLinks[i].enabled = false;
+                if (boundaryLinks[i] != null) boundaryLinks[i].enabled = false;
+                if (radiusRings[i] != null) radiusRings[i].enabled = false;
+            }
+        }
+
+        private void EnsureHandShadowObject()
+        {
+            if (targetMeshDeformer == null)
+            {
+                return;
+            }
+
+            if (handShadowObject == null)
+            {
+                handShadowObject = new GameObject("Hand Shadow Silhouette");
+                handShadowMeshFilter = handShadowObject.AddComponent<MeshFilter>();
+                handShadowMeshRenderer = handShadowObject.AddComponent<MeshRenderer>();
+                handShadowMesh = new Mesh
+                {
+                    name = "MediaPipeHandShadow_Runtime"
+                };
+                handShadowOutlineMesh = new Mesh
+                {
+                    name = "MediaPipeHandShadowOutline_Runtime"
+                };
+                handShadowMesh.MarkDynamic();
+                handShadowOutlineMesh.MarkDynamic();
+                handShadowMeshFilter.sharedMesh = handShadowMesh;
+                handShadowMaterial = CreateTransparentUnlitMaterial(handShadowColor);
+                handShadowMeshRenderer.sharedMaterial = handShadowMaterial;
+                handShadowMeshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                handShadowMeshRenderer.receiveShadows = false;
+                handShadowMeshRenderer.sortingOrder = 500;
+
+                GameObject outlineObject = new GameObject("Hand Shadow Outline");
+                outlineObject.transform.SetParent(handShadowObject.transform, false);
+                handShadowOutlineMeshFilter = outlineObject.AddComponent<MeshFilter>();
+                handShadowOutlineMeshRenderer = outlineObject.AddComponent<MeshRenderer>();
+                handShadowOutlineMeshFilter.sharedMesh = handShadowOutlineMesh;
+                handShadowOutlineMaterial = CreateTransparentUnlitMaterial(handShadowOutlineColor);
+                handShadowOutlineMeshRenderer.sharedMaterial = handShadowOutlineMaterial;
+                handShadowOutlineMeshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                handShadowOutlineMeshRenderer.receiveShadows = false;
+                handShadowOutlineMeshRenderer.sortingOrder = 499;
+                handShadowObject.SetActive(false);
+            }
+
+            if (handShadowMeshFilter == null)
+            {
+                handShadowMeshFilter = handShadowObject.GetComponent<MeshFilter>();
+            }
+
+            if (handShadowMeshRenderer == null)
+            {
+                handShadowMeshRenderer = handShadowObject.GetComponent<MeshRenderer>();
+            }
+
+            if (handShadowOutlineMeshFilter == null)
+            {
+                Transform outlineTransform = handShadowObject.transform.Find("Hand Shadow Outline");
+                handShadowOutlineMeshFilter = outlineTransform != null
+                    ? outlineTransform.GetComponent<MeshFilter>()
+                    : null;
+            }
+
+            if (handShadowOutlineMeshRenderer == null)
+            {
+                Transform outlineTransform = handShadowObject.transform.Find("Hand Shadow Outline");
+                handShadowOutlineMeshRenderer = outlineTransform != null
+                    ? outlineTransform.GetComponent<MeshRenderer>()
+                    : null;
+            }
+
+            Transform desiredParent = targetCamera != null
+                ? targetCamera.transform
+                : targetMeshDeformer.transform;
+
+            if (handShadowObject.transform.parent != desiredParent)
+            {
+                handShadowObject.transform.SetParent(desiredParent, false);
+                handShadowObject.transform.localPosition = Vector3.zero;
+                handShadowObject.transform.localRotation = Quaternion.identity;
+                handShadowObject.transform.localScale = Vector3.one;
+            }
+
+            if (handShadowMaterial != null)
+            {
+                ConfigureTransparentMaterial(handShadowMaterial, handShadowColor);
+            }
+
+            if (handShadowOutlineMaterial != null)
+            {
+                ConfigureTransparentMaterial(handShadowOutlineMaterial, handShadowOutlineColor);
+            }
+        }
+
+        private void SetHandShadowVisible(bool visible, bool resetSmoothing = true)
+        {
+            if (handShadowObject != null)
+            {
+                handShadowObject.SetActive(visible);
+            }
+
+            if (!visible && resetSmoothing)
+            {
+                for (int i = 0; i < hasSmoothedHandShadow.Length; i++)
+                {
+                    hasSmoothedHandShadow[i] = false;
+                    activeHandShadows[i] = false;
+                }
+            }
         }
 
         private GameObject CreateMarker(string name, Color color)
@@ -279,6 +741,17 @@ namespace ShadowPrototype
             return line;
         }
 
+        private static Vector2[][] CreateHandPointBuffer()
+        {
+            Vector2[][] buffer = new Vector2[MediaPipeMeshDeformationInput.MaxHands][];
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                buffer[i] = new Vector2[MediaPipeMeshDeformationInput.LandmarksPerHand];
+            }
+
+            return buffer;
+        }
+
         private static Material CreateUnlitMaterial(Color color)
         {
             Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
@@ -304,6 +777,162 @@ namespace ShadowPrototype
             }
 
             return material;
+        }
+
+        private static Material CreateTransparentUnlitMaterial(Color color)
+        {
+            Material material = CreateUnlitMaterial(color);
+            ConfigureTransparentMaterial(material, color);
+            return material;
+        }
+
+        private static void ConfigureTransparentMaterial(Material material, Color color)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            if (material.HasProperty("_BaseColor"))
+            {
+                material.SetColor("_BaseColor", color);
+            }
+
+            if (material.HasProperty("_Color"))
+            {
+                material.SetColor("_Color", color);
+            }
+
+            if (material.HasProperty("_Surface"))
+            {
+                material.SetFloat("_Surface", 1.0f);
+            }
+
+            if (material.HasProperty("_Blend"))
+            {
+                material.SetFloat("_Blend", 0.0f);
+            }
+
+            if (material.HasProperty("_SrcBlend"))
+            {
+                material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            }
+
+            if (material.HasProperty("_DstBlend"))
+            {
+                material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            }
+
+            if (material.HasProperty("_ZWrite"))
+            {
+                material.SetFloat("_ZWrite", 0.0f);
+            }
+
+            if (material.HasProperty("_ZTest"))
+            {
+                material.SetFloat("_ZTest", (float)UnityEngine.Rendering.CompareFunction.Always);
+            }
+
+            if (material.HasProperty("_Cull"))
+            {
+                material.SetFloat("_Cull", (float)UnityEngine.Rendering.CullMode.Off);
+            }
+
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.renderQueue = 3020;
+        }
+
+        private static bool IsFingerTip(int landmarkIndex)
+        {
+            return landmarkIndex == 4 ||
+                   landmarkIndex == 8 ||
+                   landmarkIndex == 12 ||
+                   landmarkIndex == 16 ||
+                   landmarkIndex == 20;
+        }
+
+        private static List<Vector2> BuildConvexHull(List<Vector2> points)
+        {
+            List<Vector2> sorted = new List<Vector2>(points);
+            sorted.Sort(CompareVector2);
+
+            List<Vector2> lower = new List<Vector2>();
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                while (lower.Count >= 2 &&
+                       Cross(lower[lower.Count - 1] - lower[lower.Count - 2], sorted[i] - lower[lower.Count - 1]) <= 0.0f)
+                {
+                    lower.RemoveAt(lower.Count - 1);
+                }
+
+                lower.Add(sorted[i]);
+            }
+
+            List<Vector2> upper = new List<Vector2>();
+            for (int i = sorted.Count - 1; i >= 0; i--)
+            {
+                while (upper.Count >= 2 &&
+                       Cross(upper[upper.Count - 1] - upper[upper.Count - 2], sorted[i] - upper[upper.Count - 1]) <= 0.0f)
+                {
+                    upper.RemoveAt(upper.Count - 1);
+                }
+
+                upper.Add(sorted[i]);
+            }
+
+            if (lower.Count > 0)
+            {
+                lower.RemoveAt(lower.Count - 1);
+            }
+
+            if (upper.Count > 0)
+            {
+                upper.RemoveAt(upper.Count - 1);
+            }
+
+            lower.AddRange(upper);
+            return lower;
+        }
+
+        private static int CompareVector2(Vector2 a, Vector2 b)
+        {
+            int compareX = a.x.CompareTo(b.x);
+            if (compareX != 0)
+            {
+                return compareX;
+            }
+
+            return a.y.CompareTo(b.y);
+        }
+
+        private static float Cross(Vector2 a, Vector2 b)
+        {
+            return (a.x * b.y) - (a.y * b.x);
+        }
+
+        private void OnDestroy()
+        {
+            DestroyRuntimeObject(handShadowMesh);
+            DestroyRuntimeObject(handShadowOutlineMesh);
+            DestroyRuntimeObject(handShadowMaterial);
+            DestroyRuntimeObject(handShadowOutlineMaterial);
+        }
+
+        private static void DestroyRuntimeObject(UnityEngine.Object runtimeObject)
+        {
+            if (runtimeObject == null)
+            {
+                return;
+            }
+
+            if (Application.isPlaying)
+            {
+                Destroy(runtimeObject);
+            }
+            else
+            {
+                DestroyImmediate(runtimeObject);
+            }
         }
     }
 }

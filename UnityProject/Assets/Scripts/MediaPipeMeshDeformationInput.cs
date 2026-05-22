@@ -11,37 +11,54 @@ namespace ShadowPrototype
             Pull
         }
 
-        private const int LandmarksPerHand = 21;
+        public struct HandInteractionSnapshot
+        {
+            public InteractionMode CurrentMode;
+            public bool HasProjectedPoints;
+            public Vector2 ThumbLocalPoint;
+            public Vector2 IndexLocalPoint;
+            public Vector2 GrabLocalPoint;
+            public Vector3 ThumbWorldPoint;
+            public Vector3 IndexWorldPoint;
+            public Vector3 GrabWorldPoint;
+            public bool HasActiveBoundaryTarget;
+            public int ActiveBoundaryArrayIndex;
+            public Vector2 ActiveBoundaryLocalPoint;
+            public Vector3 ActiveBoundaryWorldPoint;
+            public bool IsGrabLocked;
+        }
+
+        public const int LandmarksPerHand = 21;
+        public const int MaxHands = 2;
+        public const float TrackedFrameWidth = 1920.0f;
+        public const float TrackedFrameHeight = 1080.0f;
+
         private const int ThumbTipIndex = 4;
         private const int IndexTipIndex = 8;
-        private const int ControllingHandIndex = 0;
-        private const float TrackedFrameWidth = 640.0f;
-        private const float TrackedFrameHeight = 480.0f;
-        private const float HoverSnapDistanceLocal = 0.35f;
+        private const float DefaultHoverSnapDistanceLocal = 0.22f;
         private const float PointSmoothingSpeed = 16.0f;
-        private const float PinchEnterThresholdPixels = 65.0f;
-        private const float PinchExitThresholdPixels = 95.0f;
-        private const float PullStrength = 1.0f;
-        private const float FixedDeformationAmountMultiplier = 0.24f;
+        private const float DefaultPinchEnterThresholdPixels = 38.0f;
+        private const float DefaultPinchExitThresholdPixels = 58.0f;
+        private const float DefaultGrabActivationHoldSeconds = 0.12f;
+        private const float DefaultAffectedRadiusLocal = 0.5f;
+        private const float DefaultPullStrength = 1.0f;
         private const float MaxPullDeltaPerFrame = 0.045f;
+        private const float MinAffectedRadiusLocal = 0.12f;
+        private const float MaxAffectedRadiusLocal = 1.0f;
 
         [SerializeField] private ShadowMeshDeformer targetMeshDeformer;
         [SerializeField] private MediaPipeUdpReceiver mediaPipeReceiver;
         [SerializeField] private Camera targetCamera;
 
-        private const float MinAffectedRadiusLocal = 0.12f;
-        private const float MaxAffectedRadiusLocal = 0.65f;
+        [Header("Grab Gesture")]
+        [SerializeField] private float hoverSnapDistanceLocal = DefaultHoverSnapDistanceLocal;
+        [SerializeField] private float pinchEnterThresholdPixels = DefaultPinchEnterThresholdPixels;
+        [SerializeField] private float pinchExitThresholdPixels = DefaultPinchExitThresholdPixels;
+        [SerializeField] private float grabActivationHoldSeconds = DefaultGrabActivationHoldSeconds;
+        [SerializeField, Range(MinAffectedRadiusLocal, MaxAffectedRadiusLocal)] private float affectedRadiusLocal = DefaultAffectedRadiusLocal;
+        [SerializeField, Range(0.0f, 1.0f)] private float pullStrength = DefaultPullStrength;
 
-        private float pullRadius = 0.22f;
-        private bool hasSmoothedPoints;
-        private Vector2 smoothedThumbLocal;
-        private Vector2 smoothedIndexLocal;
-        private Vector2 smoothedGrabLocal;
-
-        private bool isGrabLocked;
-        private int lockedBoundaryArrayIndex = -1;
-        private bool hasPreviousGrabPoint;
-        private Vector2 previousGrabLocal;
+        private readonly HandInteractionState[] handStates = new HandInteractionState[MaxHands];
 
         public InteractionMode CurrentMode { get; private set; }
         public bool HasProjectedPoints { get; private set; }
@@ -56,14 +73,41 @@ namespace ShadowPrototype
         public int ActiveBoundaryArrayIndex { get; private set; } = -1;
         public Vector2 ActiveBoundaryLocalPoint { get; private set; }
         public Vector3 ActiveBoundaryWorldPoint { get; private set; }
-        public bool IsGrabLocked => isGrabLocked;
-        public float PullRadiusLocal => pullRadius;
-        public float AffectedRadiusLocal => pullRadius;
-        public float DeformationAmountMultiplier => FixedDeformationAmountMultiplier;
+        public bool IsGrabLocked { get; private set; }
+        public float PullRadiusLocal => affectedRadiusLocal;
+        public MediaPipeUdpReceiver Receiver => mediaPipeReceiver;
 
-        public void SetAffectedRadiusLocal(float value)
+        private void Awake()
         {
-            pullRadius = Mathf.Clamp(value, MinAffectedRadiusLocal, MaxAffectedRadiusLocal);
+            for (int i = 0; i < handStates.Length; i++)
+            {
+                handStates[i] = new HandInteractionState();
+            }
+        }
+
+        private void OnValidate()
+        {
+            affectedRadiusLocal = Mathf.Clamp(affectedRadiusLocal, MinAffectedRadiusLocal, MaxAffectedRadiusLocal);
+            pullStrength = Mathf.Clamp01(pullStrength);
+        }
+
+        public bool TryGetHandInteractionState(int handIndex, out HandInteractionSnapshot snapshot)
+        {
+            snapshot = default;
+
+            if (handIndex < 0 || handIndex >= handStates.Length)
+            {
+                return false;
+            }
+
+            HandInteractionState state = handStates[handIndex];
+            if (state == null || !state.HasProjectedPoints)
+            {
+                return false;
+            }
+
+            snapshot = CreateSnapshot(state);
+            return true;
         }
 
         private void Update()
@@ -80,154 +124,398 @@ namespace ShadowPrototype
                 return;
             }
 
-            if (!TryGetHandPoint(landmarks, ControllingHandIndex, ThumbTipIndex, out Vector2 thumbTracked) ||
-                !TryGetHandPoint(landmarks, ControllingHandIndex, IndexTipIndex, out Vector2 indexTracked))
+            int handCount = Mathf.Min(MaxHands, landmarks.Length / LandmarksPerHand);
+            int[] stateToDetectedHand = AssignDetectedHandsToStates(landmarks, handCount);
+            bool hasAnyProjectedHand = false;
+            int primaryHandIndex = -1;
+
+            for (int handIndex = 0; handIndex < MaxHands; handIndex++)
             {
-                ResetGestureState();
+                HandInteractionState state = handStates[handIndex];
+                int detectedHandIndex = stateToDetectedHand[handIndex];
+                if (detectedHandIndex < 0 || !UpdateHand(detectedHandIndex, landmarks, state))
+                {
+                    ResetHandState(state);
+                    continue;
+                }
+
+                hasAnyProjectedHand = true;
+                if (primaryHandIndex < 0 ||
+                    (state.CurrentMode == InteractionMode.Pull && handStates[primaryHandIndex].CurrentMode != InteractionMode.Pull))
+                {
+                    primaryHandIndex = handIndex;
+                }
+            }
+
+            if (!hasAnyProjectedHand || primaryHandIndex < 0)
+            {
+                ClearPublishedState();
                 return;
+            }
+
+            PublishHandState(handStates[primaryHandIndex]);
+        }
+
+        private int[] AssignDetectedHandsToStates(Vector3[] landmarks, int handCount)
+        {
+            int[] assignments = new int[MaxHands];
+            bool[] usedDetectedHands = new bool[MaxHands];
+            bool[] hasDetectedGrabPoint = new bool[MaxHands];
+            Vector2[] detectedGrabPoints = new Vector2[MaxHands];
+
+            for (int i = 0; i < assignments.Length; i++)
+            {
+                assignments[i] = -1;
+            }
+
+            for (int detectedHandIndex = 0; detectedHandIndex < handCount; detectedHandIndex++)
+            {
+                hasDetectedGrabPoint[detectedHandIndex] = TryGetRawGrabLocal(
+                    landmarks,
+                    detectedHandIndex,
+                    out detectedGrabPoints[detectedHandIndex]);
+            }
+
+            AssignTrackedStatesToNearestDetectedHands(
+                true,
+                handCount,
+                assignments,
+                usedDetectedHands,
+                hasDetectedGrabPoint,
+                detectedGrabPoints);
+
+            AssignTrackedStatesToNearestDetectedHands(
+                false,
+                handCount,
+                assignments,
+                usedDetectedHands,
+                hasDetectedGrabPoint,
+                detectedGrabPoints);
+
+            for (int stateIndex = 0; stateIndex < MaxHands; stateIndex++)
+            {
+                if (assignments[stateIndex] >= 0)
+                {
+                    continue;
+                }
+
+                for (int detectedHandIndex = 0; detectedHandIndex < handCount; detectedHandIndex++)
+                {
+                    if (usedDetectedHands[detectedHandIndex] || !hasDetectedGrabPoint[detectedHandIndex])
+                    {
+                        continue;
+                    }
+
+                    assignments[stateIndex] = detectedHandIndex;
+                    usedDetectedHands[detectedHandIndex] = true;
+                    break;
+                }
+            }
+
+            return assignments;
+        }
+
+        private void AssignTrackedStatesToNearestDetectedHands(
+            bool requireGrabLocked,
+            int handCount,
+            int[] assignments,
+            bool[] usedDetectedHands,
+            bool[] hasDetectedGrabPoint,
+            Vector2[] detectedGrabPoints)
+        {
+            for (int stateIndex = 0; stateIndex < MaxHands; stateIndex++)
+            {
+                if (assignments[stateIndex] >= 0)
+                {
+                    continue;
+                }
+
+                HandInteractionState state = handStates[stateIndex];
+                if (state == null || !state.HasSmoothedPoints || state.IsGrabLocked != requireGrabLocked)
+                {
+                    continue;
+                }
+
+                int bestDetectedHandIndex = -1;
+                float bestDistanceSquared = float.PositiveInfinity;
+                for (int detectedHandIndex = 0; detectedHandIndex < handCount; detectedHandIndex++)
+                {
+                    if (usedDetectedHands[detectedHandIndex] || !hasDetectedGrabPoint[detectedHandIndex])
+                    {
+                        continue;
+                    }
+
+                    float distanceSquared = (detectedGrabPoints[detectedHandIndex] - state.SmoothedGrabLocal).sqrMagnitude;
+                    if (distanceSquared >= bestDistanceSquared)
+                    {
+                        continue;
+                    }
+
+                    bestDistanceSquared = distanceSquared;
+                    bestDetectedHandIndex = detectedHandIndex;
+                }
+
+                if (bestDetectedHandIndex >= 0)
+                {
+                    assignments[stateIndex] = bestDetectedHandIndex;
+                    usedDetectedHands[bestDetectedHandIndex] = true;
+                }
+            }
+        }
+
+        private bool UpdateHand(int handIndex, Vector3[] landmarks, HandInteractionState state)
+        {
+            if (!TryGetHandPoint(landmarks, handIndex, ThumbTipIndex, out Vector2 thumbTracked) ||
+                !TryGetHandPoint(landmarks, handIndex, IndexTipIndex, out Vector2 indexTracked))
+            {
+                return false;
             }
 
             if (!TryProjectTrackedPointToLocal(thumbTracked, out Vector2 thumbLocalRaw) ||
                 !TryProjectTrackedPointToLocal(indexTracked, out Vector2 indexLocalRaw))
             {
-                ResetGestureState();
-                return;
+                return false;
             }
 
             Vector2 grabLocalRaw = (thumbLocalRaw + indexLocalRaw) * 0.5f;
-            SmoothInteractionPoints(thumbLocalRaw, indexLocalRaw, grabLocalRaw);
+            SmoothInteractionPoints(state, thumbLocalRaw, indexLocalRaw, grabLocalRaw);
 
-            ThumbLocalPoint = smoothedThumbLocal;
-            IndexLocalPoint = smoothedIndexLocal;
-            GrabLocalPoint = smoothedGrabLocal;
-            ThumbWorldPoint = LocalToWorld(ThumbLocalPoint);
-            IndexWorldPoint = LocalToWorld(IndexLocalPoint);
-            GrabWorldPoint = LocalToWorld(GrabLocalPoint);
-            HasProjectedPoints = true;
+            state.ThumbLocalPoint = state.SmoothedThumbLocal;
+            state.IndexLocalPoint = state.SmoothedIndexLocal;
+            state.GrabLocalPoint = state.SmoothedGrabLocal;
+            state.ThumbWorldPoint = LocalToWorld(state.ThumbLocalPoint);
+            state.IndexWorldPoint = LocalToWorld(state.IndexLocalPoint);
+            state.GrabWorldPoint = LocalToWorld(state.GrabLocalPoint);
+            state.HasProjectedPoints = true;
 
             float pinchDistancePixels = Vector2.Distance(thumbTracked, indexTracked);
-            bool isPinching = isGrabLocked
-                ? pinchDistancePixels <= PinchExitThresholdPixels
-                : pinchDistancePixels <= PinchEnterThresholdPixels;
+            float enterThreshold = Mathf.Max(1.0f, pinchEnterThresholdPixels);
+            float exitThreshold = Mathf.Max(enterThreshold, pinchExitThresholdPixels);
+            bool isPinching = state.IsGrabLocked
+                ? pinchDistancePixels <= exitThreshold
+                : pinchDistancePixels <= enterThreshold;
 
-            bool hasHoverTarget = TryResolveHoverBoundary(IndexLocalPoint);
+            bool hasHoverTarget = TryResolveHoverBoundary(
+                state.IndexLocalPoint,
+                out int boundaryArrayIndex,
+                out Vector2 boundaryLocal,
+                out Vector3 boundaryWorld);
 
             if (!isPinching)
             {
-                ReleaseGrab();
+                ReleaseGrab(state);
             }
-            else if (!isGrabLocked && hasHoverTarget)
+            else if (!state.IsGrabLocked && hasHoverTarget)
             {
-                isGrabLocked = true;
-                lockedBoundaryArrayIndex = ActiveBoundaryArrayIndex;
-                previousGrabLocal = GrabLocalPoint;
-                hasPreviousGrabPoint = false;
+                state.PendingGrabSeconds += Time.deltaTime;
+                if (state.PendingGrabSeconds >= grabActivationHoldSeconds)
+                {
+                    state.IsGrabLocked = true;
+                    state.LockedBoundaryArrayIndex = boundaryArrayIndex;
+                    state.PreviousGrabLocal = state.GrabLocalPoint;
+                    state.HasPreviousGrabPoint = false;
+                    state.PendingGrabSeconds = 0.0f;
+                }
+            }
+            else if (!state.IsGrabLocked)
+            {
+                state.PendingGrabSeconds = 0.0f;
             }
 
-            if (isGrabLocked &&
-                    targetMeshDeformer.TryGetBoundaryVertexAtBoundaryIndex(
-                    lockedBoundaryArrayIndex,
+            if (state.IsGrabLocked &&
+                targetMeshDeformer.TryGetBoundaryVertexAtBoundaryIndex(
+                    state.LockedBoundaryArrayIndex,
                     out _,
                     out Vector2 lockedBoundaryLocal,
                     out Vector3 lockedBoundaryWorld))
             {
-                HasActiveBoundaryTarget = true;
-                ActiveBoundaryArrayIndex = lockedBoundaryArrayIndex;
-                ActiveBoundaryLocalPoint = lockedBoundaryLocal;
-                ActiveBoundaryWorldPoint = lockedBoundaryWorld;
-                CurrentMode = InteractionMode.Pull;
+                state.HasActiveBoundaryTarget = true;
+                state.ActiveBoundaryArrayIndex = state.LockedBoundaryArrayIndex;
+                state.ActiveBoundaryLocalPoint = lockedBoundaryLocal;
+                state.ActiveBoundaryWorldPoint = lockedBoundaryWorld;
+                state.CurrentMode = InteractionMode.Pull;
 
-                if (hasPreviousGrabPoint)
+                if (state.HasPreviousGrabPoint)
                 {
-                    Vector2 pullDelta = Vector2.ClampMagnitude(GrabLocalPoint - previousGrabLocal, MaxPullDeltaPerFrame);
+                    Vector2 pullDelta = Vector2.ClampMagnitude(state.GrabLocalPoint - state.PreviousGrabLocal, MaxPullDeltaPerFrame);
                     if (pullDelta.sqrMagnitude > 0.0f)
                     {
                         targetMeshDeformer.ApplyPull(
-                            ActiveBoundaryLocalPoint,
+                            state.ActiveBoundaryLocalPoint,
                             pullDelta,
-                            pullRadius,
-                            PullStrength * FixedDeformationAmountMultiplier);
+                            affectedRadiusLocal,
+                            pullStrength);
                     }
                 }
 
-                previousGrabLocal = GrabLocalPoint;
-                hasPreviousGrabPoint = true;
-                return;
+                state.PreviousGrabLocal = state.GrabLocalPoint;
+                state.HasPreviousGrabPoint = true;
+                return true;
             }
 
             if (hasHoverTarget)
             {
-                CurrentMode = InteractionMode.Hover;
-                hasPreviousGrabPoint = false;
-                return;
+                state.CurrentMode = InteractionMode.Hover;
+                state.HasActiveBoundaryTarget = true;
+                state.ActiveBoundaryArrayIndex = boundaryArrayIndex;
+                state.ActiveBoundaryLocalPoint = boundaryLocal;
+                state.ActiveBoundaryWorldPoint = boundaryWorld;
+                state.HasPreviousGrabPoint = false;
+                return true;
             }
 
-            CurrentMode = InteractionMode.None;
-            HasActiveBoundaryTarget = false;
-            ActiveBoundaryArrayIndex = -1;
-            hasPreviousGrabPoint = false;
-        }
-
-        private bool TryResolveHoverBoundary(Vector2 localPoint)
-        {
-            HasActiveBoundaryTarget = false;
-            ActiveBoundaryArrayIndex = -1;
-
-            if (!targetMeshDeformer.TryGetNearestBoundaryVertex(
-                    localPoint,
-                    out int boundaryArrayIndex,
-                    out _,
-                    out Vector2 boundaryLocal,
-                    out Vector3 boundaryWorld))
-            {
-                return false;
-            }
-
-            float distance = Vector2.Distance(localPoint, boundaryLocal);
-            if (distance > HoverSnapDistanceLocal)
-            {
-                return false;
-            }
-
-            HasActiveBoundaryTarget = true;
-            ActiveBoundaryArrayIndex = boundaryArrayIndex;
-            ActiveBoundaryLocalPoint = boundaryLocal;
-            ActiveBoundaryWorldPoint = boundaryWorld;
+            state.CurrentMode = InteractionMode.None;
+            state.HasActiveBoundaryTarget = false;
+            state.ActiveBoundaryArrayIndex = -1;
+            state.HasPreviousGrabPoint = false;
             return true;
         }
 
-        private void SmoothInteractionPoints(Vector2 thumbLocalRaw, Vector2 indexLocalRaw, Vector2 grabLocalRaw)
+        private bool TryGetRawGrabLocal(Vector3[] landmarks, int handIndex, out Vector2 grabLocalRaw)
         {
-            if (!hasSmoothedPoints)
+            grabLocalRaw = Vector2.zero;
+
+            if (!TryGetHandPoint(landmarks, handIndex, ThumbTipIndex, out Vector2 thumbTracked) ||
+                !TryGetHandPoint(landmarks, handIndex, IndexTipIndex, out Vector2 indexTracked))
             {
-                smoothedThumbLocal = thumbLocalRaw;
-                smoothedIndexLocal = indexLocalRaw;
-                smoothedGrabLocal = grabLocalRaw;
-                hasSmoothedPoints = true;
+                return false;
+            }
+
+            if (!TryProjectTrackedPointToLocal(thumbTracked, out Vector2 thumbLocalRaw) ||
+                !TryProjectTrackedPointToLocal(indexTracked, out Vector2 indexLocalRaw))
+            {
+                return false;
+            }
+
+            grabLocalRaw = (thumbLocalRaw + indexLocalRaw) * 0.5f;
+            return true;
+        }
+
+        private bool TryResolveHoverBoundary(
+            Vector2 localPoint,
+            out int boundaryArrayIndex,
+            out Vector2 boundaryLocal,
+            out Vector3 boundaryWorld)
+        {
+            boundaryArrayIndex = -1;
+            boundaryLocal = Vector2.zero;
+            boundaryWorld = Vector3.zero;
+
+            if (!targetMeshDeformer.TryGetNearestBoundaryVertex(
+                    localPoint,
+                    out int candidateBoundaryArrayIndex,
+                    out _,
+                    out Vector2 candidateBoundaryLocal,
+                    out Vector3 candidateBoundaryWorld))
+            {
+                return false;
+            }
+
+            float distance = Vector2.Distance(localPoint, candidateBoundaryLocal);
+            if (distance > hoverSnapDistanceLocal)
+            {
+                return false;
+            }
+
+            boundaryArrayIndex = candidateBoundaryArrayIndex;
+            boundaryLocal = candidateBoundaryLocal;
+            boundaryWorld = candidateBoundaryWorld;
+            return true;
+        }
+
+        private void SmoothInteractionPoints(
+            HandInteractionState state,
+            Vector2 thumbLocalRaw,
+            Vector2 indexLocalRaw,
+            Vector2 grabLocalRaw)
+        {
+            if (!state.HasSmoothedPoints)
+            {
+                state.SmoothedThumbLocal = thumbLocalRaw;
+                state.SmoothedIndexLocal = indexLocalRaw;
+                state.SmoothedGrabLocal = grabLocalRaw;
+                state.HasSmoothedPoints = true;
                 return;
             }
 
             float blend = 1.0f - Mathf.Exp(-PointSmoothingSpeed * Time.deltaTime);
-            smoothedThumbLocal = Vector2.Lerp(smoothedThumbLocal, thumbLocalRaw, blend);
-            smoothedIndexLocal = Vector2.Lerp(smoothedIndexLocal, indexLocalRaw, blend);
-            smoothedGrabLocal = Vector2.Lerp(smoothedGrabLocal, grabLocalRaw, blend);
+            state.SmoothedThumbLocal = Vector2.Lerp(state.SmoothedThumbLocal, thumbLocalRaw, blend);
+            state.SmoothedIndexLocal = Vector2.Lerp(state.SmoothedIndexLocal, indexLocalRaw, blend);
+            state.SmoothedGrabLocal = Vector2.Lerp(state.SmoothedGrabLocal, grabLocalRaw, blend);
         }
 
-        private void ReleaseGrab()
+        private void ReleaseGrab(HandInteractionState state)
         {
-            isGrabLocked = false;
-            lockedBoundaryArrayIndex = -1;
-            hasPreviousGrabPoint = false;
+            state.IsGrabLocked = false;
+            state.LockedBoundaryArrayIndex = -1;
+            state.HasPreviousGrabPoint = false;
+            state.PendingGrabSeconds = 0.0f;
+        }
+
+        private void ResetHandState(HandInteractionState state)
+        {
+            state.CurrentMode = InteractionMode.None;
+            state.HasProjectedPoints = false;
+            state.HasActiveBoundaryTarget = false;
+            state.ActiveBoundaryArrayIndex = -1;
+            state.HasSmoothedPoints = false;
+            ReleaseGrab(state);
         }
 
         private void ResetGestureState()
+        {
+            for (int i = 0; i < handStates.Length; i++)
+            {
+                ResetHandState(handStates[i]);
+            }
+
+            ClearPublishedState();
+        }
+
+        private void ClearPublishedState()
         {
             CurrentMode = InteractionMode.None;
             HasProjectedPoints = false;
             HasActiveBoundaryTarget = false;
             ActiveBoundaryArrayIndex = -1;
-            hasSmoothedPoints = false;
-            ReleaseGrab();
+            IsGrabLocked = false;
+        }
+
+        private void PublishHandState(HandInteractionState state)
+        {
+            CurrentMode = state.CurrentMode;
+            HasProjectedPoints = state.HasProjectedPoints;
+            ThumbLocalPoint = state.ThumbLocalPoint;
+            IndexLocalPoint = state.IndexLocalPoint;
+            GrabLocalPoint = state.GrabLocalPoint;
+            ThumbWorldPoint = state.ThumbWorldPoint;
+            IndexWorldPoint = state.IndexWorldPoint;
+            GrabWorldPoint = state.GrabWorldPoint;
+            HasActiveBoundaryTarget = state.HasActiveBoundaryTarget;
+            ActiveBoundaryArrayIndex = state.ActiveBoundaryArrayIndex;
+            ActiveBoundaryLocalPoint = state.ActiveBoundaryLocalPoint;
+            ActiveBoundaryWorldPoint = state.ActiveBoundaryWorldPoint;
+            IsGrabLocked = state.IsGrabLocked;
+        }
+
+        private static HandInteractionSnapshot CreateSnapshot(HandInteractionState state)
+        {
+            return new HandInteractionSnapshot
+            {
+                CurrentMode = state.CurrentMode,
+                HasProjectedPoints = state.HasProjectedPoints,
+                ThumbLocalPoint = state.ThumbLocalPoint,
+                IndexLocalPoint = state.IndexLocalPoint,
+                GrabLocalPoint = state.GrabLocalPoint,
+                ThumbWorldPoint = state.ThumbWorldPoint,
+                IndexWorldPoint = state.IndexWorldPoint,
+                GrabWorldPoint = state.GrabWorldPoint,
+                HasActiveBoundaryTarget = state.HasActiveBoundaryTarget,
+                ActiveBoundaryArrayIndex = state.ActiveBoundaryArrayIndex,
+                ActiveBoundaryLocalPoint = state.ActiveBoundaryLocalPoint,
+                ActiveBoundaryWorldPoint = state.ActiveBoundaryWorldPoint,
+                IsGrabLocked = state.IsGrabLocked
+            };
         }
 
         private bool TryGetHandPoint(Vector3[] landmarks, int handIndex, int landmarkIndex, out Vector2 trackedPoint)
@@ -246,11 +534,11 @@ namespace ShadowPrototype
             return true;
         }
 
-        private bool TryProjectTrackedPointToLocal(Vector2 trackedPoint, out Vector2 localPoint)
+        public bool TryProjectTrackedPointToLocal(Vector2 trackedPoint, out Vector2 localPoint)
         {
             localPoint = Vector2.zero;
 
-            if (targetCamera == null)
+            if (targetCamera == null || targetMeshDeformer == null)
             {
                 return false;
             }
@@ -278,5 +566,29 @@ namespace ShadowPrototype
             return targetMeshDeformer.transform.TransformPoint(new Vector3(localPoint.x, localPoint.y, 0.0f));
         }
 
+        private class HandInteractionState
+        {
+            public InteractionMode CurrentMode;
+            public bool HasProjectedPoints;
+            public bool HasSmoothedPoints;
+            public Vector2 SmoothedThumbLocal;
+            public Vector2 SmoothedIndexLocal;
+            public Vector2 SmoothedGrabLocal;
+            public Vector2 ThumbLocalPoint;
+            public Vector2 IndexLocalPoint;
+            public Vector2 GrabLocalPoint;
+            public Vector3 ThumbWorldPoint;
+            public Vector3 IndexWorldPoint;
+            public Vector3 GrabWorldPoint;
+            public bool HasActiveBoundaryTarget;
+            public int ActiveBoundaryArrayIndex = -1;
+            public Vector2 ActiveBoundaryLocalPoint;
+            public Vector3 ActiveBoundaryWorldPoint;
+            public bool IsGrabLocked;
+            public int LockedBoundaryArrayIndex = -1;
+            public bool HasPreviousGrabPoint;
+            public Vector2 PreviousGrabLocal;
+            public float PendingGrabSeconds;
+        }
     }
 }

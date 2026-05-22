@@ -209,7 +209,7 @@ Transform:
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1, z: -10}
+  m_LocalPosition: {x: 0, y: 0, z: -10}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -273,7 +273,6 @@ GameObject:
   - component: {fileID: 775207383}
   - component: {fileID: 775207385}
   - component: {fileID: 775207384}
-  - component: {fileID: 775207388}
   - component: {fileID: 775207387}
   - component: {fileID: 775207386}
   m_Layer: 0
@@ -357,6 +356,13 @@ MonoBehaviour:
   deformationInput: {fileID: 775207385}
   targetMeshDeformer: {fileID: 1061289396}
   targetCamera: {fileID: 330585545}
+  showHandShadow: 1
+  handShadowColor: {r: 0, g: 0, b: 0, a: 0.9019608}
+  screenHandShadowDistance: 2
+  screenHandShadowScale: 1
+  handShadowFingerWidthScale: 0.1
+  handShadowOutlineColor: {r: 1, g: 1, b: 1, a: 0.078431375}
+  handShadowOutlineScale: 1.08
 --- !u!114 &775207385
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -372,6 +378,12 @@ MonoBehaviour:
   targetMeshDeformer: {fileID: 1061289396}
   mediaPipeReceiver: {fileID: 775207383}
   targetCamera: {fileID: 330585545}
+  hoverSnapDistanceLocal: 0.22
+  pinchEnterThresholdPixels: 38
+  pinchExitThresholdPixels: 58
+  grabActivationHoldSeconds: 0.12
+  affectedRadiusLocal: 0.5
+  pullStrength: 1
 --- !u!114 &775207386
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -419,20 +431,6 @@ MonoBehaviour:
   generatedGlbFilePrefix: shadow_model
   texturePreviewFileName: last_texture.png
   targetSceneAfterGeneration: hologramOut
---- !u!114 &775207388
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 775207378}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8f5609b1842630a42a406146a8016ed8, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  deformationInput: {fileID: 775207385}
-  mediaPipeReceiver: {fileID: 775207383}
 --- !u!1 &1061289392
 GameObject:
   m_ObjectHideFlags: 0

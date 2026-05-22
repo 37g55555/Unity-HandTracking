@@ -105,10 +105,9 @@ Unity Hub에서 `UnityProject` 폴더를 프로젝트로 연다.
 | `ShadowMeshFileLoader.cs` | `output/shadowmesh/shadow_mesh.obj`와 `shadow_metadata.json`를 감지해 Unity 메쉬로 불러옴. |
 | `ShadowMeshRootController.cs` | ShadowMesh 루트 오브젝트의 기본 transform 제어를 담당. |
 | `ShadowMeshDeformer.cs` | 그림자 메쉬 표시, 변형, 실루엣 PNG 추출을 담당. |
-| `ShadowMeshDeformationSlider.cs` | 그림자 변형 반경을 조절하는 슬라이더 UI. |
 | `MediaPipeUdpReceiver.cs` | Python MediaPipe 스크립트가 보내는 UDP 손 좌표를 수신. |
 | `MediaPipeMeshDeformationInput.cs` | MediaPipe 손 좌표를 그림자 메쉬 변형 입력으로 변환. |
-| `MediaPipeInteractionVisualizer.cs` | 손 입력, hover, grab 상태를 시각화. |
+| `MediaPipeInteractionVisualizer.cs` | MediaPipe 손 입력 상태, 경계 마커, 손 그림자 실루엣 메쉬/outline 시각화. |
 | `SF3DGenerationClient.cs` | SF3D FastAPI 서버에 texture/model 생성 요청을 보내고 GLB 결과를 저장. |
 | `HologramSceneManager.cs` | hologramOut 씬에서 Enter 입력 시 Main 씬으로 돌아감. |
 | `HologramModelRecorder.cs` | 생성된 GLB를 불러오고 회전/녹화 출력을 담당. |
@@ -165,6 +164,31 @@ D:\Unity-HandTracking
 | `inputDirectory` | `D:/Unity-HandTracking/output/sf3d` | 불러올 GLB 폴더 |
 | `outputDirectory` | `D:/Unity-HandTracking/output/recordings` | 녹화 결과 저장 폴더 |
 
+### MediaPipe 설정 관련
+
+#### MediaPipeMeshDeformationInput - Grab Gesture
+
+| Field | 설명 |
+| --- | --- |
+| `Hover Snap Distance Local` | 검지 위치가 그림자 메쉬 경계에 얼마나 가까워야 hover 대상으로 잡히는지 정한다. (Hover: 주황색 마커) 값이 크면 경계에서 조금 멀어도 잡을 수 있고, 값이 작으면 경계에 더 정확히 접근해야 한다. |
+| `Pinch Enter Threshold Pixels` | 엄지와 검지 사이 거리가 이 값 이하가 되면 grab 진입 조건으로 판단한다. (Grab/Pull: 초록색 마커) |
+| `Pinch Exit Threshold Pixels` | grab 상태에서 엄지와 검지 사이 거리가 이 값보다 커지면 grab을 해제한다. |
+| `Grab Activation Hold Seconds` | pinch 조건이 충족된 뒤 실제 grab으로 전환되기까지 유지해야 하는 시간이다. 값이 크면 실수로 스치듯 잡히는 상황이 줄고, 값이 작으면 반응이 빨라진다. |
+| `Affected Radius Local` | grab으로 당길 때 주변 정점까지 함께 움직이는 영향 반경. Maya의 Soft Selection 기능과 비슷하다. 값이 크면 넓은 영역이 부드럽게 같이 움직이고, 값이 작으면 잡은 지점 근처만 강하게 변형된다. |
+| `Pull Strength` | 손 움직임이 메쉬 변형에 반영되는 세기. 값이 크면 같은 손 움직임에도 더 빠르고 크게 당겨지고, 값이 작으면 더 천천히 부드럽게 변형된다. |
+
+#### MediaPipeInteractionVisualizer - Hand Shadow
+
+| Field | 설명 |
+| --- | --- |
+| `Show Hand Shadow` | MediaPipe 손 랜드마크 기반 손 그림자 실루엣 메쉬를 표시할지 정한다. |
+| `Hand Shadow Color` | 손 그림자 실루엣 본체 색상과 투명도. |
+| `Screen Hand Shadow Distance` | 손 그림자 실루엣을 카메라 앞 어느 거리에서 그릴지 정한다. 화면 기준으로 손 실루엣을 배치할 때 사용한다. |
+| `Screen Hand Shadow Scale` | 손 그림자 실루엣 전체 크기 배율. |
+| `Hand Shadow Finger Width Scale` | 손가락 segment 두께 배율. 손가락 막대 부분만 굵어지며, palm과 cap 크기는 별도 기준으로 고정임. |
+| `Hand Shadow Outline Color` | 손 그림자 실루엣 뒤에 그리는 outline 메쉬 색상. |
+| `Hand Shadow Outline Scale` | outline 메쉬를 본체보다 얼마나 크게 그릴지 정한다. 값이 클수록 흰색 외곽이 두껍게 보인다. |
+
 
 ## Pipeline States
 
@@ -192,7 +216,7 @@ output\shadowmesh
 
 | 파일 | 설명 |
 | --- | --- |
-| `shadow_contour.png` | 추출된 그림자 윤곽 확인용 이미지 (실사용 X) |
+| `shadow_contour.png` | 캡처된 그림자 윤곽 이미지 (Qwen 입력) |
 | `shadow_mesh.obj` | Unity가 불러오는 2D 그림자 메쉬 |
 | `shadow_metadata.json` | boundary index, scale, center offset 등 메쉬 보정 정보 |
 
@@ -240,7 +264,6 @@ handTrackingArguments: --camera 0
 
 ### SF3D 서버가 안 켜질 때
 
-- `conda activate artifact`가 되어 있는지 확인한다.
 - Hugging Face 모델 접근 권한이 필요한 경우 해당 환경에서 먼저 로그인한다.
 
 
@@ -249,25 +272,3 @@ handTrackingArguments: --camera 0
 - `output\sf3d` 폴더가 생성되는지 확인한다.
 - SF3D 서버 콘솔에서 texture/model generation 오류가 없는지 확인한다.
 - Unity Console에서 `SF3DGenerationClient` 경고를 확인한다.
-
-## Git Ignore / Generated Files
-
-아래 파일과 폴더는 실행 중 생성되는 산출물이므로 git에 올리지 않도록 한다.
-
-```text
-UnityProject/Library/
-UnityProject/Temp/
-UnityProject/Logs/
-UnityProject/UserSettings/
-UnityProject/obj/
-UnityProject/.vs/
-UnityProject/.vsconfig
-UnityProject/*.csproj
-UnityProject/*.sln
-output/sf3d/
-output/recordings/
-__pycache__/
-*.pyc
-```
-
-Unity 프로젝트를 열면 `.csproj`, `.sln`, `Library`, `Temp` 등은 다시 생성됨
