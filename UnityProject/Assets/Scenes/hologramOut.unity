@@ -184,7 +184,6 @@ MonoBehaviour:
   m_Name:
   m_EditorClassIdentifier:
   inputDirectory: D:/Unity-HandTracking/output/sf3d
-  outputDirectory: D:/Unity-HandTracking/output/recordings
 --- !u!222 &286574751
 CanvasRenderer:
   m_ObjectHideFlags: 0

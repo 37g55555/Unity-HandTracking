@@ -15,9 +15,13 @@ namespace ShadowPrototype
         private const string DefaultCaptureCameraArguments = "--mode live --camera 0";
         private const string DefaultHandTrackingCameraArguments = "--camera 1";
         private const string DefaultSf3dServerArguments = "-m uvicorn app:app --host 127.0.0.1 --port 8000";
+        private const string ShadowCaptureProcessLabel = "ShadowCapture";
+        private const string HandTrackingProcessLabel = "HandTracking";
+        private const string Sf3dServerProcessLabel = "API";
         private const int ExportResolution = 1024;
-        private const float Sf3dHealthCheckIntervalSeconds = 1.0f;
-        private const float Sf3dStartupTimeoutSeconds = 60.0f;
+        private const float Sf3dHealthCheckIntervalSeconds = 0.25f;
+        private const int Sf3dHealthRequestTimeoutSeconds = 1;
+        private const float Sf3dStartupTimeoutSeconds = 180.0f;
         private static readonly Color ExportFillColor = Color.black;
         private static readonly Color ExportBackgroundColor = new Color(0f, 0f, 0f, 0f);
 
@@ -106,16 +110,24 @@ namespace ShadowPrototype
             handTrackingStartedForCurrentCapture = false;
             sf3dClient?.ResetSilhouetteLabel();
 
+            StartCoroutine(StartPipelineRoutine());
+        }
+
+        private IEnumerator StartPipelineRoutine()
+        {
+            yield return StartSf3dServerRoutine();
+            if (sf3dServerReady && sf3dClient != null)
+            {
+                sf3dClient.WarmupLabeler();
+            }
+
             bool isCaptureFileMode = IsCaptureFileMode();
             if (!isCaptureFileMode && !IsCameraAvailable(GetCaptureCameraId()))
             {
                 Debug.LogWarning("PipelineManager: ShadowMesh camera was not found; capture process will not start.");
                 stateManager.OnShadowMeshLoadFailed("ShadowMesh camera was not found.");
-                return;
+                yield break;
             }
-
-            StartCoroutine(StartSf3dServerRoutine());
-            StartCoroutine(WarmupLabelerWhenSf3dReady());
 
             if (isCaptureFileMode)
             {
@@ -333,23 +345,9 @@ namespace ShadowPrototype
             sf3dClient?.WarmupTexturePipeline();
         }
 
-        private IEnumerator WarmupLabelerWhenSf3dReady()
-        {
-            if (sf3dClient == null)
-            {
-                yield break;
-            }
-
-            yield return EnsureSf3dServerReady();
-            if (sf3dServerReady)
-            {
-                sf3dClient.WarmupLabeler();
-            }
-        }
-
         private void LaunchCaptureProcess()
         {
-            LaunchPythonScriptInTerminal("ShadowCapture", captureWorkingDirectory, captureScriptName, captureArguments);
+            LaunchPythonScriptInTerminal(ShadowCaptureProcessLabel, captureWorkingDirectory, captureScriptName, captureArguments);
         }
 
         private bool IsCaptureFileMode()
@@ -409,7 +407,7 @@ namespace ShadowPrototype
 
         private void LaunchHandTrackingProcess()
         {
-            LaunchPythonScriptInTerminal("HandTracking", handTrackingWorkingDirectory, handTrackingScriptName, handTrackingArguments);
+            LaunchPythonScriptInTerminal(HandTrackingProcessLabel, handTrackingWorkingDirectory, handTrackingScriptName, handTrackingArguments);
         }
 
         private IEnumerator StartSf3dServerRoutine()
@@ -433,7 +431,7 @@ namespace ShadowPrototype
                 yield break;
             }
 
-            LaunchPythonCommandInTerminal("SF3DServer", sf3dWorkingDirectory, sf3dServerArguments);
+            LaunchPythonCommandInTerminal(Sf3dServerProcessLabel, sf3dWorkingDirectory, sf3dServerArguments);
             yield return WaitForSf3dServerReady();
             sf3dServerStarting = false;
         }
@@ -443,7 +441,7 @@ namespace ShadowPrototype
             yield return EnsureSf3dServerReady();
             if (!sf3dServerReady)
             {
-                ShowExportStatus("SF3D server is not ready.");
+                ShowExportStatus("API is not ready.");
                 yield break;
             }
 
@@ -455,7 +453,7 @@ namespace ShadowPrototype
             yield return EnsureSf3dServerReady();
             if (!sf3dServerReady)
             {
-                ShowExportStatus("SF3D server is not ready.");
+                ShowExportStatus("API is not ready.");
                 yield break;
             }
 
@@ -486,14 +484,14 @@ namespace ShadowPrototype
                 yield return new WaitForSecondsRealtime(Sf3dHealthCheckIntervalSeconds);
             }
 
-            Debug.LogWarning("PipelineManager: SF3D server did not respond before timeout.");
+            Debug.LogWarning("PipelineManager: API did not respond before timeout.");
         }
 
         private IEnumerator CheckSf3dServerReady()
         {
             string healthUrl = $"{sf3dClient.BaseUrl.TrimEnd('/')}/health";
             using UnityWebRequest request = UnityWebRequest.Get(healthUrl);
-            request.timeout = 2;
+            request.timeout = Sf3dHealthRequestTimeoutSeconds;
             yield return request.SendWebRequest();
 
             sf3dServerReady = request.result == UnityWebRequest.Result.Success;
@@ -511,7 +509,7 @@ namespace ShadowPrototype
             }
 
             sf3dServerReadyLogged = true;
-            Debug.Log("PipelineManager: SF3D server is ready.");
+            Debug.Log("PipelineManager: API is ready.");
         }
 
         private void LaunchPythonScriptInTerminal(
@@ -616,7 +614,7 @@ namespace ShadowPrototype
         private void StopHandTrackingProcess()
         {
             mediaPipeReceiver?.StopReceiver();
-            StopLaunchedProcesses("HandTracking");
+            StopLaunchedProcesses(HandTrackingProcessLabel);
         }
 
         private void StopLaunchedProcesses()
@@ -629,6 +627,12 @@ namespace ShadowPrototype
             for (int index = launchedProcesses.Count - 1; index >= 0; index--)
             {
                 LaunchedProcess launchedProcess = launchedProcesses[index];
+                if (string.IsNullOrEmpty(processLabel) &&
+                    string.Equals(launchedProcess.Label, Sf3dServerProcessLabel, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 if (!string.IsNullOrEmpty(processLabel) &&
                     !string.Equals(launchedProcess.Label, processLabel, StringComparison.Ordinal))
                 {

@@ -74,10 +74,9 @@ Unity-HandTracking
 │  └─ uv_unwrapper
 └─ output
    ├─ shadowmesh
-   ├─ sf3d
-   └─ recordings
+   └─ sf3d
 ```
-`output\sf3d`, `output\recordings` 폴더는 실행 시 자동으로 생성된다.
+`output\sf3d` 폴더는 실행 시 자동으로 생성된다.
 
 ### Unity 프로젝트 열기
 
@@ -110,7 +109,7 @@ Unity Hub에서 `UnityProject` 폴더를 프로젝트로 연다.
 | `MediaPipeInteractionVisualizer.cs` | MediaPipe 손 입력 상태, 경계 마커, 손 그림자 실루엣 메쉬/outline 시각화. |
 | `SF3DGenerationClient.cs` | SF3D FastAPI 서버에 texture/model 생성 요청을 보내고 GLB 결과를 저장. |
 | `HologramSceneManager.cs` | hologramOut 씬에서 Enter 입력 시 Main 씬으로 돌아감. |
-| `HologramModelRecorder.cs` | 생성된 GLB를 불러오고 회전/녹화 출력을 담당. |
+| `HologramModelLoader.cs` | 생성된 GLB를 불러오고 회전 표시를 담당. |
 
 ### Python Scripts
 
@@ -157,12 +156,11 @@ D:\Unity-HandTracking
 
 ### hologramOut.unity
 
-#### `HologramModelRecorder`
+#### `HologramModelLoader`
 
 | Field | 현재 값 | 설명 |
 | --- | --- | --- |
 | `inputDirectory` | `D:/Unity-HandTracking/output/sf3d` | 불러올 GLB 폴더 |
-| `outputDirectory` | `D:/Unity-HandTracking/output/recordings` | 녹화 결과 저장 폴더 |
 
 ### MediaPipe 설정 관련
 
@@ -232,19 +230,7 @@ output\sf3d
 | --- | --- |
 | `deformed_shadow.png` | Unity에서 추출한 변형 그림자 실루엣 |
 | `last_texture.png` | ControlNet으로 생성된 texture preview |
-| `shadow_model_*.glb` | SF3D로 생성된 3D 모델 |
-
-### Hologram Recording 출력
-
-위치:
-
-```text
-output\recordings
-```
-
-| 파일 | 설명 |
-| --- | --- |
-| `n.mp4` | 홀로그램 영상 |
+| `shadow_model.glb` | SF3D로 생성된 3D 모델 |
 
 
 ## Troubleshooting

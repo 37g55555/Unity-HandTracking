@@ -428,7 +428,7 @@ MonoBehaviour:
   textureEndpoint: /generate-texture
   modelEndpoint: /generate-3d
   outputDirectoryRelative: ../output/sf3d
-  generatedGlbFilePrefix: shadow_model
+  generatedGlbFileName: shadow_model.glb
   texturePreviewFileName: last_texture.png
   targetSceneAfterGeneration: hologramOut
 --- !u!1 &1061289392

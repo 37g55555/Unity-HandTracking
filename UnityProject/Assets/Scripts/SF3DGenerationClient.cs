@@ -18,17 +18,18 @@ namespace ShadowPrototype
         [SerializeField] private string textureEndpoint = "/generate-texture";
         [SerializeField] private string modelEndpoint = "/generate-3d";
         [SerializeField] private string outputDirectoryRelative = "../output/sf3d";
-        [SerializeField] private string generatedGlbFilePrefix = "shadow_model";
+        [SerializeField] private string generatedGlbFileName = "shadow_model.glb";
         [SerializeField] private string texturePreviewFileName = "last_texture.png";
         [SerializeField] private string targetSceneAfterGeneration = "hologramOut";
 
         private Coroutine activeRoutine;
         private Coroutine activeClassificationRoutine;
-        private Coroutine activeWarmupRoutine;
+        private Coroutine activeLabelerWarmupRoutine;
+        private Coroutine activeTextureWarmupRoutine;
 
         public bool IsRunning => activeRoutine != null;
         public bool IsClassifying => activeClassificationRoutine != null;
-        public bool IsWarmingUp => activeWarmupRoutine != null;
+        public bool IsWarmingUp => activeLabelerWarmupRoutine != null || activeTextureWarmupRoutine != null;
         public bool HasSilhouetteLabel { get; private set; }
         public string BaseUrl => baseUrl;
         public string SilhouetteLabel { get; private set; } = "object";
@@ -77,12 +78,27 @@ namespace ShadowPrototype
 
         public void WarmupLabeler()
         {
-            StartWarmup(BuildUrl(LabelerWarmupEndpoint), "Qwen labeler");
+            if (activeClassificationRoutine != null || HasSilhouetteLabel)
+            {
+                return;
+            }
+
+            if (activeLabelerWarmupRoutine != null)
+            {
+                return;
+            }
+
+            activeLabelerWarmupRoutine = StartCoroutine(WarmupLabelerCoroutine());
         }
 
         public void WarmupTexturePipeline()
         {
-            StartWarmup(BuildUrl(TextureWarmupEndpoint), "ControlNet texture pipeline");
+            if (activeTextureWarmupRoutine != null)
+            {
+                return;
+            }
+
+            activeTextureWarmupRoutine = StartCoroutine(WarmupTextureCoroutine());
         }
 
         public void GenerateFromPng(string pngPath)
@@ -153,14 +169,16 @@ namespace ShadowPrototype
             return true;
         }
 
-        private void StartWarmup(string url, string label)
+        private IEnumerator WarmupLabelerCoroutine()
         {
-            if (activeWarmupRoutine != null)
-            {
-                return;
-            }
+            yield return WarmupCoroutine(BuildUrl(LabelerWarmupEndpoint), "Qwen labeler");
+            activeLabelerWarmupRoutine = null;
+        }
 
-            activeWarmupRoutine = StartCoroutine(WarmupCoroutine(url, label));
+        private IEnumerator WarmupTextureCoroutine()
+        {
+            yield return WarmupCoroutine(BuildUrl(TextureWarmupEndpoint), "ControlNet texture pipeline");
+            activeTextureWarmupRoutine = null;
         }
 
         private IEnumerator WarmupCoroutine(string url, string label)
@@ -179,7 +197,6 @@ namespace ShadowPrototype
                 Debug.Log($"SF3DGenerationClient: {label} warmup complete.");
             }
 
-            activeWarmupRoutine = null;
         }
 
         private IEnumerator GenerateFromPngCoroutine(string pngPath)
@@ -232,8 +249,7 @@ namespace ShadowPrototype
                 yield break;
             }
 
-            string glbFileName = $"{generatedGlbFilePrefix}_{DateTime.Now:yyyyMMdd_HHmmss}.glb";
-            LastGeneratedGlbPath = SaveBytesToOutput(modelRequest.downloadHandler.data, glbFileName);
+            LastGeneratedGlbPath = SaveBytesToOutput(modelRequest.downloadHandler.data, generatedGlbFileName);
 
             modelRequest.Dispose();
             activeRoutine = null;

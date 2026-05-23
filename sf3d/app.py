@@ -1,25 +1,32 @@
-import asyncio
 import gc
 import io
 import os
+import time
 import uuid
+import warnings
 from contextlib import nullcontext
+from contextlib import redirect_stdout
 
 import cv2
 import numpy as np
-import rembg
 import torch
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, ImageEnhance
+from tqdm.auto import tqdm
 
 from sf3d.system import SF3D
-from sf3d.utils import get_device, remove_background, resize_foreground
+from sf3d.utils import get_device, resize_foreground
 from silhouette_labeler import get_labeler, infer_silhouette_label, unload_labeler
 
 
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", message=".*use_fast.*")
+warnings.filterwarnings("ignore", message=".*do_sample.*temperature.*")
+warnings.filterwarnings("ignore", message=".*weights_only=False.*")
+
 app = FastAPI(
-    title="SF3D Unity API Server",
+    title="Unity API",
     description="Receives Unity shadow PNGs and returns GLB models.",
 )
 
@@ -28,7 +35,6 @@ if not torch.cuda.is_available():
     device = "cpu"
 
 model = None
-rembg_session = None
 cn_pipe = None
 texture_resolution = int(os.getenv("SF3D_TEXTURE_RESOLUTION", "512"))
 sf3d_depth_axis = os.getenv("SF3D_DEPTH_AXIS", "z").lower()
@@ -38,20 +44,16 @@ sf3d_max_depth_scale = float(os.getenv("SF3D_MAX_DEPTH_SCALE", "6.0"))
 os.makedirs("temp_outputs", exist_ok=True)
 
 
-@app.on_event("startup")
-async def warmup_labeler_after_startup():
-    asyncio.create_task(warmup_labeler_in_background())
+def log(message: str):
+    print(message, flush=True)
 
 
-async def warmup_labeler_in_background():
-    print("Starting Qwen labeler warmup after server startup.", flush=True)
-    try:
-        await asyncio.to_thread(get_labeler, device)
-    except Exception as exception:
-        print(f"Qwen labeler warmup failed: {exception}", flush=True)
-        return
+def elapsed_seconds(started_at: float) -> str:
+    return f"{time.perf_counter() - started_at:.1f}s"
 
-    print("Qwen labeler warmup complete.", flush=True)
+
+def progress(label: str, total: int):
+    return tqdm(desc=label, total=total, ncols=90, leave=True)
 
 
 def extract_silhouette_mask(image: Image.Image) -> Image.Image:
@@ -123,10 +125,6 @@ def thicken_mesh_depth(mesh):
     depth_scale = target_depth / current_depth
 
     if depth_scale <= 1.001:
-        print(
-            f"SF3D depth unchanged: extents={np.round(extents, 4).tolist()}",
-            flush=True,
-        )
         return mesh
 
     depth_scale = min(depth_scale, sf3d_max_depth_scale)
@@ -141,13 +139,6 @@ def thicken_mesh_depth(mesh):
     except Exception:
         pass
 
-    print(
-        "SF3D depth thickened: "
-        f"axis={depth_axis}, scale={depth_scale:.3f}, "
-        f"before={np.round(extents, 4).tolist()}, "
-        f"after={np.round(mesh.extents, 4).tolist()}",
-        flush=True,
-    )
     return mesh
 
 
@@ -168,7 +159,6 @@ def clear_memory():
 def unload_texture_pipeline():
     global cn_pipe
     if cn_pipe is not None:
-        print("Unloading ControlNet texture pipeline from CUDA memory...", flush=True)
         del cn_pipe
         cn_pipe = None
     clear_memory()
@@ -177,53 +167,51 @@ def unload_texture_pipeline():
 def build_texture_prompt(label: str) -> str:
     clean_label = label.strip().lower() if label else "object"
     return (
-        f"one {clean_label}, a single {clean_label} object shaped to match the silhouette, "
-        "one continuous form filling the silhouette, clear readable object, transparent background"
+        f"one single {clean_label} forcibly warped into the exact silhouette shape, "
+        f"a distorted {clean_label} object squeezed to touch every edge of the silhouette, "
+        "three-dimensional form, vivid natural color, transparent background"
     )
 
 
 def unload_sf3d_model():
     global model
     if model is not None:
-        print("Unloading SF3D model from CUDA memory...", flush=True)
+        log("[SF3D] unloading model from CUDA memory...")
         del model
         model = None
     clear_memory()
-
-
-def get_rembg_session():
-    global rembg_session
-    if rembg_session is None:
-        rembg_session = rembg.new_session()
-    return rembg_session
 
 
 def get_sf3d_model():
     global model
     if model is None:
         unload_texture_pipeline()
-        print(f"Loading SF3D model on device: {device}...", flush=True)
-        try:
-            model = SF3D.from_pretrained(
-                "stabilityai/stable-fast-3d",
-                config_name="config.yaml",
-                weight_name="model.safetensors",
-            )
-        except Exception as exc:
-            message = str(exc)
-            if "Cannot access gated repo" in message or "401 Client Error" in message:
-                raise HTTPException(
-                    status_code=401,
-                    detail=(
-                        "Cannot access stabilityai/stable-fast-3d. "
-                        "Log in to Hugging Face in this SF3D environment and accept "
-                        "the model access terms on https://huggingface.co/stabilityai/stable-fast-3d."
-                    ),
-                ) from exc
-            raise
-        model.to(device)
-        model.eval()
-        print("SF3D model loaded.", flush=True)
+        started_at = time.perf_counter()
+        with progress("[SF3D] load", 3) as bar:
+            try:
+                model = SF3D.from_pretrained(
+                    "stabilityai/stable-fast-3d",
+                    config_name="config.yaml",
+                    weight_name="model.safetensors",
+                )
+                bar.update(1)
+            except Exception as exc:
+                message = str(exc)
+                if "Cannot access gated repo" in message or "401 Client Error" in message:
+                    raise HTTPException(
+                        status_code=401,
+                        detail=(
+                            "Cannot access stabilityai/stable-fast-3d. "
+                            "Log in to Hugging Face in this SF3D environment and accept "
+                            "the model access terms on https://huggingface.co/stabilityai/stable-fast-3d."
+                        ),
+                    ) from exc
+                raise
+            model.to(device)
+            bar.update(1)
+            model.eval()
+            bar.update(1)
+        log(f"[SF3D] model ready ({elapsed_seconds(started_at)}).")
     return model
 
 
@@ -238,7 +226,6 @@ def get_texture_pipeline():
         )
 
         dtype = torch.float16 if device == "cuda" else torch.float32
-        print("Loading ControlNet texture pipeline...", flush=True)
         controlnet = ControlNetModel.from_pretrained(
             "lllyasviel/sd-controlnet-canny",
             torch_dtype=dtype,
@@ -247,10 +234,11 @@ def get_texture_pipeline():
             "stable-diffusion-v1-5/stable-diffusion-v1-5",
             controlnet=controlnet,
             torch_dtype=dtype,
+            safety_checker=None,
+            requires_safety_checker=False,
         )
         cn_pipe.scheduler = UniPCMultistepScheduler.from_config(cn_pipe.scheduler.config)
         cn_pipe.to(device)
-        print("ControlNet texture pipeline loaded.", flush=True)
     return cn_pipe
 
 
@@ -267,59 +255,62 @@ async def health():
 
 @app.post("/warmup-labeler")
 async def warmup_labeler():
-    print("Received Qwen labeler warmup request.", flush=True)
+    started_at = time.perf_counter()
+    log("[Qwen] warmup requested.")
     get_labeler(device)
-    print("Qwen labeler warmup complete.", flush=True)
+    log(f"[Qwen] warmup complete ({elapsed_seconds(started_at)}).")
     return {"ok": True}
 
 
 @app.post("/warmup-texture")
 async def warmup_texture():
-    print("Received ControlNet texture warmup request.", flush=True)
+    started_at = time.perf_counter()
+    log("[ControlNet] warmup requested.")
     get_texture_pipeline()
-    print("ControlNet texture warmup complete.", flush=True)
+    log(f"[ControlNet] warmup complete ({elapsed_seconds(started_at)}).")
     return {"ok": True}
 
 
 @app.post("/classify-silhouette")
 async def classify_silhouette(file: UploadFile = File(...)):
-    print(f"Received silhouette classification request: {file.filename}", flush=True)
+    started_at = time.perf_counter()
+    log(f"[Qwen] classification requested: {file.filename}")
 
     image_bytes = await file.read()
     image = Image.open(io.BytesIO(image_bytes))
     silhouette_mask = extract_silhouette_mask(image)
 
+    qwen_input = silhouette_mask.convert("RGB")
     try:
-        label = infer_silhouette_label(silhouette_mask.convert("RGB"), device)
+        label = infer_silhouette_label(qwen_input, device)
     finally:
         unload_labeler()
         clear_memory()
 
-    print(f"Silhouette label: {label}", flush=True)
+    log(f"[Qwen] label: {label} ({elapsed_seconds(started_at)}).")
     return {"label": label}
 
 
 @app.post("/generate-texture")
 async def generate_texture(file: UploadFile = File(...), label: str = Form("object")):
-    print(f"Received texture request: {file.filename}", flush=True)
+    started_at = time.perf_counter()
+    log(f"[ControlNet] texture requested: {file.filename}, label={label}")
 
     image_bytes = await file.read()
     image = Image.open(io.BytesIO(image_bytes))
     silhouette_mask = extract_silhouette_mask(image)
     control_image = build_control_image(silhouette_mask)
-    silhouette_mask.save("temp_outputs/last_silhouette_mask.png", format="PNG")
-    control_image.save("temp_outputs/last_control_edges.png", format="PNG")
 
     prompt = build_texture_prompt(label)
-    print(f"Texture prompt label: {label}", flush=True)
-    print(f"Texture prompt: {prompt}", flush=True)
+    log(f"[ControlNet] prompt: {prompt}")
     negative_prompt = (
-        "low quality, worst quality, text, watermark, extra objects, duplicate object, "
-        "multiple objects, pattern, repeated objects, collage, background scenery"
+        "low quality, worst quality, text, watermark, floor, table, ground plane, "
+        "cast shadow, background scenery, gray background, white background, "
+        "empty space inside silhouette, blank area, normal object proportions, "
+        "extra objects, duplicate object, multiple objects, collage"
     )
 
     pipe = get_texture_pipeline()
-    print("Running ControlNet inference from shadow silhouette mask...", flush=True)
     output = pipe(
         prompt,
         image=control_image,
@@ -327,8 +318,8 @@ async def generate_texture(file: UploadFile = File(...), label: str = Form("obje
         height=texture_resolution,
         width=texture_resolution,
         num_inference_steps=20,
-        guidance_scale=7.5,
-        controlnet_conditioning_scale=1.25,
+        guidance_scale=8.5,
+        controlnet_conditioning_scale=1.55,
     ).images[0]
     output = brighten_storybook_texture(output)
     output = apply_silhouette_alpha(output, silhouette_mask)
@@ -336,44 +327,49 @@ async def generate_texture(file: UploadFile = File(...), label: str = Form("obje
     img_byte_arr = io.BytesIO()
     output.save(img_byte_arr, format="PNG")
     img_byte_arr.seek(0)
-    output.save("temp_outputs/last_texture.png", format="PNG")
 
     unload_texture_pipeline()
+    log(f"[ControlNet] texture complete ({elapsed_seconds(started_at)}).")
     return StreamingResponse(img_byte_arr, media_type="image/png")
 
 
 @app.post("/generate-3d")
 async def generate_3d(file: UploadFile = File(...)):
-    print(f"Received 3D request: {file.filename}", flush=True)
+    started_at = time.perf_counter()
+    log(f"[SF3D] model requested: {file.filename}")
 
     image_bytes = await file.read()
     image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
 
-    print("Preprocessing image...", flush=True)
-    image = remove_background(image, get_rembg_session())
-    image = resize_foreground(image, 0.85)
-
-    print("Running SF3D inference...", flush=True)
     sf3d_model = get_sf3d_model()
-    autocast_context = (
-        torch.autocast(device_type=device, dtype=torch.bfloat16)
-        if device == "cuda"
-        else nullcontext()
-    )
-    with torch.no_grad():
-        with autocast_context:
-            mesh, _ = sf3d_model.run_image(
-                [image],
-                bake_resolution=1024,
-                remesh="none",
-                vertex_count=-1,
-            )
 
-    mesh = thicken_mesh_depth(mesh)
+    with progress("[SF3D] run", 4) as bar:
+        image = resize_foreground(image, 0.85)
+        bar.update(1)
 
-    out_mesh_path = os.path.join("temp_outputs", f"{uuid.uuid4()}.glb")
-    mesh.export(out_mesh_path, include_normals=True)
-    print(f"Generated successfully: {out_mesh_path}", flush=True)
+        autocast_context = (
+            torch.autocast(device_type=device, dtype=torch.bfloat16)
+            if device == "cuda"
+            else nullcontext()
+        )
+        with torch.no_grad():
+            with autocast_context:
+                with redirect_stdout(io.StringIO()):
+                    mesh, _ = sf3d_model.run_image(
+                        [image],
+                        bake_resolution=1024,
+                        remesh="none",
+                        vertex_count=-1,
+                    )
+        bar.update(1)
+
+        mesh = thicken_mesh_depth(mesh)
+        bar.update(1)
+
+        out_mesh_path = os.path.join("temp_outputs", f"{uuid.uuid4()}.glb")
+        mesh.export(out_mesh_path, include_normals=True)
+        bar.update(1)
+    log(f"[SF3D] generated: {out_mesh_path} ({elapsed_seconds(started_at)}).")
 
     clear_memory()
     return FileResponse(out_mesh_path, media_type="model/gltf-binary", filename="model.glb")
