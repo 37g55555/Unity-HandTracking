@@ -10,6 +10,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 OUTPUT_DIR = os.path.join("output", "shadowmesh")
+BACKGROUND_FILE_NAME = "background.png"
 CONTOUR_FILE_NAME = "shadow_contour.png"
 MESH_FILE_NAME = "shadow_mesh.obj"
 METADATA_FILE_NAME = "shadow_metadata.json"
@@ -65,22 +66,60 @@ def open_camera(camera_id=0):
     return cap
 
 
-def capture_live(camera_id=0):
+def get_background_path():
+    return os.path.join(OUTPUT_DIR, BACKGROUND_FILE_NAME)
+
+
+def save_background_frame(frame):
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    background_path = get_background_path()
+    if not cv2.imwrite(background_path, frame):
+        print(f"[ERROR] Background image could not be saved: {background_path}")
+        return
+
+    print(f"[OK] Saved {background_path}")
+
+
+def load_background_frame():
+    background_path = get_background_path()
+    if not os.path.isfile(background_path):
+        print(f"[ERROR] Background image was not found: {background_path}")
+        return None
+
+    frame = cv2.imread(background_path, cv2.IMREAD_COLOR)
+    if frame is None or frame.size == 0:
+        print(f"[ERROR] Background image could not be read: {background_path}")
+        return None
+
+    print(f"[OK] Loaded {background_path}")
+    return frame
+
+
+def capture_live(camera_id=0, use_saved_background=False):
     cap = open_camera(camera_id)
     if not cap:
         return None, None
 
-    bg_frame = None
+    bg_frame = load_background_frame() if use_saved_background else None
+    if use_saved_background and bg_frame is None:
+        cap.release()
+        cv2.destroyAllWindows()
+        return None, None
+
     shadow_frame = None
 
     print("=" * 60)
     print("  Shadow Mesh Capture")
     print("=" * 60)
-    print("  ENTER: capture background, then shadow")
+    if use_saved_background:
+        print("  ENTER: capture shadow")
+        print("  Background capture skipped; using saved background.png")
+    else:
+        print("  ENTER: capture background, then shadow")
     print("  q: cancel")
     print("=" * 60)
 
-    step = 1
+    step = 2 if use_saved_background else 1
 
     while True:
         ret, frame = cap.read()
@@ -118,6 +157,7 @@ def capture_live(camera_id=0):
             if step == 1:
                 bg_frame = frame.copy()
                 print("[OK] Background captured.")
+                save_background_frame(bg_frame)
                 step = 2
             elif step == 2:
                 shadow_frame = frame.copy()
@@ -335,11 +375,12 @@ def main():
     parser = argparse.ArgumentParser(description="Capture a shadow mesh for Unity.")
     parser.add_argument("--mode", choices=["live", "file"], default="live")
     parser.add_argument("--camera", type=int, default=0)
+    parser.add_argument("--bg", dest="use_background", action="store_true")
 
     args = parser.parse_args()
 
     if args.mode == "live":
-        bg_frame, shadow_frame = capture_live(args.camera)
+        bg_frame, shadow_frame = capture_live(args.camera, args.use_background)
         if bg_frame is None or shadow_frame is None:
             sys.exit(1)
         success = process_shadow(bg_frame, shadow_frame)

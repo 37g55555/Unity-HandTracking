@@ -148,6 +148,12 @@ D:\Unity-HandTracking
 --mode file
 ```
 
+`captureArguments`를 아래처럼 바꾸면 live 모드에서 배경 캡처를 건너뛰고 기존 `output\shadowmesh\background.png`를 사용한다.
+
+```text
+--mode live --camera 0 --bg
+```
+
 #### `ShadowMeshFileLoader`
 
 | Field | 현재 값 | 설명 |
@@ -214,6 +220,7 @@ output\shadowmesh
 
 | 파일 | 설명 |
 | --- | --- |
+| `background.png` | live 모드에서 캡처한 배경 이미지. `--mode live --bg` 실행 시 재사용 |
 | `shadow_contour.png` | 캡처된 그림자 윤곽 이미지 (Qwen 입력) |
 | `shadow_mesh.obj` | Unity가 불러오는 2D 그림자 메쉬 |
 | `shadow_metadata.json` | boundary index, scale, center offset 등 메쉬 보정 정보 |
