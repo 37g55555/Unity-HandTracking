@@ -310,7 +310,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   currentState: 0
-  currentStateName: Idle
+  currentStateName: ShadowCapturing
 --- !u!114 &775207381
 MonoBehaviour:
   m_ObjectHideFlags: 0

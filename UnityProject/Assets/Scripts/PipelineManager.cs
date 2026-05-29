@@ -106,7 +106,7 @@ namespace ShadowPrototype
                 return;
             }
 
-            stateManager.ResetToIdle();
+            stateManager.ResetForCapture();
             handTrackingStartedForCurrentCapture = false;
             sf3dClient?.ResetSilhouetteLabel();
 
@@ -228,6 +228,12 @@ namespace ShadowPrototype
 
         private void RequestShadowSilhouetteExport()
         {
+            if (stateManager == null ||
+                stateManager.CurrentState != GameStateManager.PipelineState.MediaPipeTracking)
+            {
+                return;
+            }
+
             if (sf3dClient != null && sf3dClient.IsClassifying)
             {
                 ShowExportStatus("Silhouette classification is still running.");

@@ -7,7 +7,6 @@ namespace ShadowPrototype
     {
         public enum PipelineState
         {
-            Idle,
             ShadowCapturing,
             MediaPipeTracking,
             MeshExtracting,
@@ -16,8 +15,8 @@ namespace ShadowPrototype
             Error
         }
 
-        [SerializeField] private PipelineState currentState = PipelineState.Idle;
-        [SerializeField] private string currentStateName = nameof(PipelineState.Idle);
+        [SerializeField] private PipelineState currentState = PipelineState.ShadowCapturing;
+        [SerializeField] private string currentStateName = nameof(PipelineState.ShadowCapturing);
         public event Action<string, int, int> ShadowMeshLoaded;
         public event Action<string> ShadowMeshLoadFailed;
 
@@ -26,12 +25,12 @@ namespace ShadowPrototype
 
         private void Awake()
         {
-            ResetToIdle();
+            ResetForCapture();
         }
 
-        public void ResetToIdle()
+        public void ResetForCapture()
         {
-            currentState = PipelineState.Idle;
+            currentState = PipelineState.ShadowCapturing;
             currentStateName = currentState.ToString();
         }
 

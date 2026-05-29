@@ -3,6 +3,7 @@ using System.Collections;
 using System.IO;
 using UnityEngine;
 using UnityEngine.Networking;
+using UnityEngine.SceneManagement;
 
 namespace ShadowPrototype
 {
@@ -261,7 +262,12 @@ namespace ShadowPrototype
         {
             GlbGenerated?.Invoke(glbPath);
 
-            UnityEngine.SceneManagement.SceneManager.LoadScene(targetSceneAfterGeneration);
+            if (SceneManager.GetSceneByName(targetSceneAfterGeneration).isLoaded)
+            {
+                return;
+            }
+
+            SceneManager.LoadScene(targetSceneAfterGeneration, LoadSceneMode.Additive);
         }
 
         private IEnumerator ClassifySilhouetteCoroutine(string pngPath)

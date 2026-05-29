@@ -108,7 +108,7 @@ Unity Hub에서 `UnityProject` 폴더를 프로젝트로 연다.
 | `MediaPipeMeshDeformationInput.cs` | MediaPipe 손 좌표를 그림자 메쉬 변형 입력으로 변환. |
 | `MediaPipeInteractionVisualizer.cs` | MediaPipe 손 입력 상태, 경계 마커, 손 그림자 실루엣 메쉬/outline 시각화. |
 | `SF3DGenerationClient.cs` | SF3D FastAPI 서버에 texture/model 생성 요청을 보내고 GLB 결과를 저장. |
-| `HologramSceneManager.cs` | hologramOut 씬에서 Enter 입력 시 Main 씬으로 돌아감. |
+| `HologramSceneManager.cs` | hologramOut 씬에서 2번 디스플레이를 활성화하고, Enter 입력 시 additive로 열린 hologramOut 씬만 닫은 뒤 다음 캡처 사이클을 시작. |
 | `HologramModelLoader.cs` | 생성된 GLB를 불러오고 회전 표시를 담당. |
 
 ### Python Scripts
@@ -200,12 +200,11 @@ D:\Unity-HandTracking
 
 | Initial State | 위치 | 입력 키 | 동작 | Target State |
 | --- | --- | --- | --- | --- |
-| `Idle` | ShadowMesh 웹캠 창 | Enter | 배경 캡처 | `ShadowCapturing` |
 | `ShadowCapturing` | ShadowMesh 웹캠 창 | Enter | 그림자 캡처 | `MediaPipeTracking` |
 | `MediaPipeTracking` | Unity Main 씬 | Enter | 관객이 그림자를 변형하는 동안 Qwen 실루엣 분류를 백그라운드로 진행하고, Enter 입력 시 메쉬 추출 | `MeshExtracting` |
 | `MeshExtracting` | Unity Main 씬 | - | 변형된 그림자 PNG 추출 | `Reconstructing3D` |
 | `Reconstructing3D` | Unity Main 씬 | - | SF3D 3D 재구성 진행 | `HologramOutput` |
-| `HologramOutput` | Unity hologramOut 씬 | Enter | GLB 생성 완료 및 홀로그램 출력, Enter 입력 시 Main 씬으로 복귀 | `Idle` |
+| `HologramOutput` | Unity hologramOut 씬 | Enter | Main 씬은 유지한 채 hologramOut 씬을 additive로 2번 디스플레이에 출력하고, Enter 입력 시 hologramOut 씬만 닫은 뒤 다음 캡처 사이클 시작 | `ShadowCapturing` |
 
 
 ## Outputs

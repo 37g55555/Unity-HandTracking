@@ -1,6 +1,7 @@
 using System.IO;
 using GLTFast;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class HologramModelLoader : MonoBehaviour
 {
@@ -54,6 +55,7 @@ public class HologramModelLoader : MonoBehaviour
         }
 
         loadedModel = new GameObject("HologramObject");
+        SceneManager.MoveGameObjectToScene(loadedModel, gameObject.scene);
         await gltf.InstantiateMainSceneAsync(loadedModel.transform);
         CenterAndNormalize(loadedModel);
         MakeMaterialsUnlit(loadedModel);
