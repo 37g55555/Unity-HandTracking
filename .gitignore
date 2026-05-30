@@ -3,6 +3,10 @@ UnityProject/Temp/
 UnityProject/Logs/
 UnityProject/UserSettings/
 UnityProject/obj/
+UnityProject/build/
+UnityProject/Build/
+UnityProject/Builds/
+UnityProject/output/
 UnityProject/.vs/
 UnityProject/.vsconfig
 UnityProject/*.csproj
