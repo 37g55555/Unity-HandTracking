@@ -20,6 +20,9 @@ namespace ShadowPrototype
 
         [SerializeField] private ShadowMeshDeformer shadowMeshDeformer;
         [SerializeField] private GameStateManager stateManager;
+        [SerializeField] private ShadowMeshRootController shadowMeshRoot;
+        [SerializeField] private Camera targetCamera;
+        [SerializeField] private bool applyCapturedPositionFromMetadata = true;
 
         private FileSystemWatcher watcher;
         private readonly object pendingLock = new object();
@@ -193,8 +196,10 @@ namespace ShadowPrototype
                 Mesh mesh = ObjParser.Parse(meshPath);
                 if (mesh != null)
                 {
-                    int[] boundaryIndices = TryReadBoundaryIndices(meshPath);
+                    ShadowMetadata metadata = TryReadMetadata(meshPath);
+                    int[] boundaryIndices = metadata == null ? null : metadata.boundary_indices;
                     shadowMeshDeformer.ReplaceMesh(mesh, boundaryIndices);
+                    ApplyCapturedPosition(metadata);
                     EnsureShadowMaterial();
                     stateManager?.OnShadowMeshLoaded(meshPath, mesh.vertexCount, boundaryIndices == null ? 0 : boundaryIndices.Length);
                     loadSucceeded = true;
@@ -310,7 +315,7 @@ namespace ShadowPrototype
             renderer.sharedMaterial = material;
         }
 
-        private int[] TryReadBoundaryIndices(string meshPath)
+        private ShadowMetadata TryReadMetadata(string meshPath)
         {
             string directory = Path.GetDirectoryName(meshPath);
             if (string.IsNullOrEmpty(directory))
@@ -327,14 +332,91 @@ namespace ShadowPrototype
             try
             {
                 string json = File.ReadAllText(metadataPath);
-                ShadowMetadata metadata = JsonUtility.FromJson<ShadowMetadata>(json);
-                return metadata == null ? null : metadata.boundary_indices;
+                return JsonUtility.FromJson<ShadowMetadata>(json);
             }
             catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException || exception is ArgumentException)
             {
                 Debug.LogWarning($"ShadowMeshFileLoader: metadata parse failed for '{metadataPath}': {exception.Message}");
                 return null;
             }
+        }
+
+        private void ApplyCapturedPosition(ShadowMetadata metadata)
+        {
+            if (!applyCapturedPositionFromMetadata ||
+                metadata == null ||
+                metadata.center_offset == null ||
+                metadata.center_offset.Length < 2 ||
+                metadata.scale_factor <= 0.0f ||
+                metadata.frame_width <= 0 ||
+                metadata.frame_height <= 0)
+            {
+                return;
+            }
+
+            ShadowMeshRootController rootController = ResolveShadowMeshRoot();
+            if (rootController == null)
+            {
+                return;
+            }
+
+            Camera camera = ResolveTargetCamera();
+            if (camera == null)
+            {
+                return;
+            }
+
+            Vector2 frameSize = new Vector2(metadata.frame_width, metadata.frame_height);
+            Vector2 centerPixels = new Vector2(metadata.center_offset[0], metadata.center_offset[1]);
+            float meshLocalScale = GetShadowMeshLocalScale();
+            rootController.SetCapturedOverlay(
+                centerPixels,
+                metadata.scale_factor,
+                frameSize,
+                camera,
+                meshLocalScale);
+        }
+
+        private ShadowMeshRootController ResolveShadowMeshRoot()
+        {
+            if (shadowMeshRoot != null)
+            {
+                return shadowMeshRoot;
+            }
+
+            if (shadowMeshDeformer != null)
+            {
+                shadowMeshRoot = shadowMeshDeformer.GetComponentInParent<ShadowMeshRootController>();
+                if (shadowMeshRoot != null)
+                {
+                    return shadowMeshRoot;
+                }
+            }
+
+            shadowMeshRoot = FindObjectOfType<ShadowMeshRootController>();
+            return shadowMeshRoot;
+        }
+
+        private Camera ResolveTargetCamera()
+        {
+            if (targetCamera != null)
+            {
+                return targetCamera;
+            }
+
+            targetCamera = Camera.main;
+            return targetCamera;
+        }
+
+        private float GetShadowMeshLocalScale()
+        {
+            if (shadowMeshDeformer == null)
+            {
+                return 1.0f;
+            }
+
+            Vector3 localScale = shadowMeshDeformer.transform.localScale;
+            return Mathf.Max(0.0001f, Mathf.Abs(localScale.x), Mathf.Abs(localScale.y));
         }
 
         private string GetWatchDirectoryAbsolute()
@@ -367,6 +449,10 @@ namespace ShadowPrototype
         private class ShadowMetadata
         {
             public int[] boundary_indices = Array.Empty<int>();
+            public float[] center_offset = Array.Empty<float>();
+            public float scale_factor = 0.0f;
+            public int frame_width = 0;
+            public int frame_height = 0;
         }
     }
 }
