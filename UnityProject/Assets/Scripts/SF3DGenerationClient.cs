@@ -21,7 +21,7 @@ namespace ShadowPrototype
         [SerializeField] private string outputDirectoryRelative = "../output/sf3d";
         [SerializeField] private string generatedGlbFileName = "shadow_model.glb";
         [SerializeField] private string texturePreviewFileName = "last_texture.png";
-        [SerializeField] private string targetSceneAfterGeneration = "hologramOut";
+        [SerializeField] private string targetSceneAfterGeneration = "single";
 
         private Coroutine activeRoutine;
         private Coroutine activeClassificationRoutine;

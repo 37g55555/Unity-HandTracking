@@ -430,7 +430,7 @@ MonoBehaviour:
   outputDirectoryRelative: ../output/sf3d
   generatedGlbFileName: shadow_model.glb
   texturePreviewFileName: last_texture.png
-  targetSceneAfterGeneration: hologramOut
+  targetSceneAfterGeneration: single
 --- !u!1 &1061289392
 GameObject:
   m_ObjectHideFlags: 0

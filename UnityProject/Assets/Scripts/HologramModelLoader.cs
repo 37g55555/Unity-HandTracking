@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using GLTFast;
 using ShadowPrototype;
 using UnityEngine;
@@ -8,10 +9,9 @@ public class HologramModelLoader : MonoBehaviour
 {
     private const float RotationDurationSeconds = 15f;
     private const string ModelFileName = "shadow_model.glb";
-    private const string TexturePreviewFileName = "last_texture.png";
 
     [Header("Paths")]
-    [SerializeField] private string inputDirectory = "D:/Unity-HandTracking/output/sf3d";
+    [SerializeField] private string inputDirectory = "../output/sf3d";
 
     [Header("Placement")]
     [SerializeField] private Vector3 modelWorldOffset = Vector3.zero;
@@ -55,9 +55,31 @@ public class HologramModelLoader : MonoBehaviour
             return generationClient.LastGeneratedGlbPath;
         }
 
-        string fallbackPath = Path.Combine(inputDirectory, ModelFileName);
+        string fallbackPath = Path.Combine(GetUnityProjectDirectoryAbsolute(), inputDirectory, ModelFileName);
         Debug.Log("HologramModelLoader: loading fallback GLB: " + fallbackPath);
         return fallbackPath;
+    }
+
+    private static string GetUnityProjectDirectoryAbsolute()
+    {
+        string dataPath = Path.GetFullPath(Application.dataPath);
+        DirectoryInfo directory = Directory.GetParent(dataPath);
+
+        while (directory != null)
+        {
+            bool hasUnityProjectLayout =
+                Directory.Exists(Path.Combine(directory.FullName, "Assets")) &&
+                Directory.Exists(Path.Combine(directory.FullName, "ProjectSettings"));
+
+            if (hasUnityProjectLayout)
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return Path.GetFullPath(Path.Combine(dataPath, ".."));
     }
 
     private async System.Threading.Tasks.Task LoadGlb(string path)
@@ -80,8 +102,8 @@ public class HologramModelLoader : MonoBehaviour
         loadedModel.transform.SetParent(transform, false);
         await gltf.InstantiateMainSceneAsync(loadedModel.transform);
         CenterAndNormalize(loadedModel, transform.position + modelWorldOffset);
-        Texture2D fallbackTexture = LoadFallbackTexture(path);
-        MakeMaterialsUnlit(loadedModel, fallbackTexture);
+        Texture2D embeddedBaseColorTexture = LoadEmbeddedBaseColorTexture(path);
+        MakeMaterialsUnlit(loadedModel, embeddedBaseColorTexture);
     }
 
     private static void CenterAndNormalize(GameObject model, Vector3 targetWorldPosition)
@@ -113,55 +135,108 @@ public class HologramModelLoader : MonoBehaviour
         model.transform.position += targetWorldPosition - bounds.center;
     }
 
-    private Texture2D LoadFallbackTexture(string modelPath)
+    private static Texture2D LoadEmbeddedBaseColorTexture(string glbPath)
     {
-        string texturePath = ResolveTexturePath(modelPath);
-        if (string.IsNullOrEmpty(texturePath))
+        byte[] glbBytes = File.ReadAllBytes(glbPath);
+        if (glbBytes.Length < 20 || Encoding.ASCII.GetString(glbBytes, 0, 4) != "glTF")
         {
             return null;
         }
 
-        byte[] textureBytes = File.ReadAllBytes(texturePath);
+        string json = null;
+        int binStart = -1;
+        int offset = 12;
+        while (offset + 8 <= glbBytes.Length)
+        {
+            int chunkLength = unchecked((int)ReadUInt32(glbBytes, offset));
+            uint chunkType = ReadUInt32(glbBytes, offset + 4);
+            int chunkStart = offset + 8;
+            if (chunkStart + chunkLength > glbBytes.Length)
+            {
+                break;
+            }
+
+            if (chunkType == 0x4E4F534A)
+            {
+                json = Encoding.UTF8.GetString(glbBytes, chunkStart, chunkLength).Trim('\0', ' ', '\t', '\r', '\n');
+            }
+            else if (chunkType == 0x004E4942)
+            {
+                binStart = chunkStart;
+            }
+
+            offset = chunkStart + chunkLength;
+        }
+
+        if (string.IsNullOrEmpty(json) || binStart < 0)
+        {
+            return null;
+        }
+
+        GltfJson gltfJson = JsonUtility.FromJson<GltfJson>(json);
+        if (gltfJson?.materials == null || gltfJson.materials.Length == 0)
+        {
+            return null;
+        }
+
+        TextureInfo textureInfo = gltfJson.materials[0]?.pbrMetallicRoughness?.baseColorTexture;
+        if (textureInfo == null ||
+            gltfJson.textures == null ||
+            textureInfo.index < 0 ||
+            textureInfo.index >= gltfJson.textures.Length)
+        {
+            return null;
+        }
+
+        int imageIndex = gltfJson.textures[textureInfo.index].source;
+        if (gltfJson.images == null || imageIndex < 0 || imageIndex >= gltfJson.images.Length)
+        {
+            return null;
+        }
+
+        int bufferViewIndex = gltfJson.images[imageIndex].bufferView;
+        if (gltfJson.bufferViews == null || bufferViewIndex < 0 || bufferViewIndex >= gltfJson.bufferViews.Length)
+        {
+            return null;
+        }
+
+        BufferViewDef bufferView = gltfJson.bufferViews[bufferViewIndex];
+        int imageStart = binStart + bufferView.byteOffset;
+        if (bufferView.byteLength <= 0 || imageStart < 0 || imageStart + bufferView.byteLength > glbBytes.Length)
+        {
+            return null;
+        }
+
+        byte[] imageBytes = new byte[bufferView.byteLength];
+        System.Array.Copy(glbBytes, imageStart, imageBytes, 0, bufferView.byteLength);
+
         Texture2D texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
         {
-            name = Path.GetFileNameWithoutExtension(texturePath) + "_RuntimeTexture",
+            name = "GLB_Embedded_BaseColor",
             hideFlags = HideFlags.DontSave,
             wrapMode = TextureWrapMode.Repeat,
             filterMode = FilterMode.Bilinear
         };
 
-        if (!texture.LoadImage(textureBytes))
+        if (!texture.LoadImage(imageBytes))
         {
-            Debug.LogWarning("HologramModelLoader: fallback texture load failed: " + texturePath);
             Destroy(texture);
             return null;
         }
 
-        Debug.Log("HologramModelLoader: fallback texture ready: " + texturePath);
+        Debug.Log("HologramModelLoader: loaded embedded GLB baseColor texture.");
         return texture;
     }
 
-    private string ResolveTexturePath(string modelPath)
+    private static uint ReadUInt32(byte[] bytes, int offset)
     {
-        SF3DGenerationClient generationClient = FindObjectOfType<SF3DGenerationClient>();
-        if (generationClient != null &&
-            !string.IsNullOrWhiteSpace(generationClient.LastTexturePath) &&
-            File.Exists(generationClient.LastTexturePath))
-        {
-            return generationClient.LastTexturePath;
-        }
-
-        string directory = Path.GetDirectoryName(modelPath);
-        if (string.IsNullOrEmpty(directory))
-        {
-            return string.Empty;
-        }
-
-        string siblingTexturePath = Path.Combine(directory, TexturePreviewFileName);
-        return File.Exists(siblingTexturePath) ? siblingTexturePath : string.Empty;
+        return (uint)(bytes[offset] |
+            (bytes[offset + 1] << 8) |
+            (bytes[offset + 2] << 16) |
+            (bytes[offset + 3] << 24));
     }
 
-    private static void MakeMaterialsUnlit(GameObject model, Texture fallbackTexture)
+    private static void MakeMaterialsUnlit(GameObject model, Texture embeddedBaseColorTexture)
     {
         Shader unlitShader = Shader.Find("Universal Render Pipeline/Unlit");
         if (unlitShader == null)
@@ -178,7 +253,7 @@ public class HologramModelLoader : MonoBehaviour
         Renderer[] renderers = model.GetComponentsInChildren<Renderer>();
         int materialCount = 0;
         int texturedMaterialCount = 0;
-        int fallbackTextureCount = 0;
+        int embeddedTextureCount = 0;
         foreach (Renderer renderer in renderers)
         {
             Material[] materials = renderer.sharedMaterials;
@@ -187,9 +262,9 @@ public class HologramModelLoader : MonoBehaviour
                 materials[index] = CreateRuntimeUnlitMaterial(
                     materials[index],
                     unlitShader,
-                    fallbackTexture,
+                    embeddedBaseColorTexture,
                     out bool hasTexture,
-                    out bool usedFallbackTexture);
+                    out bool usedEmbeddedTexture);
 
                 materialCount++;
                 if (hasTexture)
@@ -197,31 +272,31 @@ public class HologramModelLoader : MonoBehaviour
                     texturedMaterialCount++;
                 }
 
-                if (usedFallbackTexture)
+                if (usedEmbeddedTexture)
                 {
-                    fallbackTextureCount++;
+                    embeddedTextureCount++;
                 }
             }
 
             renderer.sharedMaterials = materials;
         }
 
-        Debug.Log($"HologramModelLoader: applied runtime unlit materials. Textured {texturedMaterialCount}/{materialCount}, fallback textures {fallbackTextureCount}.");
+        Debug.Log($"HologramModelLoader: applied runtime unlit materials. Textured {texturedMaterialCount}/{materialCount}, embedded GLB textures {embeddedTextureCount}.");
     }
 
     private static Material CreateRuntimeUnlitMaterial(
         Material sourceMaterial,
         Shader unlitShader,
-        Texture fallbackTexture,
+        Texture embeddedBaseColorTexture,
         out bool hasTexture,
-        out bool usedFallbackTexture)
+        out bool usedEmbeddedTexture)
     {
         Texture baseMap = GetMaterialTexture(sourceMaterial);
-        usedFallbackTexture = false;
-        if (baseMap == null && fallbackTexture != null)
+        usedEmbeddedTexture = false;
+        if (baseMap == null && embeddedBaseColorTexture != null)
         {
-            baseMap = fallbackTexture;
-            usedFallbackTexture = true;
+            baseMap = embeddedBaseColorTexture;
+            usedEmbeddedTexture = true;
         }
 
         hasTexture = baseMap != null;
@@ -342,5 +417,51 @@ public class HologramModelLoader : MonoBehaviour
         {
             material.SetColor("_Color", color);
         }
+    }
+
+    [System.Serializable]
+    private sealed class GltfJson
+    {
+        public MaterialDef[] materials;
+        public TextureDef[] textures;
+        public ImageDef[] images;
+        public BufferViewDef[] bufferViews;
+    }
+
+    [System.Serializable]
+    private sealed class MaterialDef
+    {
+        public PbrMetallicRoughnessDef pbrMetallicRoughness;
+    }
+
+    [System.Serializable]
+    private sealed class PbrMetallicRoughnessDef
+    {
+        public TextureInfo baseColorTexture;
+    }
+
+    [System.Serializable]
+    private sealed class TextureInfo
+    {
+        public int index = -1;
+    }
+
+    [System.Serializable]
+    private sealed class TextureDef
+    {
+        public int source = -1;
+    }
+
+    [System.Serializable]
+    private sealed class ImageDef
+    {
+        public int bufferView = -1;
+    }
+
+    [System.Serializable]
+    private sealed class BufferViewDef
+    {
+        public int byteOffset;
+        public int byteLength;
     }
 }
