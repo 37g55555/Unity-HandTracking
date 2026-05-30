@@ -224,6 +224,7 @@ namespace ShadowPrototype
             LastGeneratedGlbPath = string.Empty;
 
             byte[] sf3dInputBytes = pngBytes;
+            Debug.Log($"SF3DGenerationClient: sending texture input '{sourceFileName}' from {sourceDescription} ({pngBytes.Length} bytes).");
             UnityWebRequest textureRequest = CreateImagePostRequest(BuildUrl(textureEndpoint), pngBytes, sourceFileName, SilhouetteLabel);
             yield return textureRequest.SendWebRequest();
 
@@ -237,6 +238,7 @@ namespace ShadowPrototype
 
             sf3dInputBytes = textureRequest.downloadHandler.data;
             LastTexturePath = SaveBytesToOutput(sf3dInputBytes, texturePreviewFileName);
+            Debug.Log($"SF3DGenerationClient: saved texture preview: {LastTexturePath}");
             textureRequest.Dispose();
 
             UnityWebRequest modelRequest = CreateImagePostRequest(BuildUrl(modelEndpoint), sf3dInputBytes, "sf3d_input.png");
@@ -251,6 +253,7 @@ namespace ShadowPrototype
             }
 
             LastGeneratedGlbPath = SaveBytesToOutput(modelRequest.downloadHandler.data, generatedGlbFileName);
+            Debug.Log($"SF3DGenerationClient: saved generated GLB: {LastGeneratedGlbPath}");
 
             modelRequest.Dispose();
             activeRoutine = null;
@@ -354,8 +357,35 @@ namespace ShadowPrototype
 
         private string GetOutputDirectoryAbsolute()
         {
-            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-            return Path.GetFullPath(Path.Combine(projectRoot, outputDirectoryRelative));
+            if (Path.IsPathRooted(outputDirectoryRelative))
+            {
+                return Path.GetFullPath(outputDirectoryRelative);
+            }
+
+            string unityProjectDirectory = GetUnityProjectDirectoryAbsolute();
+            return Path.GetFullPath(Path.Combine(unityProjectDirectory, outputDirectoryRelative));
+        }
+
+        private static string GetUnityProjectDirectoryAbsolute()
+        {
+            string dataPath = Path.GetFullPath(Application.dataPath);
+            DirectoryInfo directory = Directory.GetParent(dataPath);
+
+            while (directory != null)
+            {
+                bool hasUnityProjectLayout =
+                    Directory.Exists(Path.Combine(directory.FullName, "Assets")) &&
+                    Directory.Exists(Path.Combine(directory.FullName, "ProjectSettings"));
+
+                if (hasUnityProjectLayout)
+                {
+                    return directory.FullName;
+                }
+
+                directory = directory.Parent;
+            }
+
+            return Path.GetFullPath(Path.Combine(dataPath, ".."));
         }
 
         private string BuildUrl(string endpoint)

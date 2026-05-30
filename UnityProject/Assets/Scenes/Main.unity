@@ -326,7 +326,7 @@ MonoBehaviour:
   relativeWatchDirectory: ..\output\shadowmesh
   meshFileName: shadow_mesh.obj
   metadataFileName: shadow_metadata.json
-  absoluteWatchDirectoryOverride: D:\Unity-HandTracking\output\shadowmesh
+  absoluteWatchDirectoryOverride: C:\capstone\Shadow-to-3D-Generator\output\shadowmesh
   shadowMeshDeformer: {fileID: 1061289396}
   stateManager: {fileID: 775207380}
 --- !u!114 &775207383
@@ -397,13 +397,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   exportFileName: deformed_shadow.png
-  pythonExecutablePath: D:\anaconda3\envs\artifact\python.exe
-  sf3dWorkingDirectory: D:\Unity-HandTracking\sf3d
+  pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
+  sf3dWorkingDirectory: C:\capstone\Shadow-to-3D-Generator\sf3d
   sf3dServerArguments: -m uvicorn app:app --host 127.0.0.1 --port 8000
-  captureWorkingDirectory: D:\Unity-HandTracking
+  captureWorkingDirectory: C:\capstone\Shadow-to-3D-Generator
   captureScriptName: python\ShadowMesh.py
-  captureArguments: --mode live --camera 0
-  handTrackingWorkingDirectory: D:\Unity-HandTracking
+  captureArguments: --mode file
+  handTrackingWorkingDirectory: C:\capstone\Shadow-to-3D-Generator
   handTrackingScriptName: python\MediaPipeTracking.py
   handTrackingArguments: --camera 1
   sf3dClient: {fileID: 775207387}

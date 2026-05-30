@@ -59,10 +59,12 @@ namespace ShadowPrototype
 
             if (!File.Exists(existingMeshPath))
             {
+                Debug.LogWarning($"ShadowMeshFileLoader: existing mesh was not found for file mode: {existingMeshPath}");
                 stateManager?.OnShadowMeshLoadFailed(existingMeshPath);
                 return;
             }
 
+            Debug.Log($"ShadowMeshFileLoader: loading existing mesh for file mode: {existingMeshPath}");
             lastPolledMeshWriteTimeUtc = File.GetLastWriteTimeUtc(existingMeshPath);
             QueueMeshLoad(existingMeshPath);
         }
@@ -282,7 +284,7 @@ namespace ShadowPrototype
 
             if (shader == null)
             {
-                Debug.LogWarning("ShadowMeshFileLoader: runtime unlit shader was not found.");
+                Debug.LogWarning("ShadowMeshFileLoader: runtime unlit shader was not found; shadow mesh may be invisible in builds.");
                 return;
             }
 

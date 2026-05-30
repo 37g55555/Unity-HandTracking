@@ -7,10 +7,14 @@ public class HologramSceneManager : MonoBehaviour
 {
     private const string ReturnSceneName = "Main";
 
+    [SerializeField] private Vector3 sceneWorldOffset = new Vector3(50f, 0f, 0f);
+
     private bool isClosing;
 
     private void Start()
     {
+        ApplySceneWorldOffset(gameObject.scene, sceneWorldOffset);
+
         int targetDisplay = Display.displays.Length > 1 ? 1 : 0;
         if (targetDisplay == 1)
         {
@@ -18,6 +22,21 @@ public class HologramSceneManager : MonoBehaviour
         }
 
         ApplyTargetDisplay(gameObject.scene, targetDisplay);
+    }
+
+    private static void ApplySceneWorldOffset(Scene scene, Vector3 offset)
+    {
+        if (offset == Vector3.zero)
+        {
+            return;
+        }
+
+        foreach (GameObject rootObject in scene.GetRootGameObjects())
+        {
+            rootObject.transform.position += offset;
+        }
+
+        Debug.Log($"HologramSceneManager: moved hologram scene by world offset {offset}.");
     }
 
     private static void ApplyTargetDisplay(Scene scene, int targetDisplay)
