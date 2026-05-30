@@ -14,8 +14,8 @@ BACKGROUND_FILE_NAME = "background.png"
 CONTOUR_FILE_NAME = "shadow_contour.png"
 MESH_FILE_NAME = "shadow_mesh.obj"
 METADATA_FILE_NAME = "shadow_metadata.json"
-CAMERA_WIDTH = 640
-CAMERA_HEIGHT = 480
+CAMERA_WIDTH = 1024
+CAMERA_HEIGHT = 768
 CAMERA_FPS = 15
 EPSILON_RATIO = 0.0025
 INTERIOR_SPACING = 10
@@ -293,7 +293,7 @@ def save_obj(filepath, vertices, faces):
 
 
 def save_metadata(filepath, n_vertices, n_faces, n_boundary, center, scale,
-                  epsilon_ratio, interior_spacing):
+                  frame_width, frame_height, epsilon_ratio, interior_spacing):
     metadata = {
         "n_vertices": n_vertices,
         "n_triangles": n_faces,
@@ -301,6 +301,8 @@ def save_metadata(filepath, n_vertices, n_faces, n_boundary, center, scale,
         "boundary_indices": list(range(n_boundary)),
         "center_offset": center.tolist(),
         "scale_factor": float(scale),
+        "frame_width": int(frame_width),
+        "frame_height": int(frame_height),
         "epsilon_ratio": epsilon_ratio,
         "interior_spacing": interior_spacing
     }
@@ -333,8 +335,10 @@ def process_shadow(bg_frame, shadow_frame):
     save_obj(obj_path, vertices_3d, faces)
 
     meta_path = os.path.join(OUTPUT_DIR, METADATA_FILE_NAME)
+    frame_height, frame_width = mask.shape[:2]
     save_metadata(meta_path, len(vertices_3d), len(faces), n_boundary,
-                  center, scale, EPSILON_RATIO, INTERIOR_SPACING)
+                  center, scale, frame_width, frame_height,
+                  EPSILON_RATIO, INTERIOR_SPACING)
 
     print(f"[OK] Saved {contour_path}")
     print(f"[OK] Saved {obj_path}")

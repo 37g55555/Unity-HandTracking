@@ -57,6 +57,48 @@ namespace ShadowPrototype
             ApplyTransform();
         }
 
+        public void SetCapturedOverlay(
+            Vector2 centerPixels,
+            float captureScalePixels,
+            Vector2 frameSizePixels,
+            Camera overlayCamera,
+            float meshLocalScale)
+        {
+            if (overlayCamera == null ||
+                !overlayCamera.orthographic ||
+                captureScalePixels <= 0.0f ||
+                meshLocalScale <= 0.0f ||
+                frameSizePixels.x <= 0.0f ||
+                frameSizePixels.y <= 0.0f)
+            {
+                return;
+            }
+
+            Vector2 fittedViewportSize = GetFittedViewportSize(frameSizePixels, overlayCamera.aspect);
+            Vector2 fittedViewportOrigin = (Vector2.one - fittedViewportSize) * 0.5f;
+            Vector2 normalizedFramePoint = new Vector2(
+                Mathf.Clamp01(centerPixels.x / frameSizePixels.x),
+                Mathf.Clamp01(1.0f - (centerPixels.y / frameSizePixels.y)));
+            Vector2 viewportPoint = fittedViewportOrigin + Vector2.Scale(normalizedFramePoint, fittedViewportSize);
+
+            float planeDistance = Mathf.Abs(Vector3.Dot(
+                transform.position - overlayCamera.transform.position,
+                overlayCamera.transform.forward));
+            planeDistance = Mathf.Max(overlayCamera.nearClipPlane, planeDistance);
+            Vector3 worldPoint = overlayCamera.ViewportToWorldPoint(new Vector3(viewportPoint.x, viewportPoint.y, planeDistance));
+            Vector3 targetLocalPosition = transform.parent == null
+                ? worldPoint
+                : transform.parent.InverseTransformPoint(worldPoint);
+
+            float overlayWorldHeight = overlayCamera.orthographicSize * 2.0f * fittedViewportSize.y;
+            float worldUnitsPerFramePixel = overlayWorldHeight / frameSizePixels.y;
+            float rootScale = (worldUnitsPerFramePixel * captureScalePixels) / meshLocalScale;
+
+            transform.localPosition = new Vector3(targetLocalPosition.x, targetLocalPosition.y, transform.localPosition.z);
+            transform.localScale = Vector3.one * rootScale;
+            normalizedPosition = normalizedFramePoint;
+        }
+
         public IEnumerator MoveToOriginCoroutine()
         {
             float holdSeconds = Mathf.Max(0.0f, holdBeforeMoveToOriginSeconds);
@@ -104,6 +146,17 @@ namespace ShadowPrototype
             }
 
             transform.localRotation = Quaternion.Euler(0.0f, 0.0f, rotationZ);
+        }
+
+        private static Vector2 GetFittedViewportSize(Vector2 frameSizePixels, float cameraAspect)
+        {
+            float frameAspect = frameSizePixels.x / frameSizePixels.y;
+            if (frameAspect >= cameraAspect)
+            {
+                return new Vector2(1.0f, cameraAspect / frameAspect);
+            }
+
+            return new Vector2(frameAspect / cameraAspect, 1.0f);
         }
     }
 }
