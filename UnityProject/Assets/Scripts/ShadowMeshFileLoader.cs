@@ -368,7 +368,7 @@ namespace ShadowPrototype
 
             Vector2 frameSize = new Vector2(metadata.frame_width, metadata.frame_height);
             Vector2 centerPixels = new Vector2(metadata.center_offset[0], metadata.center_offset[1]);
-            float meshLocalScale = GetShadowMeshLocalScale();
+            Vector2 meshLocalScale = GetShadowMeshLocalScale();
             rootController.SetCapturedOverlay(
                 centerPixels,
                 metadata.scale_factor,
@@ -408,15 +408,17 @@ namespace ShadowPrototype
             return targetCamera;
         }
 
-        private float GetShadowMeshLocalScale()
+        private Vector2 GetShadowMeshLocalScale()
         {
             if (shadowMeshDeformer == null)
             {
-                return 1.0f;
+                return Vector2.one;
             }
 
             Vector3 localScale = shadowMeshDeformer.transform.localScale;
-            return Mathf.Max(0.0001f, Mathf.Abs(localScale.x), Mathf.Abs(localScale.y));
+            return new Vector2(
+                Mathf.Max(0.0001f, Mathf.Abs(localScale.x)),
+                Mathf.Max(0.0001f, Mathf.Abs(localScale.y)));
         }
 
         private string GetWatchDirectoryAbsolute()
