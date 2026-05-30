@@ -42,8 +42,10 @@ namespace ShadowPrototype
         [SerializeField] private ShadowMeshFileLoader meshFileLoader;
         [SerializeField] private MediaPipeUdpReceiver mediaPipeReceiver;
         [SerializeField] private ShadowMeshDeformer shadowMeshDeformer;
+        [SerializeField] private ShadowMeshRootController shadowMeshRootController;
 
         private bool handTrackingStartedForCurrentCapture;
+        private Coroutine pendingHandTrackingStartRoutine;
         private DateTime flowStartedUtc;
         private bool sf3dServerReady;
         private bool sf3dServerStarting;
@@ -83,12 +85,14 @@ namespace ShadowPrototype
 
         private void OnDisable()
         {
+            CancelPendingHandTrackingStart();
             UnsubscribeEvents();
             StopLaunchedProcesses();
         }
 
         private void OnDestroy()
         {
+            CancelPendingHandTrackingStart();
             UnsubscribeEvents();
             StopLaunchedProcesses();
         }
@@ -109,6 +113,7 @@ namespace ShadowPrototype
             stateManager.ResetForCapture();
             handTrackingStartedForCurrentCapture = false;
             sf3dClient?.ResetSilhouetteLabel();
+            CancelPendingHandTrackingStart();
 
             StartCoroutine(StartPipelineRoutine());
         }
@@ -178,6 +183,24 @@ namespace ShadowPrototype
                 return;
             }
 
+            if (pendingHandTrackingStartRoutine != null)
+            {
+                return;
+            }
+
+            pendingHandTrackingStartRoutine = StartCoroutine(StartHandTrackingAfterShadowRootCentered());
+        }
+
+        private IEnumerator StartHandTrackingAfterShadowRootCentered()
+        {
+            ShadowMeshRootController rootController = ResolveShadowMeshRootController();
+            if (rootController != null)
+            {
+                Debug.Log($"PipelineManager: holding ShadowMeshRoot for {rootController.HoldBeforeMoveToOriginSeconds:0.##}s, then moving to (0, 0) over {rootController.MoveToOriginDurationSeconds:0.##}s before MediaPipe tracking.");
+                yield return rootController.MoveToOriginCoroutine();
+            }
+
+            pendingHandTrackingStartRoutine = null;
             StartHandTrackingIfNeeded();
         }
 
@@ -207,6 +230,26 @@ namespace ShadowPrototype
 
             stateManager?.OnMediaPipeTrackingStarted();
             StartCoroutine(ClassifySilhouetteWhenSf3dReady());
+        }
+
+        private ShadowMeshRootController ResolveShadowMeshRootController()
+        {
+            if (shadowMeshRootController != null)
+            {
+                return shadowMeshRootController;
+            }
+
+            if (shadowMeshDeformer != null)
+            {
+                shadowMeshRootController = shadowMeshDeformer.GetComponentInParent<ShadowMeshRootController>();
+                if (shadowMeshRootController != null)
+                {
+                    return shadowMeshRootController;
+                }
+            }
+
+            shadowMeshRootController = FindObjectOfType<ShadowMeshRootController>();
+            return shadowMeshRootController;
         }
 
         private IEnumerator ClassifySilhouetteWhenSf3dReady()
@@ -621,6 +664,17 @@ namespace ShadowPrototype
         {
             mediaPipeReceiver?.StopReceiver();
             StopLaunchedProcesses(HandTrackingProcessLabel);
+        }
+
+        private void CancelPendingHandTrackingStart()
+        {
+            if (pendingHandTrackingStartRoutine == null)
+            {
+                return;
+            }
+
+            StopCoroutine(pendingHandTrackingStartRoutine);
+            pendingHandTrackingStartRoutine = null;
         }
 
         private void StopLaunchedProcesses()
