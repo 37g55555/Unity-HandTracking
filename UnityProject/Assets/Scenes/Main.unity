@@ -275,6 +275,7 @@ GameObject:
   - component: {fileID: 775207384}
   - component: {fileID: 775207387}
   - component: {fileID: 775207386}
+  - component: {fileID: 775207388}
   m_Layer: 0
   m_Name: Managers
   m_TagString: Untagged
@@ -326,9 +327,12 @@ MonoBehaviour:
   relativeWatchDirectory: ..\output\shadowmesh
   meshFileName: shadow_mesh.obj
   metadataFileName: shadow_metadata.json
-  absoluteWatchDirectoryOverride: C:\capstone\Shadow-to-3D-Generator\output\shadowmesh
+  absoluteWatchDirectoryOverride: D:\Unity-HandTracking\output\shadowmesh
   shadowMeshDeformer: {fileID: 1061289396}
   stateManager: {fileID: 775207380}
+  shadowMeshRoot: {fileID: 0}
+  targetCamera: {fileID: 0}
+  applyCapturedPositionFromMetadata: 1
 --- !u!114 &775207383
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -397,13 +401,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   exportFileName: deformed_shadow.png
-  pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
-  sf3dWorkingDirectory: C:\capstone\Shadow-to-3D-Generator\sf3d
+  pythonExecutablePath: D:\anaconda3\envs\artifact\python.exe
+  sf3dWorkingDirectory: D:\Unity-HandTracking\sf3d
   sf3dServerArguments: -m uvicorn app:app --host 127.0.0.1 --port 8000
-  captureWorkingDirectory: C:\capstone\Shadow-to-3D-Generator
+  captureWorkingDirectory: D:\Unity-HandTracking
   captureScriptName: python\ShadowMesh.py
   captureArguments: --mode file
-  handTrackingWorkingDirectory: C:\capstone\Shadow-to-3D-Generator
+  handTrackingWorkingDirectory: D:\Unity-HandTracking
   handTrackingScriptName: python\MediaPipeTracking.py
   handTrackingArguments: --camera 1
   sf3dClient: {fileID: 775207387}
@@ -411,6 +415,8 @@ MonoBehaviour:
   meshFileLoader: {fileID: 775207381}
   mediaPipeReceiver: {fileID: 775207383}
   shadowMeshDeformer: {fileID: 1061289396}
+  shadowMeshRootController: {fileID: 2145170301}
+  smokeTransitionEffect: {fileID: 775207388}
 --- !u!114 &775207387
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -431,6 +437,25 @@ MonoBehaviour:
   generatedGlbFileName: shadow_model.glb
   texturePreviewFileName: last_texture.png
   targetSceneAfterGeneration: hologramOut
+--- !u!114 &775207388
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 775207378}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7e76d7e51b8c4954a9f4b89af4af3a2f, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  stateManager: {fileID: 775207380}
+  smokeColor: {r: 0.35220122, g: 0.35220122, b: 0.35220122, a: 1}
+  spawnInterval: 0.1
+  particleSizeRange: {x: 150, y: 310}
+  riseSpeed: 50
+  driftSpeed: 150
+  exitDuration: 5
 --- !u!1 &1061289392
 GameObject:
   m_ObjectHideFlags: 0
@@ -594,6 +619,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6f1a910fd571b446922c71ec7caf491, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  holdBeforeMoveToOriginSeconds: 2
+  moveToOriginDurationSeconds: 2
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

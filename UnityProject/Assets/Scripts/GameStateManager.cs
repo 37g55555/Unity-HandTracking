@@ -17,6 +17,7 @@ namespace ShadowPrototype
 
         [SerializeField] private PipelineState currentState = PipelineState.ShadowCapturing;
         [SerializeField] private string currentStateName = nameof(PipelineState.ShadowCapturing);
+        public event Action<PipelineState> StateChanged;
         public event Action<string, int, int> ShadowMeshLoaded;
         public event Action<string> ShadowMeshLoadFailed;
 
@@ -41,7 +42,6 @@ namespace ShadowPrototype
 
         public void OnShadowMeshLoaded(string path, int vertexCount, int boundaryCount)
         {
-            Debug.Log($"GameStateManager: shadow mesh loaded. Vertices: {vertexCount}, Boundary: {boundaryCount}, Path: {path}");
             ShadowMeshLoaded?.Invoke(path, vertexCount, boundaryCount);
         }
 
@@ -81,7 +81,7 @@ namespace ShadowPrototype
 
             currentState = nextState;
             currentStateName = currentState.ToString();
-            Debug.Log($"GameStateManager: state changed to {currentState}.");
+            StateChanged?.Invoke(currentState);
         }
     }
 }

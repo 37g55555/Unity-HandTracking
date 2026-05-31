@@ -193,10 +193,6 @@ namespace ShadowPrototype
             {
                 Debug.LogWarning($"SF3DGenerationClient: {label} warmup failed: {GetRequestErrorMessage(request)}");
             }
-            else
-            {
-                Debug.Log($"SF3DGenerationClient: {label} warmup complete.");
-            }
 
         }
 
@@ -223,8 +219,6 @@ namespace ShadowPrototype
             LastTexturePath = string.Empty;
             LastGeneratedGlbPath = string.Empty;
 
-            byte[] sf3dInputBytes = pngBytes;
-            Debug.Log($"SF3DGenerationClient: sending texture input '{sourceFileName}' from {sourceDescription} ({pngBytes.Length} bytes).");
             UnityWebRequest textureRequest = CreateImagePostRequest(BuildUrl(textureEndpoint), pngBytes, sourceFileName, SilhouetteLabel);
             yield return textureRequest.SendWebRequest();
 
@@ -236,9 +230,8 @@ namespace ShadowPrototype
                 yield break;
             }
 
-            sf3dInputBytes = textureRequest.downloadHandler.data;
+            byte[] sf3dInputBytes = textureRequest.downloadHandler.data;
             LastTexturePath = SaveBytesToOutput(sf3dInputBytes, texturePreviewFileName);
-            Debug.Log($"SF3DGenerationClient: saved texture preview: {LastTexturePath}");
             textureRequest.Dispose();
 
             UnityWebRequest modelRequest = CreateImagePostRequest(BuildUrl(modelEndpoint), sf3dInputBytes, "sf3d_input.png");
@@ -253,7 +246,6 @@ namespace ShadowPrototype
             }
 
             LastGeneratedGlbPath = SaveBytesToOutput(modelRequest.downloadHandler.data, generatedGlbFileName);
-            Debug.Log($"SF3DGenerationClient: saved generated GLB: {LastGeneratedGlbPath}");
 
             modelRequest.Dispose();
             activeRoutine = null;
@@ -264,7 +256,10 @@ namespace ShadowPrototype
         private void HandleGlbGenerated(string glbPath)
         {
             GlbGenerated?.Invoke(glbPath);
+        }
 
+        public void LoadTargetSceneAfterGeneration()
+        {
             if (SceneManager.GetSceneByName(targetSceneAfterGeneration).isLoaded)
             {
                 return;
@@ -305,7 +300,6 @@ namespace ShadowPrototype
                 SilhouetteLabel = label;
                 HasSilhouetteLabel = true;
                 SilhouetteClassified?.Invoke(SilhouetteLabel);
-                Debug.Log($"SF3DGenerationClient: silhouette label is '{SilhouetteLabel}'.");
             }
 
             request.Dispose();

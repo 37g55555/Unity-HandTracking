@@ -43,13 +43,14 @@ namespace ShadowPrototype
         [SerializeField] private MediaPipeUdpReceiver mediaPipeReceiver;
         [SerializeField] private ShadowMeshDeformer shadowMeshDeformer;
         [SerializeField] private ShadowMeshRootController shadowMeshRootController;
+        [SerializeField] private SmokeTransitionEffect smokeTransitionEffect;
 
         private bool handTrackingStartedForCurrentCapture;
+        private bool waitingForSmokeExit;
         private Coroutine pendingHandTrackingStartRoutine;
         private DateTime flowStartedUtc;
         private bool sf3dServerReady;
         private bool sf3dServerStarting;
-        private bool sf3dServerReadyLogged;
         private readonly List<LaunchedProcess> launchedProcesses = new List<LaunchedProcess>();
 
         private void Start()
@@ -160,6 +161,12 @@ namespace ShadowPrototype
                 sf3dClient.SilhouetteClassified -= HandleSilhouetteClassified;
                 sf3dClient.SilhouetteClassified += HandleSilhouetteClassified;
             }
+
+            if (smokeTransitionEffect != null)
+            {
+                smokeTransitionEffect.ExitCompleted -= HandleSmokeExitCompleted;
+                smokeTransitionEffect.ExitCompleted += HandleSmokeExitCompleted;
+            }
         }
 
         private void UnsubscribeEvents()
@@ -173,6 +180,11 @@ namespace ShadowPrototype
             {
                 sf3dClient.GlbGenerated -= HandleGlbGenerated;
                 sf3dClient.SilhouetteClassified -= HandleSilhouetteClassified;
+            }
+
+            if (smokeTransitionEffect != null)
+            {
+                smokeTransitionEffect.ExitCompleted -= HandleSmokeExitCompleted;
             }
         }
 
@@ -193,11 +205,9 @@ namespace ShadowPrototype
 
         private IEnumerator StartHandTrackingAfterShadowRootCentered()
         {
-            ShadowMeshRootController rootController = ResolveShadowMeshRootController();
-            if (rootController != null)
+            if (shadowMeshRootController != null)
             {
-                Debug.Log($"PipelineManager: holding ShadowMeshRoot for {rootController.HoldBeforeMoveToOriginSeconds:0.##}s, then moving to (0, 0) over {rootController.MoveToOriginDurationSeconds:0.##}s before MediaPipe tracking.");
-                yield return rootController.MoveToOriginCoroutine();
+                yield return shadowMeshRootController.MoveToOriginCoroutine();
             }
 
             pendingHandTrackingStartRoutine = null;
@@ -223,33 +233,9 @@ namespace ShadowPrototype
                     mediaPipeReceiver.StartReceiver();
                 }
             }
-            else
-            {
-                Debug.Log("PipelineManager: MediaPipe camera was not found; skipping hand tracking.");
-            }
 
             stateManager?.OnMediaPipeTrackingStarted();
             StartCoroutine(ClassifySilhouetteWhenSf3dReady());
-        }
-
-        private ShadowMeshRootController ResolveShadowMeshRootController()
-        {
-            if (shadowMeshRootController != null)
-            {
-                return shadowMeshRootController;
-            }
-
-            if (shadowMeshDeformer != null)
-            {
-                shadowMeshRootController = shadowMeshDeformer.GetComponentInParent<ShadowMeshRootController>();
-                if (shadowMeshRootController != null)
-                {
-                    return shadowMeshRootController;
-                }
-            }
-
-            shadowMeshRootController = FindObjectOfType<ShadowMeshRootController>();
-            return shadowMeshRootController;
         }
 
         private IEnumerator ClassifySilhouetteWhenSf3dReady()
@@ -279,20 +265,17 @@ namespace ShadowPrototype
 
             if (sf3dClient != null && sf3dClient.IsClassifying)
             {
-                ShowExportStatus("Silhouette classification is still running.");
                 return;
             }
 
             if (sf3dClient != null && !sf3dClient.HasSilhouetteLabel)
             {
-                ShowExportStatus("Silhouette classification is not ready.");
                 return;
             }
 
             if (sf3dClient != null &&
                 sf3dClient.IsRunning)
             {
-                ShowExportStatus("SF3D generation is already running.");
                 return;
             }
 
@@ -306,7 +289,6 @@ namespace ShadowPrototype
 
             if (shadowMeshDeformer == null || !shadowMeshDeformer.HasMesh)
             {
-                ShowExportStatus("Shadow mesh is not loaded.");
                 Debug.LogWarning("PipelineManager: shadow export skipped because no mesh is loaded.");
                 return;
             }
@@ -322,17 +304,14 @@ namespace ShadowPrototype
                 {
                     if (!TrySaveSilhouettePng(outputPath, pngBytes))
                     {
-                        ShowExportStatus("Shadow image save failed.");
                         return;
                     }
 
-                    ShowExportStatus($"Saved shadow image: {outputPath}");
                     stateManager?.OnReconstructionStarted();
                     StartCoroutine(GenerateFromPngBytesWhenSf3dReady(pngBytes));
                     return;
                 }
 
-                ShowExportStatus("Shadow image export failed.");
                 return;
             }
 
@@ -342,12 +321,7 @@ namespace ShadowPrototype
                     ExportFillColor,
                     ExportBackgroundColor))
             {
-                ShowExportStatus($"Saved shadow image: {outputPath}");
                 StartSf3dFromPng(outputPath);
-            }
-            else
-            {
-                ShowExportStatus("Shadow image export failed.");
             }
         }
 
@@ -385,12 +359,28 @@ namespace ShadowPrototype
 
         private void HandleGlbGenerated(string glbPath)
         {
+            waitingForSmokeExit = smokeTransitionEffect != null && smokeTransitionEffect.isActiveAndEnabled;
             stateManager?.OnHologramOutputStarted();
+
+            if (!waitingForSmokeExit)
+            {
+                sf3dClient?.LoadTargetSceneAfterGeneration();
+            }
+        }
+
+        private void HandleSmokeExitCompleted()
+        {
+            if (!waitingForSmokeExit)
+            {
+                return;
+            }
+
+            waitingForSmokeExit = false;
+            sf3dClient?.LoadTargetSceneAfterGeneration();
         }
 
         private void HandleSilhouetteClassified(string label)
         {
-            Debug.Log($"PipelineManager: silhouette label ready for texture prompt: {label}");
             sf3dClient?.WarmupTexturePipeline();
         }
 
@@ -490,7 +480,6 @@ namespace ShadowPrototype
             yield return EnsureSf3dServerReady();
             if (!sf3dServerReady)
             {
-                ShowExportStatus("API is not ready.");
                 yield break;
             }
 
@@ -502,7 +491,6 @@ namespace ShadowPrototype
             yield return EnsureSf3dServerReady();
             if (!sf3dServerReady)
             {
-                ShowExportStatus("API is not ready.");
                 yield break;
             }
 
@@ -544,21 +532,6 @@ namespace ShadowPrototype
             yield return request.SendWebRequest();
 
             sf3dServerReady = request.result == UnityWebRequest.Result.Success;
-            if (sf3dServerReady)
-            {
-                LogSf3dServerReadyOnce();
-            }
-        }
-
-        private void LogSf3dServerReadyOnce()
-        {
-            if (sf3dServerReadyLogged)
-            {
-                return;
-            }
-
-            sf3dServerReadyLogged = true;
-            Debug.Log("PipelineManager: API is ready.");
         }
 
         private void LaunchPythonScriptInTerminal(
@@ -765,11 +738,6 @@ namespace ShadowPrototype
 
             return keyboard.enterKey.wasPressedThisFrame ||
                    keyboard.numpadEnterKey.wasPressedThisFrame;
-        }
-
-        private void ShowExportStatus(string message)
-        {
-            Debug.Log($"PipelineManager: {message}");
         }
 
         private string ResolvePythonPath(string workingDirectory)
