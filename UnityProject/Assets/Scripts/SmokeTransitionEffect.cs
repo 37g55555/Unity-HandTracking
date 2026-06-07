@@ -14,7 +14,7 @@ namespace ShadowPrototype
 
         [SerializeField] private GameStateManager stateManager;
         [SerializeField] private VideoClip fogVideoClip;
-        [SerializeField] private string fogVideoPath = "../fog.mp4";
+        [SerializeField] private string fogVideoPath = "fog.mp4";
         [SerializeField] private bool chromaKeyEnabled = true;
         [SerializeField] private Shader chromaKeyShader;
         [SerializeField] private Color chromaKeyColor = Color.black;
@@ -289,13 +289,6 @@ namespace ShadowPrototype
             if (Path.IsPathRooted(fogVideoPath))
             {
                 return Path.GetFullPath(fogVideoPath);
-            }
-
-            string unityProjectDirectory = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-            string projectRelativePath = Path.GetFullPath(Path.Combine(unityProjectDirectory, fogVideoPath));
-            if (File.Exists(projectRelativePath))
-            {
-                return projectRelativePath;
             }
 
             return Path.GetFullPath(Path.Combine(Application.streamingAssetsPath, fogVideoPath));

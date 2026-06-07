@@ -10,6 +10,10 @@ namespace ShadowPrototype
 {
     public class HologramSubtitleController : MonoBehaviour
     {
+        private const string SubtitleCanvasName = "HologramSubtitleCanvas";
+        private const string SubtitleClearCameraName = "HologramSubtitleClearCamera";
+        private const float ClearCameraDepth = -1000f;
+
         [SerializeField] private GameStateManager stateManager;
         [SerializeField] private string subtitleFileName = "hologram_subtitles.txt";
         [SerializeField, Min(0)] private int targetDisplayIndex = 1;
@@ -22,6 +26,8 @@ namespace ShadowPrototype
         private readonly Dictionary<GameStateManager.PipelineState, List<SubtitleCue>> cuesByState =
             new Dictionary<GameStateManager.PipelineState, List<SubtitleCue>>();
 
+        private GameObject subtitleCanvasObject;
+        private GameObject clearCameraObject;
         private CanvasGroup canvasGroup;
         private Text subtitleText;
         private Coroutine subtitleRoutine;
@@ -60,6 +66,11 @@ namespace ShadowPrototype
             hasActiveState = false;
         }
 
+        private void OnDestroy()
+        {
+            DestroySubtitleObjects();
+        }
+
         private void Update()
         {
             if (stateManager == null)
@@ -88,11 +99,11 @@ namespace ShadowPrototype
             hasActiveState = true;
             activeState = nextState;
             StopSubtitleRoutine();
+            HideImmediately();
 
             List<SubtitleCue> cues;
             if (!cuesByState.TryGetValue(nextState, out cues) || cues.Count == 0)
             {
-                HideImmediately();
                 return;
             }
 
@@ -294,12 +305,14 @@ namespace ShadowPrototype
 
         private void CreateSubtitleCanvas()
         {
-            GameObject canvasObject = new GameObject("HologramSubtitleCanvas", typeof(RectTransform));
-            canvasObject.transform.SetParent(transform, false);
-
-            Canvas canvas = canvasObject.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             int activeDisplay = ResolveTargetDisplayIndex();
+            CreateClearCamera(activeDisplay);
+
+            subtitleCanvasObject = new GameObject(SubtitleCanvasName, typeof(RectTransform));
+            subtitleCanvasObject.transform.SetParent(transform, false);
+
+            Canvas canvas = subtitleCanvasObject.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             if (activeDisplay > 0)
             {
                 Display.displays[activeDisplay].Activate();
@@ -308,18 +321,18 @@ namespace ShadowPrototype
             canvas.targetDisplay = activeDisplay;
             canvas.sortingOrder = sortingOrder;
 
-            CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
+            CanvasScaler scaler = subtitleCanvasObject.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             scaler.matchWidthOrHeight = 0.5f;
 
-            canvasGroup = canvasObject.AddComponent<CanvasGroup>();
+            canvasGroup = subtitleCanvasObject.AddComponent<CanvasGroup>();
             canvasGroup.alpha = 0f;
             canvasGroup.interactable = false;
             canvasGroup.blocksRaycasts = false;
 
             GameObject textObject = new GameObject("SubtitleText", typeof(RectTransform));
-            textObject.transform.SetParent(canvasObject.transform, false);
+            textObject.transform.SetParent(subtitleCanvasObject.transform, false);
 
             subtitleText = textObject.AddComponent<Text>();
             subtitleText.font = CreateSubtitleFont();
@@ -342,6 +355,38 @@ namespace ShadowPrototype
             textRect.pivot = new Vector2(0.5f, 0f);
             textRect.anchoredPosition = new Vector2(0f, bottomOffsetPixels);
             textRect.sizeDelta = new Vector2(1500f, 180f);
+        }
+
+        private void CreateClearCamera(int activeDisplay)
+        {
+            clearCameraObject = new GameObject(SubtitleClearCameraName);
+            clearCameraObject.transform.SetParent(transform, false);
+
+            Camera clearCamera = clearCameraObject.AddComponent<Camera>();
+            clearCamera.clearFlags = CameraClearFlags.SolidColor;
+            clearCamera.backgroundColor = Color.black;
+            clearCamera.cullingMask = 0;
+            clearCamera.depth = ClearCameraDepth;
+            clearCamera.targetDisplay = activeDisplay;
+            clearCamera.orthographic = true;
+            clearCamera.useOcclusionCulling = false;
+            clearCamera.allowHDR = false;
+            clearCamera.allowMSAA = false;
+        }
+
+        private void DestroySubtitleObjects()
+        {
+            if (subtitleCanvasObject != null)
+            {
+                Destroy(subtitleCanvasObject);
+                subtitleCanvasObject = null;
+            }
+
+            if (clearCameraObject != null)
+            {
+                Destroy(clearCameraObject);
+                clearCameraObject = null;
+            }
         }
 
         private int ResolveTargetDisplayIndex()

@@ -102,6 +102,8 @@ public class HologramSceneManager : MonoBehaviour
         }
 
         Vector3 startScale = shrinkTarget.localScale;
+        ShadowPrototype.SoftWhiteCirclePlaneScaleAnimator scaleAnimator =
+            shrinkTarget.GetComponent<ShadowPrototype.SoftWhiteCirclePlaneScaleAnimator>();
         float elapsed = 0f;
         float duration = Mathf.Max(0f, returnShrinkDurationSeconds);
 
@@ -109,7 +111,9 @@ public class HologramSceneManager : MonoBehaviour
         {
             elapsed += Time.unscaledDeltaTime;
             float t = duration <= 0f ? 1f : Mathf.Clamp01(elapsed / duration);
-            float eased = Mathf.SmoothStep(0f, 1f, t);
+            float eased = scaleAnimator != null
+                ? scaleAnimator.EvaluateScaleCurve(t)
+                : Mathf.SmoothStep(0f, 1f, t);
             shrinkTarget.localScale = Vector3.LerpUnclamped(startScale, Vector3.zero, eased);
             yield return null;
         }

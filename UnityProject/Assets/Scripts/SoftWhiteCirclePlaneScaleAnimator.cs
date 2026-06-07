@@ -5,6 +5,8 @@ namespace ShadowPrototype
 {
     public class SoftWhiteCirclePlaneScaleAnimator : MonoBehaviour
     {
+        private const float StartupScaleInDurationSeconds = 2.0f;
+
         [SerializeField] private GameStateManager stateManager;
         [SerializeField] private Transform targetPlane;
         [SerializeField] private Vector2 targetScaleXZ = new Vector2(8.0f, 4.0f);
@@ -34,7 +36,8 @@ namespace ShadowPrototype
         {
             if (resetToInitialScaleOnEnable && targetPlane != null)
             {
-                targetPlane.localScale = initialScale;
+                targetPlane.localScale = Vector3.zero;
+                StartScaleRoutine(ScalePlaneFromCurrentRoutine(initialScale, 0.0f, StartupScaleInDurationSeconds));
             }
 
             if (stateManager != null)
@@ -52,8 +55,7 @@ namespace ShadowPrototype
 
             if (scaleRoutine != null)
             {
-                StopCoroutine(scaleRoutine);
-                scaleRoutine = null;
+                StopScaleRoutine();
             }
         }
 
@@ -69,15 +71,10 @@ namespace ShadowPrototype
                 return;
             }
 
-            if (scaleRoutine != null)
-            {
-                StopCoroutine(scaleRoutine);
-            }
-
-            scaleRoutine = StartCoroutine(ScalePlaneRoutine());
+            StartScaleRoutine(ScalePlaneToTargetScaleRoutine());
         }
 
-        private IEnumerator ScalePlaneRoutine()
+        private IEnumerator ScalePlaneToTargetScaleRoutine()
         {
             if (delaySeconds > 0.0f)
             {
@@ -86,18 +83,52 @@ namespace ShadowPrototype
 
             Vector3 from = targetPlane.localScale;
             Vector3 to = new Vector3(targetScaleXZ.x, from.y, targetScaleXZ.y);
-            float elapsed = 0.0f;
+            yield return ScalePlaneRoutine(from, to, durationSeconds);
+            scaleRoutine = null;
+        }
 
-            while (elapsed < durationSeconds)
+        private IEnumerator ScalePlaneFromCurrentRoutine(Vector3 to, float delay, float duration)
+        {
+            if (delay > 0.0f)
+            {
+                yield return new WaitForSeconds(delay);
+            }
+
+            yield return ScalePlaneRoutine(targetPlane.localScale, to, duration);
+            scaleRoutine = null;
+        }
+
+        private IEnumerator ScalePlaneRoutine(Vector3 from, Vector3 to, float duration)
+        {
+            float elapsed = 0.0f;
+            float safeDuration = Mathf.Max(0.01f, duration);
+
+            while (elapsed < safeDuration)
             {
                 elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / durationSeconds);
+                float t = Mathf.Clamp01(elapsed / safeDuration);
                 float progress = EvaluateScaleProgress(t);
                 targetPlane.localScale = Vector3.LerpUnclamped(from, to, progress);
                 yield return null;
             }
 
             targetPlane.localScale = to;
+        }
+
+        private void StartScaleRoutine(IEnumerator routine)
+        {
+            StopScaleRoutine();
+            scaleRoutine = StartCoroutine(routine);
+        }
+
+        private void StopScaleRoutine()
+        {
+            if (scaleRoutine == null)
+            {
+                return;
+            }
+
+            StopCoroutine(scaleRoutine);
             scaleRoutine = null;
         }
 
@@ -109,6 +140,11 @@ namespace ShadowPrototype
             }
 
             return Mathf.Clamp01(scaleCurve.Evaluate(normalizedTime));
+        }
+
+        public float EvaluateScaleCurve(float normalizedTime)
+        {
+            return EvaluateScaleProgress(normalizedTime);
         }
     }
 }

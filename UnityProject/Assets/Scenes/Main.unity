@@ -475,7 +475,7 @@ MonoBehaviour:
   sf3dServerArguments: -m uvicorn app:app --host 127.0.0.1 --port 8000
   captureWorkingDirectory: C:\capstone\Shadow-to-3D-Generator
   captureScriptName: python\ShadowMesh.py
-  captureArguments: --mode file
+  captureArguments: --mode live --camera 0 --bg
   handTrackingWorkingDirectory: C:\capstone\Shadow-to-3D-Generator
   handTrackingScriptName: python\MediaPipeTracking.py
   handTrackingArguments: --camera 1
@@ -519,7 +519,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   stateManager: {fileID: 775207380}
   fogVideoClip: {fileID: 0}
-  fogVideoPath: ../fog.mp4
+  fogVideoPath: fog.mp4
   chromaKeyEnabled: 1
   chromaKeyShader: {fileID: 4800000, guid: c3d69e10058245b8bc73adefac24cae5, type: 3}
   chromaKeyColor: {r: 0, g: 0, b: 0, a: 1}
@@ -766,6 +766,48 @@ MonoBehaviour:
   targetScaleXZ: {x: 8, y: 4}
   delaySeconds: 2
   durationSeconds: 5
+  scaleCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.28
+      value: 0.05
+      inSlope: 0.18
+      outSlope: 0.18
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.72
+      value: 0.86
+      inSlope: 1.6
+      outSlope: 1.6
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
   resetToInitialScaleOnEnable: 1
 --- !u!1 &2145170299
 GameObject:

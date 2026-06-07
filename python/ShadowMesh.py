@@ -640,7 +640,6 @@ def capture_live(camera_id=0, trim_config=None,
 
         cv2.imshow(PREVIEW_WINDOW_NAME, display)
         key = cv2.waitKey(1) & 0xFF
-        configure_preview_window(cv2, PREVIEW_WINDOW_NAME)
 
         if key == QUIT_KEY:
             print("[INFO] Capture canceled.")

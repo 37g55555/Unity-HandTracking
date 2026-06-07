@@ -1,7 +1,7 @@
 {
-  "n_vertices": 2966,
-  "n_triangles": 5895,
-  "n_boundary": 35,
+  "n_vertices": 1110,
+  "n_triangles": 2177,
+  "n_boundary": 41,
   "boundary_indices": [
     0,
     1,
@@ -37,13 +37,19 @@
     31,
     32,
     33,
-    34
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40
   ],
   "center_offset": [
-    948.4551584625758,
-    706.4120026972354
+    1166.7387387387387,
+    586.6603603603604
   ],
-  "scale_factor": 821.0,
+  "scale_factor": 498.0,
   "frame_width": 1920,
   "frame_height": 1080,
   "epsilon_ratio": 0.0025,
@@ -51,7 +57,7 @@
   "forearm_trim_enabled": true,
   "forearm_trim_center": [
     0.5,
-    0.556
+    0.5
   ],
   "forearm_trim_radius_ratio": 0.39,
   "forearm_trim_radius": [

@@ -25,7 +25,6 @@ namespace ShadowPrototype
         private const float Sf3dHealthCheckIntervalSeconds = 0.25f;
         private const int Sf3dHealthRequestTimeoutSeconds = 1;
         private const float Sf3dStartupTimeoutSeconds = 180.0f;
-        private const int TerminalDisplayIndex = 1;
         private static readonly Color ExportFillColor = Color.black;
         private static readonly Color ExportBackgroundColor = new Color(0f, 0f, 0f, 0f);
         private static readonly Vector2Int TerminalWindowOffset = new Vector2Int(40, 40);
@@ -840,15 +839,13 @@ namespace ShadowPrototype
         }
 
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-        private const short SwShowNoActivate = 4;
+        private const short SwShowMinNoActive = 7;
         private const int CreateNewConsole = 0x00000010;
         private const int StartfUseShowWindow = 0x00000001;
         private const int StartfUseSize = 0x00000002;
         private const int StartfUsePosition = 0x00000004;
 
         private delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, IntPtr lprcMonitor, IntPtr dwData);
-
-        private const int MonitorDefaultToNearest = 2;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct NativeRect
@@ -924,9 +921,6 @@ namespace ShadowPrototype
         [DllImport("user32.dll")]
         private static extern bool MoveWindow(IntPtr hWnd, int x, int y, int nWidth, int nHeight, bool repaint);
 
-        [DllImport("user32.dll")]
-        private static extern IntPtr MonitorFromWindow(IntPtr hwnd, int dwFlags);
-
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool CreateProcess(
             string lpApplicationName,
@@ -971,7 +965,7 @@ namespace ShadowPrototype
                 dwXSize = width,
                 dwYSize = height,
                 dwFlags = StartfUsePosition | StartfUseSize | StartfUseShowWindow,
-                wShowWindow = SwShowNoActivate
+                wShowWindow = SwShowMinNoActive
             };
 
             string commandLineText = $"powershell.exe {powershellArguments}";
@@ -1012,19 +1006,9 @@ namespace ShadowPrototype
                 return false;
             }
 
-            if (monitors.Count > 1)
-            {
-                if (TryGetDisplayAwayFromUnityWindow(monitors, out int displayIndex, out MonitorWorkArea monitor))
-                {
-                    bounds = monitor.Bounds;
-                    description = $"non-Unity display {displayIndex}";
-                    return true;
-                }
-            }
-
-            int clampedIndex = Mathf.Clamp(TerminalDisplayIndex, 0, monitors.Count - 1);
-            bounds = monitors[clampedIndex].Bounds;
-            description = $"display {clampedIndex}";
+            int targetMonitorIndex = monitors.Count - 1;
+            bounds = monitors[targetMonitorIndex].Bounds;
+            description = $"display {targetMonitorIndex}";
             return true;
         }
 
@@ -1054,32 +1038,6 @@ namespace ShadowPrototype
             x = displayBounds.x + Mathf.Clamp(TerminalWindowOffset.x + cascadeX, 0, maxX);
             y = displayBounds.y + Mathf.Clamp(TerminalWindowOffset.y + cascadeY, 0, maxY);
             return true;
-        }
-
-        private static bool TryGetDisplayAwayFromUnityWindow(
-            List<MonitorWorkArea> monitors,
-            out int displayIndex,
-            out MonitorWorkArea targetMonitor)
-        {
-            IntPtr unityWindow = Process.GetCurrentProcess().MainWindowHandle;
-            if (unityWindow != IntPtr.Zero)
-            {
-                IntPtr unityMonitor = MonitorFromWindow(unityWindow, MonitorDefaultToNearest);
-                for (int index = 0; index < monitors.Count; index++)
-                {
-                    MonitorWorkArea monitor = monitors[index];
-                    if (monitor.Handle != unityMonitor)
-                    {
-                        displayIndex = index;
-                        targetMonitor = monitor;
-                        return true;
-                    }
-                }
-            }
-
-            displayIndex = -1;
-            targetMonitor = default;
-            return false;
         }
 
         private static List<MonitorWorkArea> GetMonitorWorkAreas()

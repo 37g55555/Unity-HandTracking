@@ -194,11 +194,19 @@ def get_label_material_hint(label: str) -> str:
 
 def build_texture_prompt(label: str, category: str = "", texture_hint: str = "") -> str:
     clean_label = clean_prompt_fragment(label, "silhouette object", max_words=4)
+    clean_category = clean_prompt_fragment(category, "", max_words=4)
+    clean_texture_hint = clean_prompt_fragment(texture_hint, "", max_words=12)
     material_hint = get_label_material_hint(clean_label)
+    context_parts = []
+    if clean_category and clean_category != "abstract":
+        context_parts.append(f"{clean_category} category")
+    if clean_texture_hint:
+        context_parts.append(clean_texture_hint)
+    context = f"{', '.join(context_parts)}, " if context_parts else ""
     return (
         f"realistic 3d form with subtle {clean_label}-inspired features, "
         "forcibly warped and squeezed to exactly fill the silhouette, "
-        f"{material_hint}, volumetric object, natural colors, neutral white lighting, "
+        f"{context}{material_hint}, volumetric object, natural colors, neutral white lighting, "
         "transparent background, no margins"
     )
 
@@ -272,6 +280,11 @@ def get_texture_pipeline():
     return cn_pipe
 
 
+def prepare_labeler_memory():
+    unload_texture_pipeline()
+    unload_sf3d_model()
+
+
 @app.get("/health")
 async def health():
     return {
@@ -287,6 +300,7 @@ async def health():
 async def warmup_labeler():
     started_at = time.perf_counter()
     log("[Qwen] warmup requested.")
+    prepare_labeler_memory()
     get_labeler(device)
     log(f"[Qwen] warmup complete ({elapsed_seconds(started_at)}).")
     return {"ok": True}
@@ -311,6 +325,7 @@ async def classify_silhouette(file: UploadFile = File(...)):
     silhouette_mask = extract_silhouette_mask(image)
 
     qwen_input = silhouette_mask.convert("RGB")
+    prepare_labeler_memory()
     try:
         label = infer_silhouette_label(qwen_input, device)
     finally:
@@ -380,36 +395,37 @@ async def generate_3d(file: UploadFile = File(...)):
     image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
 
     sf3d_model = get_sf3d_model()
+    try:
+        with progress("[SF3D] run", 4) as bar:
+            image = resize_foreground(image, 0.85)
+            bar.update(1)
 
-    with progress("[SF3D] run", 4) as bar:
-        image = resize_foreground(image, 0.85)
-        bar.update(1)
+            autocast_context = (
+                torch.autocast(device_type=device, dtype=torch.bfloat16)
+                if device == "cuda"
+                else nullcontext()
+            )
+            with torch.no_grad():
+                with autocast_context:
+                    with redirect_stdout(io.StringIO()):
+                        mesh, _ = sf3d_model.run_image(
+                            [image],
+                            bake_resolution=1024,
+                            remesh="none",
+                            vertex_count=-1,
+                        )
+            bar.update(1)
 
-        autocast_context = (
-            torch.autocast(device_type=device, dtype=torch.bfloat16)
-            if device == "cuda"
-            else nullcontext()
-        )
-        with torch.no_grad():
-            with autocast_context:
-                with redirect_stdout(io.StringIO()):
-                    mesh, _ = sf3d_model.run_image(
-                        [image],
-                        bake_resolution=1024,
-                        remesh="none",
-                        vertex_count=-1,
-                    )
-        bar.update(1)
+            mesh = thicken_mesh_depth(mesh)
+            bar.update(1)
 
-        mesh = thicken_mesh_depth(mesh)
-        bar.update(1)
+            out_mesh_path = os.path.join("temp_outputs", f"{uuid.uuid4()}.glb")
+            mesh.export(out_mesh_path, include_normals=True)
+            bar.update(1)
+        log(f"[SF3D] generated: {out_mesh_path} ({elapsed_seconds(started_at)}).")
+    finally:
+        unload_sf3d_model()
 
-        out_mesh_path = os.path.join("temp_outputs", f"{uuid.uuid4()}.glb")
-        mesh.export(out_mesh_path, include_normals=True)
-        bar.update(1)
-    log(f"[SF3D] generated: {out_mesh_path} ({elapsed_seconds(started_at)}).")
-
-    clear_memory()
     return FileResponse(out_mesh_path, media_type="model/gltf-binary", filename="model.glb")
 
 
