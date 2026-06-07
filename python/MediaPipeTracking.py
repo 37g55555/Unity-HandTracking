@@ -8,7 +8,6 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-
 CAMERA_WIDTH = 1920
 CAMERA_HEIGHT = 1080
 CAMERA_FPS = 30
@@ -17,7 +16,6 @@ PACKET_HEIGHT = 1080
 UDP_HOST = "127.0.0.1"
 UDP_PORT = 5053
 MODEL_PATH = Path(__file__).resolve().parent / "MediaPipe.task"
-QUIT_KEY = ord("q")
 
 
 def log(message):
@@ -66,14 +64,6 @@ def create_landmarker():
     return vision.HandLandmarker.create_from_options(options)
 
 
-def draw_landmarks(frame, hand_landmarks):
-    frame_height, frame_width = frame.shape[:2]
-    for landmark in hand_landmarks:
-        px = int(landmark.x * frame_width)
-        py = int(landmark.y * frame_height)
-        cv2.circle(frame, (px, py), 4, (0, 255, 0), cv2.FILLED)
-
-
 def build_udp_payload(result):
     data = []
     for hand_landmarks in result.hand_landmarks:
@@ -115,17 +105,10 @@ def run_tracking(camera_id):
             if result.hand_landmarks:
                 payload = build_udp_payload(result)
                 sock.sendto(str(payload).encode("utf-8"), udp_target)
-                for hand_landmarks in result.hand_landmarks:
-                    draw_landmarks(frame, hand_landmarks)
-
-            cv2.imshow("MediaPipe Hand Tracking", frame)
-            if cv2.waitKey(1) & 0xFF == QUIT_KEY:
-                break
     finally:
         landmarker.close()
         sock.close()
         cap.release()
-        cv2.destroyAllWindows()
 
 
 def main():

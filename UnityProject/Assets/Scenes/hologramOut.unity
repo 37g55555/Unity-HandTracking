@@ -171,6 +171,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d486c1df48105934caa60da79d197a84, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  returnShrinkTargetName: SoftWhiteCirclePlane
+  returnShrinkDurationSeconds: 2
 --- !u!114 &202780832
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -183,7 +185,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2a513edcf18ce8d4c824ad9c7558536f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  inputDirectory: C:\capstone\Shadow-to-3D-Generator/output/sf3d
+  modelWorldOffset: {x: 0, y: 0, z: 0}
 --- !u!222 &286574751
 CanvasRenderer:
   m_ObjectHideFlags: 0

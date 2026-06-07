@@ -56,14 +56,16 @@ def clean_label(text: str) -> str:
     text = text.strip().lower()
     text = re.sub(r"[^a-z ]", " ", text)
     words = [word for word in text.split() if len(word) > 1]
-    return words[0] if words else FALLBACK_LABEL
+    return " ".join(words[:4]) if words else FALLBACK_LABEL
 
 
 def infer_silhouette_label(image: Image.Image, device: str) -> str:
     qwen_model, qwen_processor = get_labeler(device)
     prompt = (
         "Look at this silhouette image and answer with exactly one English noun "
-        "for the animal or object it most resembles. No explanation."
+        "for the animal, object, or symbol it most resembles. "
+        "Avoid answering hand, finger, palm, or arm unless there is no other plausible match. "
+        "No explanation."
     )
     messages = [
         {

@@ -30,10 +30,12 @@ namespace ShadowPrototype
 
         public bool IsRunning => activeRoutine != null;
         public bool IsClassifying => activeClassificationRoutine != null;
-        public bool IsWarmingUp => activeLabelerWarmupRoutine != null || activeTextureWarmupRoutine != null;
+        public bool IsLabelerWarmingUp => activeLabelerWarmupRoutine != null;
         public bool HasSilhouetteLabel { get; private set; }
         public string BaseUrl => baseUrl;
         public string SilhouetteLabel { get; private set; } = "object";
+        public string SilhouetteCategory { get; private set; } = "abstract";
+        public string SilhouetteTextureHint { get; private set; } = string.Empty;
         public string LastInputPngPath { get; private set; } = string.Empty;
         public string LastTexturePath { get; private set; } = string.Empty;
         public string LastGeneratedGlbPath { get; private set; } = string.Empty;
@@ -43,7 +45,9 @@ namespace ShadowPrototype
         [Serializable]
         private class ClassificationResponse
         {
-            public string label;
+            public string label = string.Empty;
+            public string category = string.Empty;
+            public string texture_hint = string.Empty;
         }
 
         public void ClassifySilhouette(string pngPath)
@@ -75,6 +79,8 @@ namespace ShadowPrototype
         {
             HasSilhouetteLabel = false;
             SilhouetteLabel = "object";
+            SilhouetteCategory = "abstract";
+            SilhouetteTextureHint = string.Empty;
         }
 
         public void WarmupLabeler()
@@ -100,34 +106,6 @@ namespace ShadowPrototype
             }
 
             activeTextureWarmupRoutine = StartCoroutine(WarmupTextureCoroutine());
-        }
-
-        public void GenerateFromPng(string pngPath)
-        {
-            if (string.IsNullOrWhiteSpace(pngPath))
-            {
-                Debug.LogWarning("SF3DGenerationClient: PNG path is empty.");
-                return;
-            }
-
-            if (!File.Exists(pngPath))
-            {
-                Debug.LogWarning($"SF3DGenerationClient: PNG file was not found: {pngPath}");
-                return;
-            }
-
-            if (activeRoutine != null)
-            {
-                Debug.LogWarning("SF3DGenerationClient: generation is already running.");
-                return;
-            }
-
-            if (!CanStartGeneration())
-            {
-                return;
-            }
-
-            activeRoutine = StartCoroutine(GenerateFromPngCoroutine(pngPath));
         }
 
         public void GenerateFromPngBytes(byte[] pngBytes, string sourceFileName = "deformed_shadow.png")
@@ -200,23 +178,6 @@ namespace ShadowPrototype
 
         }
 
-        private IEnumerator GenerateFromPngCoroutine(string pngPath)
-        {
-            byte[] pngBytes;
-            try
-            {
-                pngBytes = File.ReadAllBytes(pngPath);
-            }
-            catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException)
-            {
-                Debug.LogWarning($"SF3DGenerationClient: PNG read failed for '{pngPath}': {exception.Message}");
-                activeRoutine = null;
-                yield break;
-            }
-
-            yield return GenerateFromPngBytesCoroutine(pngBytes, Path.GetFileName(pngPath), pngPath);
-        }
-
         private IEnumerator GenerateFromPngBytesCoroutine(byte[] pngBytes, string sourceFileName, string sourceDescription)
         {
             LastInputPngPath = sourceDescription;
@@ -225,7 +186,13 @@ namespace ShadowPrototype
 
             byte[] sf3dInputBytes = pngBytes;
             Debug.Log($"SF3DGenerationClient: sending texture input '{sourceFileName}' from {sourceDescription} ({pngBytes.Length} bytes).");
-            UnityWebRequest textureRequest = CreateImagePostRequest(BuildUrl(textureEndpoint), pngBytes, sourceFileName, SilhouetteLabel);
+            UnityWebRequest textureRequest = CreateImagePostRequest(
+                BuildUrl(textureEndpoint),
+                pngBytes,
+                sourceFileName,
+                SilhouetteLabel,
+                SilhouetteCategory,
+                SilhouetteTextureHint);
             yield return textureRequest.SendWebRequest();
 
             if (HasRequestError(textureRequest))
@@ -264,7 +231,10 @@ namespace ShadowPrototype
         private void HandleGlbGenerated(string glbPath)
         {
             GlbGenerated?.Invoke(glbPath);
+        }
 
+        public void LoadTargetSceneAfterGeneration()
+        {
             if (SceneManager.GetSceneByName(targetSceneAfterGeneration).isLoaded)
             {
                 return;
@@ -299,20 +269,30 @@ namespace ShadowPrototype
             }
 
             string responseText = request.downloadHandler?.text;
-            string label = ParseClassificationLabel(responseText);
-            if (!string.IsNullOrWhiteSpace(label))
+            ClassificationResponse response = ParseClassificationResponse(responseText);
+            if (response != null && !string.IsNullOrWhiteSpace(response.label))
             {
-                SilhouetteLabel = label;
+                SilhouetteLabel = response.label;
+                SilhouetteCategory = string.IsNullOrWhiteSpace(response.category) ? "abstract" : response.category;
+                SilhouetteTextureHint = string.IsNullOrWhiteSpace(response.texture_hint) ? string.Empty : response.texture_hint;
                 HasSilhouetteLabel = true;
                 SilhouetteClassified?.Invoke(SilhouetteLabel);
-                Debug.Log($"SF3DGenerationClient: silhouette label is '{SilhouetteLabel}'.");
+                Debug.Log(
+                    "SF3DGenerationClient: silhouette interpretation is " +
+                    $"label='{SilhouetteLabel}', category='{SilhouetteCategory}', texture_hint='{SilhouetteTextureHint}'.");
             }
 
             request.Dispose();
             activeClassificationRoutine = null;
         }
 
-        private UnityWebRequest CreateImagePostRequest(string url, byte[] imageBytes, string fileName, string label = null)
+        private UnityWebRequest CreateImagePostRequest(
+            string url,
+            byte[] imageBytes,
+            string fileName,
+            string label = null,
+            string category = null,
+            string textureHint = null)
         {
             var form = new WWWForm();
             form.AddBinaryData("file", imageBytes, fileName, "image/png");
@@ -320,28 +300,35 @@ namespace ShadowPrototype
             {
                 form.AddField("label", label);
             }
+            if (!string.IsNullOrWhiteSpace(category))
+            {
+                form.AddField("category", category);
+            }
+            if (!string.IsNullOrWhiteSpace(textureHint))
+            {
+                form.AddField("texture_hint", textureHint);
+            }
 
             UnityWebRequest request = UnityWebRequest.Post(url, form);
             request.timeout = RequestTimeoutSeconds;
             return request;
         }
 
-        private static string ParseClassificationLabel(string responseText)
+        private static ClassificationResponse ParseClassificationResponse(string responseText)
         {
             if (string.IsNullOrWhiteSpace(responseText))
             {
-                return string.Empty;
+                return null;
             }
 
             try
             {
-                ClassificationResponse response = JsonUtility.FromJson<ClassificationResponse>(responseText);
-                return response == null ? string.Empty : response.label;
+                return JsonUtility.FromJson<ClassificationResponse>(responseText);
             }
             catch (ArgumentException exception)
             {
                 Debug.LogWarning($"SF3DGenerationClient: silhouette classification response parse failed: {exception.Message}");
-                return string.Empty;
+                return null;
             }
         }
 

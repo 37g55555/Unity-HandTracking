@@ -1,0 +1,13 @@
+# Format: order|stage|message
+# Stages: ShadowCapturing, MediaPipeTracking, MeshExtracting, Reconstructing3D, HologramOutput, Error
+10|ShadowCapturing|빛 앞에 손을 올려 그림자를 만들어보세요. 
+20|ShadowCapturing|흰 원 안에 그림자가 들어오도록 천천히 맞춰주세요. 
+30|MediaPipeTracking|이제 손으로 그림자의 형태를 만져볼 수 있어요. 
+40|MediaPipeTracking|원하는 모양이 되면 Enter를 눌러 다음 단계로 넘어갑니다. 
+50|MeshExtracting|방금 만든 그림자의 윤곽을 읽고 있어요. 
+60|MeshExtracting|평면의 그림자를 3D로 바꾸기 위한 준비가 진행됩니다. 
+70|Reconstructing3D|AI가 그림자의 형태를 입체 오브제로 상상하고 있어요. 
+80|Reconstructing3D|잠시만 기다리면 새로운 형상이 완성됩니다. 
+90|HologramOutput|완성된 오브제가 홀로그램으로 나타납니다. 
+100|HologramOutput|잠시 뒤 다음 참여자를 위한 그림자 화면으로 돌아갑니다. 
+999|Error|처리 중 문제가 생겼어요. 지인이를 불러주세요.

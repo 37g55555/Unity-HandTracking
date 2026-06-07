@@ -1,19 +1,21 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using ShadowPrototype;
 
 public class HologramSceneManager : MonoBehaviour
 {
     private const string ReturnSceneName = "Main";
+    private const int TargetDisplayIndex = 1;
+    private const string HologramCanvasName = "HologramCanvas";
+    private const float HologramPanelMaxSizePixels = 702f;
+    private const float HologramPanelScreenFraction = 0.46f;
+    private const float HologramPanelPaddingPixels = 24f;
+    private static readonly Vector3 SceneWorldOffset = new Vector3(50f, 0f, 0f);
 
-    [SerializeField] private Vector3 sceneWorldOffset = new Vector3(50f, 0f, 0f);
-    [SerializeField] private string hologramCanvasName = "HologramCanvas";
-    [SerializeField, Min(1f)] private float hologramPanelMaxSizePixels = 702f;
-    [SerializeField, Range(0.1f, 1f)] private float hologramPanelScreenFraction = 0.46f;
-    [SerializeField, Min(0f)] private float hologramPanelPaddingPixels = 24f;
-    [SerializeField] private bool disableHologramCanvasRaycasts = true;
+    [SerializeField] private string returnShrinkTargetName = "SoftWhiteCirclePlane";
+    [SerializeField, Min(0f)] private float returnShrinkDurationSeconds = 2f;
 
     private bool isClosing;
     private int activeTargetDisplay;
@@ -21,12 +23,12 @@ public class HologramSceneManager : MonoBehaviour
 
     private void Start()
     {
-        ApplySceneWorldOffset(gameObject.scene, sceneWorldOffset);
+        ApplySceneWorldOffset(gameObject.scene, SceneWorldOffset);
 
-        activeTargetDisplay = Display.displays.Length > 1 ? 1 : 0;
-        if (activeTargetDisplay == 1)
+        activeTargetDisplay = ResolveTargetDisplayIndex();
+        if (activeTargetDisplay > 0)
         {
-            Display.displays[1].Activate();
+            Display.displays[activeTargetDisplay].Activate();
         }
 
         ApplyTargetDisplay(gameObject.scene, activeTargetDisplay);
@@ -85,17 +87,35 @@ public class HologramSceneManager : MonoBehaviour
             }
 
             isClosing = true;
-            PipelineManager pipelineManager = FindObjectOfType<PipelineManager>();
-
-            if (SceneManager.sceneCount > 1)
-            {
-                pipelineManager?.StartPipeline();
-                SceneManager.UnloadSceneAsync(gameObject.scene);
-                return;
-            }
-
-            SceneManager.LoadScene(ReturnSceneName);
+            StartCoroutine(ReturnToMainRoutine());
         }
+    }
+
+    private IEnumerator ReturnToMainRoutine()
+    {
+        Transform shrinkTarget = FindTransformInLoadedScenes(returnShrinkTargetName);
+        if (shrinkTarget == null)
+        {
+            Debug.LogWarning($"HologramSceneManager: return shrink target was not found: {returnShrinkTargetName}");
+            SceneManager.LoadScene(ReturnSceneName, LoadSceneMode.Single);
+            yield break;
+        }
+
+        Vector3 startScale = shrinkTarget.localScale;
+        float elapsed = 0f;
+        float duration = Mathf.Max(0f, returnShrinkDurationSeconds);
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = duration <= 0f ? 1f : Mathf.Clamp01(elapsed / duration);
+            float eased = Mathf.SmoothStep(0f, 1f, t);
+            shrinkTarget.localScale = Vector3.LerpUnclamped(startScale, Vector3.zero, eased);
+            yield return null;
+        }
+
+        shrinkTarget.localScale = Vector3.zero;
+        SceneManager.LoadScene(ReturnSceneName, LoadSceneMode.Single);
     }
 
     private void ApplyHologramCanvasLayoutIfNeeded(bool force)
@@ -108,6 +128,17 @@ public class HologramSceneManager : MonoBehaviour
 
         lastLayoutSize = displaySize;
         ApplyHologramCanvasLayout(gameObject.scene, displaySize);
+    }
+
+    private int ResolveTargetDisplayIndex()
+    {
+        int displayCount = Display.displays.Length;
+        if (displayCount <= 1)
+        {
+            return 0;
+        }
+
+        return Mathf.Clamp(TargetDisplayIndex, 0, displayCount - 1);
     }
 
     private void ApplyHologramCanvasLayout(Scene scene, Vector2Int displaySize)
@@ -125,18 +156,15 @@ public class HologramSceneManager : MonoBehaviour
             scaler.scaleFactor = 1f;
         }
 
-        if (disableHologramCanvasRaycasts)
+        GraphicRaycaster raycaster = hologramCanvas.GetComponent<GraphicRaycaster>();
+        if (raycaster != null)
         {
-            GraphicRaycaster raycaster = hologramCanvas.GetComponent<GraphicRaycaster>();
-            if (raycaster != null)
-            {
-                raycaster.enabled = false;
-            }
+            raycaster.enabled = false;
+        }
 
-            foreach (Graphic graphic in hologramCanvas.GetComponentsInChildren<Graphic>(true))
-            {
-                graphic.raycastTarget = false;
-            }
+        foreach (Graphic graphic in hologramCanvas.GetComponentsInChildren<Graphic>(true))
+        {
+            graphic.raycastTarget = false;
         }
 
         float panelSize = CalculatePanelSize(displaySize);
@@ -152,10 +180,57 @@ public class HologramSceneManager : MonoBehaviour
             Canvas[] canvases = rootObject.GetComponentsInChildren<Canvas>(true);
             foreach (Canvas sceneCanvas in canvases)
             {
-                if (sceneCanvas.name == hologramCanvasName)
+                if (sceneCanvas.name == HologramCanvasName)
                 {
                     return sceneCanvas;
                 }
+            }
+        }
+
+        return null;
+    }
+
+    private static Transform FindTransformInLoadedScenes(string targetName)
+    {
+        if (string.IsNullOrWhiteSpace(targetName))
+        {
+            return null;
+        }
+
+        for (int sceneIndex = 0; sceneIndex < SceneManager.sceneCount; sceneIndex++)
+        {
+            Scene scene = SceneManager.GetSceneAt(sceneIndex);
+            if (!scene.isLoaded)
+            {
+                continue;
+            }
+
+            foreach (GameObject rootObject in scene.GetRootGameObjects())
+            {
+                Transform found = FindTransformRecursive(rootObject.transform, targetName);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static Transform FindTransformRecursive(Transform root, string targetName)
+    {
+        if (root.name == targetName)
+        {
+            return root;
+        }
+
+        for (int childIndex = 0; childIndex < root.childCount; childIndex++)
+        {
+            Transform found = FindTransformRecursive(root.GetChild(childIndex), targetName);
+            if (found != null)
+            {
+                return found;
             }
         }
 
@@ -166,10 +241,10 @@ public class HologramSceneManager : MonoBehaviour
     {
         float displayWidth = Mathf.Max(1f, displaySize.x);
         float displayHeight = Mathf.Max(1f, displaySize.y);
-        float fractionSize = Mathf.Min(displayWidth, displayHeight) * hologramPanelScreenFraction;
-        float horizontalFit = (displayWidth * 0.5f) - (hologramPanelPaddingPixels * 2f);
-        float verticalFit = (displayHeight * 0.5f) - (hologramPanelPaddingPixels * 2f);
-        float fittedSize = Mathf.Min(hologramPanelMaxSizePixels, fractionSize, horizontalFit, verticalFit);
+        float fractionSize = Mathf.Min(displayWidth, displayHeight) * HologramPanelScreenFraction;
+        float horizontalFit = (displayWidth * 0.5f) - (HologramPanelPaddingPixels * 2f);
+        float verticalFit = (displayHeight * 0.5f) - (HologramPanelPaddingPixels * 2f);
+        float fittedSize = Mathf.Min(HologramPanelMaxSizePixels, fractionSize, horizontalFit, verticalFit);
 
         return Mathf.Max(1f, fittedSize);
     }

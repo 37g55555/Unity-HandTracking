@@ -79,9 +79,17 @@ namespace ShadowPrototype
 
         private void Awake()
         {
+            EnsureHandStatesInitialized();
+        }
+
+        private void EnsureHandStatesInitialized()
+        {
             for (int i = 0; i < handStates.Length; i++)
             {
-                handStates[i] = new HandInteractionState();
+                if (handStates[i] == null)
+                {
+                    handStates[i] = new HandInteractionState();
+                }
             }
         }
 
@@ -100,6 +108,7 @@ namespace ShadowPrototype
                 return false;
             }
 
+            EnsureHandStatesInitialized();
             HandInteractionState state = handStates[handIndex];
             if (state == null || !state.HasProjectedPoints)
             {
@@ -112,6 +121,8 @@ namespace ShadowPrototype
 
         private void Update()
         {
+            EnsureHandStatesInitialized();
+
             if (targetMeshDeformer == null || mediaPipeReceiver == null || !targetMeshDeformer.HasMesh)
             {
                 ResetGestureState();
@@ -466,6 +477,11 @@ namespace ShadowPrototype
         {
             for (int i = 0; i < handStates.Length; i++)
             {
+                if (handStates[i] == null)
+                {
+                    handStates[i] = new HandInteractionState();
+                }
+
                 ResetHandState(handStates[i]);
             }
 

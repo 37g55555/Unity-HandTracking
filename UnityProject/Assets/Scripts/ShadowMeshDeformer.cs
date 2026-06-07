@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using UnityEngine;
 
 namespace ShadowPrototype
@@ -613,31 +612,6 @@ namespace ShadowPrototype
                 {
                     DestroyImmediate(texture);
                 }
-            }
-        }
-
-        public bool SaveSilhouetteToPng(string outputPath, int resolution = 1024, Color? fillColor = null, Color? bgColor = null)
-        {
-            if (!TryEncodeSilhouetteToPng(out byte[] pngBytes, resolution, fillColor, bgColor))
-            {
-                return false;
-            }
-
-            try
-            {
-                string directory = Path.GetDirectoryName(outputPath);
-                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
-
-                File.WriteAllBytes(outputPath, pngBytes);
-                return true;
-            }
-            catch (Exception exception)
-            {
-                Debug.LogWarning($"ShadowMeshDeformer: silhouette PNG export failed: {exception.Message}");
-                return false;
             }
         }
 

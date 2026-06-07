@@ -8,10 +8,6 @@ using UnityEngine.SceneManagement;
 public class HologramModelLoader : MonoBehaviour
 {
     private const float RotationDurationSeconds = 15f;
-    private const string ModelFileName = "shadow_model.glb";
-
-    [Header("Paths")]
-    [SerializeField] private string inputDirectory = "../output/sf3d";
 
     [Header("Placement")]
     [SerializeField] private Vector3 modelWorldOffset = Vector3.zero;
@@ -35,9 +31,14 @@ public class HologramModelLoader : MonoBehaviour
     private async void LoadModel()
     {
         string modelPath = ResolveModelPath();
+        if (string.IsNullOrWhiteSpace(modelPath))
+        {
+            return;
+        }
+
         if (!File.Exists(modelPath))
         {
-            Debug.LogError("HologramModelLoader: GLB file not found: " + modelPath);
+            Debug.LogError("HologramModelLoader: generated GLB file not found: " + modelPath);
             return;
         }
 
@@ -47,39 +48,20 @@ public class HologramModelLoader : MonoBehaviour
     private string ResolveModelPath()
     {
         SF3DGenerationClient generationClient = FindObjectOfType<SF3DGenerationClient>();
-        if (generationClient != null &&
-            !string.IsNullOrWhiteSpace(generationClient.LastGeneratedGlbPath) &&
-            File.Exists(generationClient.LastGeneratedGlbPath))
+        if (generationClient == null)
         {
-            Debug.Log("HologramModelLoader: loading generated GLB: " + generationClient.LastGeneratedGlbPath);
-            return generationClient.LastGeneratedGlbPath;
+            Debug.LogError("HologramModelLoader: SF3DGenerationClient was not found.");
+            return string.Empty;
         }
 
-        string fallbackPath = Path.Combine(GetUnityProjectDirectoryAbsolute(), inputDirectory, ModelFileName);
-        Debug.Log("HologramModelLoader: loading fallback GLB: " + fallbackPath);
-        return fallbackPath;
-    }
-
-    private static string GetUnityProjectDirectoryAbsolute()
-    {
-        string dataPath = Path.GetFullPath(Application.dataPath);
-        DirectoryInfo directory = Directory.GetParent(dataPath);
-
-        while (directory != null)
+        if (string.IsNullOrWhiteSpace(generationClient.LastGeneratedGlbPath))
         {
-            bool hasUnityProjectLayout =
-                Directory.Exists(Path.Combine(directory.FullName, "Assets")) &&
-                Directory.Exists(Path.Combine(directory.FullName, "ProjectSettings"));
-
-            if (hasUnityProjectLayout)
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
+            Debug.LogError("HologramModelLoader: no generated GLB path is available.");
+            return string.Empty;
         }
 
-        return Path.GetFullPath(Path.Combine(dataPath, ".."));
+        Debug.Log("HologramModelLoader: loading generated GLB: " + generationClient.LastGeneratedGlbPath);
+        return generationClient.LastGeneratedGlbPath;
     }
 
     private async System.Threading.Tasks.Task LoadGlb(string path)
@@ -108,16 +90,9 @@ public class HologramModelLoader : MonoBehaviour
 
     private static void CenterAndNormalize(GameObject model, Vector3 targetWorldPosition)
     {
-        Renderer[] renderers = model.GetComponentsInChildren<Renderer>();
-        if (renderers.Length == 0)
+        if (!TryGetRendererBounds(model, out Bounds bounds))
         {
             return;
-        }
-
-        Bounds bounds = renderers[0].bounds;
-        foreach (Renderer renderer in renderers)
-        {
-            bounds.Encapsulate(renderer.bounds);
         }
 
         float maxSize = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
@@ -126,13 +101,30 @@ public class HologramModelLoader : MonoBehaviour
             model.transform.localScale = Vector3.one * (1f / maxSize);
         }
 
+        if (!TryGetRendererBounds(model, out bounds))
+        {
+            return;
+        }
+
+        model.transform.position += targetWorldPosition - bounds.center;
+    }
+
+    private static bool TryGetRendererBounds(GameObject model, out Bounds bounds)
+    {
+        Renderer[] renderers = model.GetComponentsInChildren<Renderer>();
+        if (renderers.Length == 0)
+        {
+            bounds = default;
+            return false;
+        }
+
         bounds = renderers[0].bounds;
         foreach (Renderer renderer in renderers)
         {
             bounds.Encapsulate(renderer.bounds);
         }
 
-        model.transform.position += targetWorldPosition - bounds.center;
+        return true;
     }
 
     private static Texture2D LoadEmbeddedBaseColorTexture(string glbPath)

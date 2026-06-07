@@ -1,6 +1,7 @@
 import gc
 import io
 import os
+import re
 import time
 import uuid
 import warnings
@@ -93,15 +94,22 @@ def apply_silhouette_alpha(texture: Image.Image, mask_image: Image.Image) -> Ima
         (texture_resolution, texture_resolution),
         Image.Resampling.LANCZOS,
     )
-    texture_rgba.putalpha(mask_image)
-    return texture_rgba
+    alpha = mask_image.resize(
+        (texture_resolution, texture_resolution),
+        Image.Resampling.LANCZOS,
+    )
+    rgba = np.array(texture_rgba)
+    alpha_array = np.array(alpha)
+    rgba[:, :, 3] = alpha_array
+    rgba[alpha_array == 0, :3] = 0
+    return Image.fromarray(rgba, mode="RGBA")
 
 
-def brighten_storybook_texture(texture: Image.Image) -> Image.Image:
+def enhance_texture_color(texture: Image.Image) -> Image.Image:
     texture_rgb = texture.convert("RGB")
-    texture_rgb = ImageEnhance.Color(texture_rgb).enhance(1.18)
-    texture_rgb = ImageEnhance.Brightness(texture_rgb).enhance(1.08)
-    texture_rgb = ImageEnhance.Contrast(texture_rgb).enhance(1.06)
+    texture_rgb = ImageEnhance.Color(texture_rgb).enhance(0.92)
+    texture_rgb = ImageEnhance.Brightness(texture_rgb).enhance(1.02)
+    texture_rgb = ImageEnhance.Contrast(texture_rgb).enhance(1.02)
     return texture_rgb
 
 
@@ -164,12 +172,34 @@ def unload_texture_pipeline():
     clear_memory()
 
 
-def build_texture_prompt(label: str) -> str:
-    clean_label = label.strip().lower() if label else "object"
+def clean_prompt_fragment(value: str, fallback: str, max_words: int = 18) -> str:
+    value = (value or "").strip().lower()
+    value = re.sub(r"[^a-z0-9 ,\-]", " ", value)
+    value = re.sub(r"\s+", " ", value).strip(" ,")
+    if not value:
+        return fallback
+
+    return " ".join(value.split()[:max_words])
+
+
+def get_label_material_hint(label: str) -> str:
+    if "glove" in label:
+        return (
+            "soft glove material, matte leather or cotton fabric, smooth padded surface, "
+            "subtle seams, no fingerprint lines"
+        )
+
+    return "realistic surface material, smooth coherent texture, subtle natural details"
+
+
+def build_texture_prompt(label: str, category: str = "", texture_hint: str = "") -> str:
+    clean_label = clean_prompt_fragment(label, "silhouette object", max_words=4)
+    material_hint = get_label_material_hint(clean_label)
     return (
-        f"one single {clean_label} forcibly warped into the exact silhouette shape, "
-        f"a distorted {clean_label} object squeezed to touch every edge of the silhouette, "
-        "three-dimensional form, vivid natural color, transparent background"
+        f"realistic 3d form with subtle {clean_label}-inspired features, "
+        "forcibly warped and squeezed to exactly fill the silhouette, "
+        f"{material_hint}, volumetric object, natural colors, neutral white lighting, "
+        "transparent background, no margins"
     )
 
 
@@ -292,22 +322,30 @@ async def classify_silhouette(file: UploadFile = File(...)):
 
 
 @app.post("/generate-texture")
-async def generate_texture(file: UploadFile = File(...), label: str = Form("object")):
+async def generate_texture(
+    file: UploadFile = File(...),
+    label: str = Form("object"),
+    category: str = Form("abstract"),
+    texture_hint: str = Form(""),
+):
     started_at = time.perf_counter()
-    log(f"[ControlNet] texture requested: {file.filename}, label={label}")
+    log(
+        "[ControlNet] texture requested: "
+        f"{file.filename}, label={label}, category={category}, texture_hint={texture_hint}"
+    )
 
     image_bytes = await file.read()
     image = Image.open(io.BytesIO(image_bytes))
     silhouette_mask = extract_silhouette_mask(image)
     control_image = build_control_image(silhouette_mask)
 
-    prompt = build_texture_prompt(label)
+    prompt = build_texture_prompt(label, category, texture_hint)
     log(f"[ControlNet] prompt: {prompt}")
     negative_prompt = (
-        "low quality, worst quality, text, watermark, floor, table, ground plane, "
-        "cast shadow, background scenery, gray background, white background, "
-        "empty space inside silhouette, blank area, normal object proportions, "
-        "extra objects, duplicate object, multiple objects, collage"
+        "text, watermark, fingers, skin, flat shadow, background, empty margins, "
+        "extra objects, duplicate object, unwarped proportions, cropped object, "
+        "outside silhouette, wireframe, contour lines, grid, fingerprint, moire, "
+        "normal map, neon, colored rim light, oversaturated, green glow"
     )
 
     pipe = get_texture_pipeline()
@@ -317,11 +355,11 @@ async def generate_texture(file: UploadFile = File(...), label: str = Form("obje
         negative_prompt=negative_prompt,
         height=texture_resolution,
         width=texture_resolution,
-        num_inference_steps=20,
-        guidance_scale=8.5,
-        controlnet_conditioning_scale=1.55,
+        num_inference_steps=28,
+        guidance_scale=7.5,
+        controlnet_conditioning_scale=1.25,
     ).images[0]
-    output = brighten_storybook_texture(output)
+    output = enhance_texture_color(output)
     output = apply_silhouette_alpha(output, silhouette_mask)
 
     img_byte_arr = io.BytesIO()
