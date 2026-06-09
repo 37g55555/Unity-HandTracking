@@ -31,14 +31,16 @@ namespace ShadowPrototype
         public bool IsRunning => activeRoutine != null;
         public bool IsClassifying => activeClassificationRoutine != null;
         public bool IsLabelerWarmingUp => activeLabelerWarmupRoutine != null;
+        public bool IsTextureWarmingUp => activeTextureWarmupRoutine != null;
         public bool HasSilhouetteLabel { get; private set; }
         public string BaseUrl => baseUrl;
-        public string SilhouetteLabel { get; private set; } = "object";
-        public string SilhouetteCategory { get; private set; } = "abstract";
-        public string SilhouetteTextureHint { get; private set; } = string.Empty;
+        public string SilhouetteLabel { get; private set; } = string.Empty;
+        public string SilhouetteVisualHint { get; private set; } = string.Empty;
+        public string LastGenerationLabel { get; private set; } = string.Empty;
         public string LastInputPngPath { get; private set; } = string.Empty;
         public string LastTexturePath { get; private set; } = string.Empty;
         public string LastGeneratedGlbPath { get; private set; } = string.Empty;
+        public event Action<string> TextureGenerated;
         public event Action<string> GlbGenerated;
         public event Action<string> SilhouetteClassified;
 
@@ -46,8 +48,7 @@ namespace ShadowPrototype
         private class ClassificationResponse
         {
             public string label = string.Empty;
-            public string category = string.Empty;
-            public string texture_hint = string.Empty;
+            public string visual_hint = string.Empty;
         }
 
         public void ClassifySilhouette(string pngPath)
@@ -78,9 +79,9 @@ namespace ShadowPrototype
         public void ResetSilhouetteLabel()
         {
             HasSilhouetteLabel = false;
-            SilhouetteLabel = "object";
-            SilhouetteCategory = "abstract";
-            SilhouetteTextureHint = string.Empty;
+            SilhouetteLabel = string.Empty;
+            SilhouetteVisualHint = string.Empty;
+            LastGenerationLabel = string.Empty;
         }
 
         public void WarmupLabeler()
@@ -180,19 +181,20 @@ namespace ShadowPrototype
 
         private IEnumerator GenerateFromPngBytesCoroutine(byte[] pngBytes, string sourceFileName, string sourceDescription)
         {
+            string generationLabel = SilhouetteLabel.Trim();
+            string generationVisualHint = SilhouetteVisualHint.Trim();
+            LastGenerationLabel = generationLabel;
             LastInputPngPath = sourceDescription;
             LastTexturePath = string.Empty;
             LastGeneratedGlbPath = string.Empty;
 
-            byte[] sf3dInputBytes = pngBytes;
-            Debug.Log($"SF3DGenerationClient: sending texture input '{sourceFileName}' from {sourceDescription} ({pngBytes.Length} bytes).");
+            Debug.Log($"SF3DGenerationClient: sending texture input '{sourceFileName}' from {sourceDescription} ({pngBytes.Length} bytes), label '{generationLabel}', visual_hint '{generationVisualHint}'.");
             UnityWebRequest textureRequest = CreateImagePostRequest(
                 BuildUrl(textureEndpoint),
                 pngBytes,
                 sourceFileName,
-                SilhouetteLabel,
-                SilhouetteCategory,
-                SilhouetteTextureHint);
+                generationLabel,
+                generationVisualHint);
             yield return textureRequest.SendWebRequest();
 
             if (HasRequestError(textureRequest))
@@ -203,10 +205,11 @@ namespace ShadowPrototype
                 yield break;
             }
 
-            sf3dInputBytes = textureRequest.downloadHandler.data;
+            byte[] sf3dInputBytes = textureRequest.downloadHandler.data;
             LastTexturePath = SaveBytesToOutput(sf3dInputBytes, texturePreviewFileName);
             Debug.Log($"SF3DGenerationClient: saved texture preview: {LastTexturePath}");
             textureRequest.Dispose();
+            TextureGenerated?.Invoke(LastTexturePath);
 
             UnityWebRequest modelRequest = CreateImagePostRequest(BuildUrl(modelEndpoint), sf3dInputBytes, "sf3d_input.png");
             yield return modelRequest.SendWebRequest();
@@ -220,7 +223,7 @@ namespace ShadowPrototype
             }
 
             LastGeneratedGlbPath = SaveBytesToOutput(modelRequest.downloadHandler.data, generatedGlbFileName);
-            Debug.Log($"SF3DGenerationClient: saved generated GLB: {LastGeneratedGlbPath}");
+            Debug.Log($"SF3DGenerationClient: saved generated GLB: {LastGeneratedGlbPath}, label '{LastGenerationLabel}'.");
 
             modelRequest.Dispose();
             activeRoutine = null;
@@ -270,16 +273,15 @@ namespace ShadowPrototype
 
             string responseText = request.downloadHandler?.text;
             ClassificationResponse response = ParseClassificationResponse(responseText);
-            if (response != null && !string.IsNullOrWhiteSpace(response.label))
+            if (response != null &&
+                !string.IsNullOrWhiteSpace(response.label) &&
+                !string.IsNullOrWhiteSpace(response.visual_hint))
             {
                 SilhouetteLabel = response.label;
-                SilhouetteCategory = string.IsNullOrWhiteSpace(response.category) ? "abstract" : response.category;
-                SilhouetteTextureHint = string.IsNullOrWhiteSpace(response.texture_hint) ? string.Empty : response.texture_hint;
+                SilhouetteVisualHint = response.visual_hint;
                 HasSilhouetteLabel = true;
                 SilhouetteClassified?.Invoke(SilhouetteLabel);
-                Debug.Log(
-                    "SF3DGenerationClient: silhouette interpretation is " +
-                    $"label='{SilhouetteLabel}', category='{SilhouetteCategory}', texture_hint='{SilhouetteTextureHint}'.");
+                Debug.Log($"SF3DGenerationClient: silhouette label is '{SilhouetteLabel}', visual_hint is '{SilhouetteVisualHint}'.");
             }
 
             request.Dispose();
@@ -291,8 +293,7 @@ namespace ShadowPrototype
             byte[] imageBytes,
             string fileName,
             string label = null,
-            string category = null,
-            string textureHint = null)
+            string visualHint = null)
         {
             var form = new WWWForm();
             form.AddBinaryData("file", imageBytes, fileName, "image/png");
@@ -300,13 +301,9 @@ namespace ShadowPrototype
             {
                 form.AddField("label", label);
             }
-            if (!string.IsNullOrWhiteSpace(category))
+            if (!string.IsNullOrWhiteSpace(visualHint))
             {
-                form.AddField("category", category);
-            }
-            if (!string.IsNullOrWhiteSpace(textureHint))
-            {
-                form.AddField("texture_hint", textureHint);
+                form.AddField("visual_hint", visualHint);
             }
 
             UnityWebRequest request = UnityWebRequest.Post(url, form);

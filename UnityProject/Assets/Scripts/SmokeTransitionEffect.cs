@@ -13,6 +13,8 @@ namespace ShadowPrototype
         private static readonly Vector2Int RenderTextureSize = new Vector2Int(1920, 1080);
 
         [SerializeField] private GameStateManager stateManager;
+        [SerializeField] private VideoClip firstFogVideoClip;
+        [SerializeField] private string firstFogVideoPath = "fog_first.mp4";
         [SerializeField] private VideoClip fogVideoClip;
         [SerializeField] private string fogVideoPath = "fog.mp4";
         [SerializeField] private bool chromaKeyEnabled = true;
@@ -37,6 +39,8 @@ namespace ShadowPrototype
         private Material runtimeChromaKeyMaterial;
         private Coroutine transitionRoutine;
         private bool fogActive;
+        private bool introVideoCompleted;
+        private bool waitingForIntroVideo;
 
         private void Awake()
         {
@@ -94,7 +98,7 @@ namespace ShadowPrototype
 
         private void HandleStateChanged(GameStateManager.PipelineState currentState)
         {
-            if (currentState == GameStateManager.PipelineState.Reconstructing3D)
+            if (currentState == GameStateManager.PipelineState.MeshExtracting)
             {
                 BeginFogLoop();
             }
@@ -117,7 +121,22 @@ namespace ShadowPrototype
             ConfigureVideoPlayer();
             ApplyChromaKeyMaterial();
 
-            if (!TryApplyVideoSource())
+            canvasGroup.alpha = 0f;
+            SetVisible(true);
+
+            bool hasIntroVideo = TryApplyVideoSource(firstFogVideoClip, firstFogVideoPath, loop: false, warnIfMissing: false);
+            if (hasIntroVideo)
+            {
+                yield return PlayCurrentVideo(waitForCompletion: true, fadeIn: true);
+            }
+
+            if (!fogActive)
+            {
+                transitionRoutine = null;
+                yield break;
+            }
+
+            if (!TryApplyVideoSource(fogVideoClip, fogVideoPath, loop: true, warnIfMissing: true))
             {
                 fogActive = false;
                 SetVisible(false);
@@ -125,9 +144,12 @@ namespace ShadowPrototype
                 yield break;
             }
 
-            canvasGroup.alpha = 0f;
-            SetVisible(true);
+            yield return PlayCurrentVideo(waitForCompletion: false, fadeIn: !hasIntroVideo);
+            transitionRoutine = null;
+        }
 
+        private IEnumerator PlayCurrentVideo(bool waitForCompletion, bool fadeIn)
+        {
             videoPlayer.Stop();
             videoPlayer.Prepare();
 
@@ -137,9 +159,34 @@ namespace ShadowPrototype
                 yield return null;
             }
 
+            if (waitForCompletion)
+            {
+                AddIntroVideoFinishedHandler();
+            }
+
             videoPlayer.Play();
-            yield return FadeTo(1f, fadeInDuration);
-            transitionRoutine = null;
+
+            if (fadeIn)
+            {
+                yield return FadeTo(1f, fadeInDuration);
+            }
+
+            if (!waitForCompletion)
+            {
+                yield break;
+            }
+
+            while (fogActive && !introVideoCompleted && videoPlayer != null)
+            {
+                if (!videoPlayer.isPlaying && videoPlayer.frame > 0)
+                {
+                    break;
+                }
+
+                yield return null;
+            }
+
+            RemoveIntroVideoFinishedHandler();
         }
 
         private void BeginExit()
@@ -173,7 +220,7 @@ namespace ShadowPrototype
             canvas = canvasObject.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = SortingOrder;
-            canvas.targetDisplay = 0;
+            canvas.targetDisplay = ResolveProjectorDisplayIndex();
             canvasObject.AddComponent<CanvasScaler>();
 
             canvasGroup = canvasObject.AddComponent<CanvasGroup>();
@@ -196,6 +243,16 @@ namespace ShadowPrototype
             imageRect.offsetMax = Vector2.zero;
         }
 
+        private static int ResolveProjectorDisplayIndex()
+        {
+            if (Display.displays == null || Display.displays.Length == 0)
+            {
+                return 0;
+            }
+
+            return Mathf.Clamp(DisplayRoutingSettings.ProjectorUnityDisplayIndex, 0, Display.displays.Length - 1);
+        }
+
         private void CreateVideoPlayer()
         {
             videoPlayer = gameObject.AddComponent<VideoPlayer>();
@@ -207,7 +264,6 @@ namespace ShadowPrototype
 
         private void ConfigureVideoPlayer()
         {
-            videoPlayer.isLooping = true;
             videoPlayer.renderMode = VideoRenderMode.RenderTexture;
             videoPlayer.targetTexture = renderTexture;
             videoPlayer.audioOutputMode = VideoAudioOutputMode.None;
@@ -258,16 +314,17 @@ namespace ShadowPrototype
             fogImage.material = runtimeChromaKeyMaterial;
         }
 
-        private bool TryApplyVideoSource()
+        private bool TryApplyVideoSource(VideoClip clip, string path, bool loop, bool warnIfMissing)
         {
-            if (fogVideoClip != null)
+            videoPlayer.isLooping = loop;
+            if (clip != null)
             {
                 videoPlayer.source = VideoSource.VideoClip;
-                videoPlayer.clip = fogVideoClip;
+                videoPlayer.clip = clip;
                 return true;
             }
 
-            string videoPath = ResolveFogVideoPath();
+            string videoPath = ResolveVideoPath(path);
             if (File.Exists(videoPath))
             {
                 videoPlayer.source = VideoSource.Url;
@@ -275,23 +332,27 @@ namespace ShadowPrototype
                 return true;
             }
 
-            Debug.LogWarning($"SmokeTransitionEffect: fog video was not found: {videoPath}");
+            if (warnIfMissing)
+            {
+                Debug.LogWarning($"SmokeTransitionEffect: fog video was not found: {videoPath}");
+            }
+
             return false;
         }
 
-        private string ResolveFogVideoPath()
+        private string ResolveVideoPath(string videoPath)
         {
-            if (string.IsNullOrWhiteSpace(fogVideoPath))
+            if (string.IsNullOrWhiteSpace(videoPath))
             {
                 return string.Empty;
             }
 
-            if (Path.IsPathRooted(fogVideoPath))
+            if (Path.IsPathRooted(videoPath))
             {
-                return Path.GetFullPath(fogVideoPath);
+                return Path.GetFullPath(videoPath);
             }
 
-            return Path.GetFullPath(Path.Combine(Application.streamingAssetsPath, fogVideoPath));
+            return Path.GetFullPath(Path.Combine(Application.streamingAssetsPath, videoPath));
         }
 
         private void EnsureRenderTexture()
@@ -349,6 +410,7 @@ namespace ShadowPrototype
 
             StopCoroutine(transitionRoutine);
             transitionRoutine = null;
+            RemoveIntroVideoFinishedHandler();
         }
 
         private void StopFogPlayback()
@@ -358,6 +420,8 @@ namespace ShadowPrototype
             {
                 videoPlayer.Stop();
             }
+
+            RemoveIntroVideoFinishedHandler();
         }
 
         private void SetVisible(bool visible)
@@ -366,6 +430,38 @@ namespace ShadowPrototype
             {
                 canvas.enabled = visible;
             }
+        }
+
+        private void AddIntroVideoFinishedHandler()
+        {
+            if (waitingForIntroVideo)
+            {
+                return;
+            }
+
+            introVideoCompleted = false;
+            waitingForIntroVideo = true;
+            videoPlayer.loopPointReached += HandleIntroVideoFinished;
+        }
+
+        private void RemoveIntroVideoFinishedHandler()
+        {
+            if (!waitingForIntroVideo)
+            {
+                return;
+            }
+
+            if (videoPlayer != null)
+            {
+                videoPlayer.loopPointReached -= HandleIntroVideoFinished;
+            }
+
+            waitingForIntroVideo = false;
+        }
+
+        private void HandleIntroVideoFinished(VideoPlayer _source)
+        {
+            introVideoCompleted = true;
         }
 
     }

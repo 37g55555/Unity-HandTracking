@@ -160,6 +160,8 @@ namespace ShadowPrototype
 
             if (sf3dClient != null)
             {
+                sf3dClient.TextureGenerated -= HandleTextureGenerated;
+                sf3dClient.TextureGenerated += HandleTextureGenerated;
                 sf3dClient.GlbGenerated -= HandleGlbGenerated;
                 sf3dClient.GlbGenerated += HandleGlbGenerated;
                 sf3dClient.SilhouetteClassified -= HandleSilhouetteClassified;
@@ -178,6 +180,7 @@ namespace ShadowPrototype
 
             if (sf3dClient != null)
             {
+                sf3dClient.TextureGenerated -= HandleTextureGenerated;
                 sf3dClient.GlbGenerated -= HandleGlbGenerated;
                 sf3dClient.SilhouetteClassified -= HandleSilhouetteClassified;
             }
@@ -285,7 +288,6 @@ namespace ShadowPrototype
                 }
 
                 ShowExportStatus($"Saved shadow image: {outputPath}");
-                stateManager?.OnReconstructionStarted();
                 StartCoroutine(GenerateFromPngBytesWhenSf3dReady(pngBytes));
                 return;
             }
@@ -332,7 +334,18 @@ namespace ShadowPrototype
                 yield break;
             }
 
+            while (sf3dClient.IsTextureWarmingUp)
+            {
+                yield return null;
+            }
+
             sf3dClient.GenerateFromPngBytes(pngBytes, exportFileName);
+        }
+
+        private void HandleTextureGenerated(string texturePath)
+        {
+            Debug.Log($"PipelineManager: texture generated, starting 3D reconstruction: {texturePath}");
+            stateManager?.OnReconstructionStarted();
         }
 
         private bool TrySaveSilhouettePng(string outputPath, byte[] pngBytes)
@@ -402,7 +415,10 @@ namespace ShadowPrototype
         private void HandleSilhouetteClassified(string label)
         {
             Debug.Log($"PipelineManager: silhouette label ready for texture prompt: {label}");
-            sf3dClient?.WarmupTexturePipeline();
+            if (sf3dClient != null && !sf3dClient.IsRunning)
+            {
+                sf3dClient.WarmupTexturePipeline();
+            }
         }
 
         private void LaunchCaptureProcess()
@@ -468,6 +484,7 @@ namespace ShadowPrototype
         private void LaunchHandTrackingProcess()
         {
             LaunchPythonScriptInTerminal(HandTrackingProcessLabel, handTrackingWorkingDirectory, handTrackingScriptName, handTrackingArguments);
+            StartCoroutine(RestoreUnityWindowFocusRoutine());
         }
 
         private IEnumerator StartSf3dServerRoutine()
@@ -636,7 +653,6 @@ namespace ShadowPrototype
             {
                 launchedProcesses.Add(new LaunchedProcess(processLabel, positionedProcess));
                 StartCoroutine(PositionTerminalWindowRoutine(positionedProcess, processLabel, launchIndex));
-                positionedProcess.WaitForExit(1000);
                 return;
             }
 #endif
@@ -648,7 +664,7 @@ namespace ShadowPrototype
                 UseShellExecute = true,
                 WorkingDirectory = workingDirectory,
                 CreateNoWindow = false,
-                WindowStyle = ProcessWindowStyle.Minimized
+                WindowStyle = ProcessWindowStyle.Normal
             };
 
             var process = new Process { StartInfo = startInfo };
@@ -657,7 +673,6 @@ namespace ShadowPrototype
                 process.Start();
                 launchedProcesses.Add(new LaunchedProcess(processLabel, process));
                 StartCoroutine(PositionTerminalWindowRoutine(process, processLabel, launchIndex));
-                process.WaitForExit(1000);
             }
             catch (Exception exception)
             {
@@ -683,7 +698,7 @@ namespace ShadowPrototype
                 windowHandle = process.MainWindowHandle;
                 if (windowHandle == IntPtr.Zero)
                 {
-                    windowHandle = FindWindow(null, processLabel);
+                    windowHandle = WindowsDisplayUtility.FindWindowByTitle(processLabel);
                 }
 
                 if (windowHandle != IntPtr.Zero)
@@ -712,7 +727,7 @@ namespace ShadowPrototype
                 yield break;
             }
 
-            MoveWindow(windowHandle, x, y, width, height, true);
+            WindowsDisplayUtility.MoveWindowToBounds(windowHandle, new RectInt(x, y, width, height), true);
             Debug.Log($"{processLabel}: terminal window moved to {targetDescription} at ({x}, {y}) without activation.");
 #else
             yield break;
@@ -838,32 +853,34 @@ namespace ShadowPrototype
             return $"'{value.Replace("'", "''")}'";
         }
 
+        private IEnumerator RestoreUnityWindowFocusRoutine()
+        {
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-        private const short SwShowMinNoActive = 7;
+            for (int attempt = 0; attempt < 20; attempt++)
+            {
+                Process unityProcess = Process.GetCurrentProcess();
+                IntPtr unityWindowHandle = unityProcess.MainWindowHandle;
+                unityProcess.Dispose();
+                if (unityWindowHandle != IntPtr.Zero)
+                {
+                    ShowWindow(unityWindowHandle, SwRestore);
+                    SetForegroundWindow(unityWindowHandle);
+                }
+
+                yield return new WaitForSecondsRealtime(0.1f);
+            }
+#else
+            yield break;
+#endif
+        }
+
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+        private const short SwRestore = 9;
+        private const short SwShowNoActivate = 4;
         private const int CreateNewConsole = 0x00000010;
         private const int StartfUseShowWindow = 0x00000001;
         private const int StartfUseSize = 0x00000002;
         private const int StartfUsePosition = 0x00000004;
-
-        private delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, IntPtr lprcMonitor, IntPtr dwData);
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct NativeRect
-        {
-            public int left;
-            public int top;
-            public int right;
-            public int bottom;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct MonitorInfo
-        {
-            public int cbSize;
-            public NativeRect rcMonitor;
-            public NativeRect rcWork;
-            public uint dwFlags;
-        }
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         private struct StartupInfo
@@ -897,30 +914,6 @@ namespace ShadowPrototype
             public int dwThreadId;
         }
 
-        private readonly struct MonitorWorkArea
-        {
-            public MonitorWorkArea(IntPtr handle, RectInt bounds)
-            {
-                Handle = handle;
-                Bounds = bounds;
-            }
-
-            public IntPtr Handle { get; }
-            public RectInt Bounds { get; }
-        }
-
-        [DllImport("user32.dll")]
-        private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum, IntPtr dwData);
-
-        [DllImport("user32.dll")]
-        private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
-
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
-
-        [DllImport("user32.dll")]
-        private static extern bool MoveWindow(IntPtr hWnd, int x, int y, int nWidth, int nHeight, bool repaint);
-
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool CreateProcess(
             string lpApplicationName,
@@ -936,6 +929,12 @@ namespace ShadowPrototype
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
         private bool TryLaunchPositionedWindowsTerminal(
             string processLabel,
@@ -965,7 +964,7 @@ namespace ShadowPrototype
                 dwXSize = width,
                 dwYSize = height,
                 dwFlags = StartfUsePosition | StartfUseSize | StartfUseShowWindow,
-                wShowWindow = SwShowMinNoActive
+                wShowWindow = SwShowNoActivate
             };
 
             string commandLineText = $"powershell.exe {powershellArguments}";
@@ -998,18 +997,11 @@ namespace ShadowPrototype
 
         private bool TryGetTerminalTargetWorkArea(out RectInt bounds, out string description)
         {
-            List<MonitorWorkArea> monitors = GetMonitorWorkAreas();
-            if (monitors.Count == 0)
-            {
-                bounds = default;
-                description = "no monitor";
-                return false;
-            }
-
-            int targetMonitorIndex = monitors.Count - 1;
-            bounds = monitors[targetMonitorIndex].Bounds;
-            description = $"display {targetMonitorIndex}";
-            return true;
+            return WindowsDisplayUtility.TryGetMonitorBoundsByPositionIndex(
+                DisplayRoutingSettings.TerminalMonitorPositionIndex,
+                useWorkArea: true,
+                out bounds,
+                out description);
         }
 
         private bool TryGetTerminalWindowPlacement(
@@ -1038,33 +1030,6 @@ namespace ShadowPrototype
             x = displayBounds.x + Mathf.Clamp(TerminalWindowOffset.x + cascadeX, 0, maxX);
             y = displayBounds.y + Mathf.Clamp(TerminalWindowOffset.y + cascadeY, 0, maxY);
             return true;
-        }
-
-        private static List<MonitorWorkArea> GetMonitorWorkAreas()
-        {
-            var monitors = new List<MonitorWorkArea>();
-            EnumDisplayMonitors(
-                IntPtr.Zero,
-                IntPtr.Zero,
-                (monitor, _, _, _) =>
-                {
-                    var info = new MonitorInfo { cbSize = Marshal.SizeOf(typeof(MonitorInfo)) };
-                    if (GetMonitorInfo(monitor, ref info))
-                    {
-                        NativeRect work = info.rcWork;
-                        monitors.Add(new MonitorWorkArea(
-                            monitor,
-                            new RectInt(
-                                work.left,
-                                work.top,
-                                work.right - work.left,
-                                work.bottom - work.top)));
-                    }
-
-                    return true;
-                },
-                IntPtr.Zero);
-            return monitors;
         }
 #endif
     }

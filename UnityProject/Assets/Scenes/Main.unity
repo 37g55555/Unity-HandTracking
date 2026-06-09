@@ -475,7 +475,7 @@ MonoBehaviour:
   sf3dServerArguments: -m uvicorn app:app --host 127.0.0.1 --port 8000
   captureWorkingDirectory: C:\capstone\Shadow-to-3D-Generator
   captureScriptName: python\ShadowMesh.py
-  captureArguments: --mode live --camera 0 --bg
+  captureArguments: --mode file
   handTrackingWorkingDirectory: C:\capstone\Shadow-to-3D-Generator
   handTrackingScriptName: python\MediaPipeTracking.py
   handTrackingArguments: --camera 1
@@ -518,11 +518,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   stateManager: {fileID: 775207380}
+  firstFogVideoClip: {fileID: 0}
+  firstFogVideoPath: fog_first.mp4
   fogVideoClip: {fileID: 0}
   fogVideoPath: fog.mp4
   chromaKeyEnabled: 1
   chromaKeyShader: {fileID: 4800000, guid: c3d69e10058245b8bc73adefac24cae5, type: 3}
-  chromaKeyColor: {r: 0, g: 0, b: 0, a: 1}
+  chromaKeyColor: {r: 1, g: 1, b: 1, a: 1}
   chromaKeyTolerance: 0.08
   chromaKeySoftness: 0.12
   fadeInDuration: 0.25
@@ -541,12 +543,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   stateManager: {fileID: 775207380}
   subtitleFileName: hologram_subtitles.txt
-  targetDisplayIndex: 1
+  targetDisplayIndex: 0
   sortingOrder: 1200
   messageDisplaySeconds: 4
   fadeSeconds: 0.35
   fontSize: 44
-  bottomOffsetPixels: 80
+  mirrorTextHorizontally: 1
+  mirrorTextVertically: 0
+  generationClient: {fileID: 775207387}
+  hologramOutputLabelFormat: '{0}'
 --- !u!1 &1061289392
 GameObject:
   m_ObjectHideFlags: 0

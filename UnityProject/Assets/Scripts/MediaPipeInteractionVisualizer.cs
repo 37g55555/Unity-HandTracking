@@ -18,12 +18,11 @@ namespace ShadowPrototype
         [SerializeField] private Color handShadowOutlineColor = Color.white;
         [SerializeField] private float handShadowOutlineScale = 1.08f;
 
-        private static readonly Color HoverColor = new Color(1.0f, 0.56f, 0.16f);
-        private static readonly Color PullColor = new Color(0.23f, 1.0f, 0.5f);
+        private static readonly Color HoverColor = new Color(0.45f, 0.78f, 1.0f);
+        private static readonly Color PullColor = new Color(1.0f, 0.86f, 0.28f);
 
         private const float MinimumMarkerSize = 0.025f;
-        private const float FixedMarkerSize = 0.35f;
-        private const int RingSegments = 48;
+        private const float FixedMarkerSize = 0.15f;
         private const int JointCapSegments = 14;
         private const float HandShadowSmoothingSpeed = 18.0f;
         private const float MinimumHandShadowWidthLocal = 0.025f;
@@ -40,9 +39,6 @@ namespace ShadowPrototype
         private static readonly int[] PalmLandmarkIndices = { 0, 1, 2, 5, 9, 13, 17 };
 
         private readonly Transform[] boundaryMarkers = new Transform[MediaPipeMeshDeformationInput.MaxHands];
-        private readonly LineRenderer[] handLinks = new LineRenderer[MediaPipeMeshDeformationInput.MaxHands];
-        private readonly LineRenderer[] boundaryLinks = new LineRenderer[MediaPipeMeshDeformationInput.MaxHands];
-        private readonly LineRenderer[] radiusRings = new LineRenderer[MediaPipeMeshDeformationInput.MaxHands];
 
         private GameObject handShadowObject;
         private Mesh handShadowMesh;
@@ -104,22 +100,6 @@ namespace ShadowPrototype
                     boundaryMarkers[i] = CreateMarker($"Hand {i + 1} Boundary Marker", HoverColor).transform;
                 }
 
-                if (handLinks[i] == null)
-                {
-                    handLinks[i] = CreateLineRenderer($"Hand {i + 1} Link");
-                }
-
-                if (boundaryLinks[i] == null)
-                {
-                    boundaryLinks[i] = CreateLineRenderer($"Hand {i + 1} Boundary Link");
-                }
-
-                if (radiusRings[i] == null)
-                {
-                    radiusRings[i] = CreateLineRenderer($"Hand {i + 1} Radius Ring");
-                    radiusRings[i].loop = true;
-                }
-
             }
 
             if (showHandShadow)
@@ -144,42 +124,6 @@ namespace ShadowPrototype
                 Color boundaryColor = handState.IsGrabLocked ? PullColor : HoverColor;
 
                 UpdateMarker(boundaryMarkers[handIndex], handState.ActiveBoundaryWorldPoint, markerSize, boundaryColor);
-
-                Vector3 linkStart = handState.IsGrabLocked
-                    ? handState.GrabWorldPoint
-                    : handState.IndexWorldPoint;
-
-                DrawLine(boundaryLinks[handIndex], linkStart, handState.ActiveBoundaryWorldPoint, boundaryColor, markerSize * 0.12f);
-            }
-
-            switch (handState.CurrentMode)
-            {
-                case MediaPipeMeshDeformationInput.InteractionMode.Hover:
-                    DrawRing(
-                        radiusRings[handIndex],
-                        handState.ActiveBoundaryLocalPoint,
-                        deformationInput.PullRadiusLocal * 0.7f,
-                        HoverColor,
-                        markerSize * 0.12f);
-                    break;
-
-                case MediaPipeMeshDeformationInput.InteractionMode.Pull:
-                    DrawLine(
-                        handLinks[handIndex],
-                        handState.ThumbWorldPoint,
-                        handState.IndexWorldPoint,
-                        PullColor,
-                        markerSize * 0.18f);
-                    DrawRing(
-                        radiusRings[handIndex],
-                        handState.ActiveBoundaryLocalPoint,
-                        deformationInput.PullRadiusLocal,
-                        PullColor,
-                        markerSize * 0.15f);
-                    break;
-
-                default:
-                    break;
             }
         }
 
@@ -546,39 +490,6 @@ namespace ShadowPrototype
             }
         }
 
-        private void DrawLine(LineRenderer line, Vector3 start, Vector3 end, Color color, float width)
-        {
-            line.enabled = true;
-            line.positionCount = 2;
-            line.startColor = color;
-            line.endColor = color;
-            line.startWidth = width;
-            line.endWidth = width;
-            line.SetPosition(0, start);
-            line.SetPosition(1, end);
-        }
-
-        private void DrawRing(LineRenderer ring, Vector2 localCenter, float localRadius, Color color, float width)
-        {
-            ring.enabled = true;
-            ring.positionCount = RingSegments;
-            ring.startColor = color;
-            ring.endColor = color;
-            ring.startWidth = width;
-            ring.endWidth = width;
-
-            for (int i = 0; i < RingSegments; i++)
-            {
-                float t = (float)i / RingSegments;
-                float angle = t * Mathf.PI * 2.0f;
-                Vector3 localPoint = new Vector3(
-                    localCenter.x + (Mathf.Cos(angle) * localRadius),
-                    localCenter.y + (Mathf.Sin(angle) * localRadius),
-                    0.0f);
-                ring.SetPosition(i, targetMeshDeformer.transform.TransformPoint(localPoint));
-            }
-        }
-
         private void SetVisible(bool visible)
         {
             SetInteractionVisible(visible);
@@ -593,9 +504,6 @@ namespace ShadowPrototype
             for (int i = 0; i < MediaPipeMeshDeformationInput.MaxHands; i++)
             {
                 if (boundaryMarkers[i] != null) boundaryMarkers[i].gameObject.SetActive(false);
-                if (handLinks[i] != null) handLinks[i].enabled = false;
-                if (boundaryLinks[i] != null) boundaryLinks[i].enabled = false;
-                if (radiusRings[i] != null) radiusRings[i].enabled = false;
             }
         }
 
@@ -723,22 +631,6 @@ namespace ShadowPrototype
             Renderer renderer = marker.GetComponent<Renderer>();
             renderer.sharedMaterial = material;
             return marker;
-        }
-
-        private LineRenderer CreateLineRenderer(string name)
-        {
-            GameObject lineObject = new GameObject(name);
-            lineObject.transform.SetParent(transform, false);
-            LineRenderer line = lineObject.AddComponent<LineRenderer>();
-            line.material = CreateUnlitMaterial(Color.white);
-            line.useWorldSpace = true;
-            line.alignment = LineAlignment.View;
-            line.textureMode = LineTextureMode.Stretch;
-            line.numCornerVertices = 4;
-            line.numCapVertices = 4;
-            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            line.receiveShadows = false;
-            return line;
         }
 
         private static Vector2[][] CreateHandPointBuffer()

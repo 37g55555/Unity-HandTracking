@@ -13,24 +13,35 @@ namespace ShadowPrototype
         private const string SubtitleCanvasName = "HologramSubtitleCanvas";
         private const string SubtitleClearCameraName = "HologramSubtitleClearCamera";
         private const float ClearCameraDepth = -1000f;
+        private const float SubtitleWidthRatio = 0.86f;
+        private const float SubtitleHeightRatio = 0.22f;
+        private const float SubtitleYPosition = -160f;
+        private static readonly Vector2 FrontSubtitlePanelOffset = Vector2.zero;
 
         [SerializeField] private GameStateManager stateManager;
         [SerializeField] private string subtitleFileName = "hologram_subtitles.txt";
-        [SerializeField, Min(0)] private int targetDisplayIndex = 1;
+        [SerializeField, Min(0)] private int targetDisplayIndex = 0;
         [SerializeField] private int sortingOrder = 1200;
         [SerializeField, Min(0.5f)] private float messageDisplaySeconds = 4f;
         [SerializeField, Min(0f)] private float fadeSeconds = 0.35f;
         [SerializeField, Min(12)] private int fontSize = 44;
-        [SerializeField, Min(0f)] private float bottomOffsetPixels = 80f;
+        [SerializeField] private bool mirrorTextHorizontally = true;
+        [SerializeField] private bool mirrorTextVertically;
+        [SerializeField] private SF3DGenerationClient generationClient;
+        [SerializeField] private string hologramOutputLabelFormat = "{0}";
 
         private readonly Dictionary<GameStateManager.PipelineState, List<SubtitleCue>> cuesByState =
             new Dictionary<GameStateManager.PipelineState, List<SubtitleCue>>();
+        private readonly List<Text> hologramSubtitleTexts = new List<Text>();
+        private readonly List<RectTransform> panelRoots = new List<RectTransform>();
 
         private GameObject subtitleCanvasObject;
         private GameObject clearCameraObject;
         private CanvasGroup canvasGroup;
-        private Text subtitleText;
+        private Font subtitleFont;
         private Coroutine subtitleRoutine;
+        private int activeDisplay;
+        private Vector2Int lastLayoutSize;
         private bool hasActiveState;
         private GameStateManager.PipelineState activeState;
 
@@ -39,6 +50,11 @@ namespace ShadowPrototype
             if (stateManager == null)
             {
                 stateManager = FindObjectOfType<GameStateManager>();
+            }
+
+            if (generationClient == null)
+            {
+                generationClient = FindObjectOfType<SF3DGenerationClient>();
             }
 
             LoadSubtitleFile();
@@ -52,10 +68,20 @@ namespace ShadowPrototype
                 stateManager.StateChanged += HandleStateChanged;
                 ShowState(stateManager.CurrentState);
             }
+
+            if (generationClient != null)
+            {
+                generationClient.SilhouetteClassified += HandleSilhouetteClassified;
+            }
         }
 
         private void OnDisable()
         {
+            if (generationClient != null)
+            {
+                generationClient.SilhouetteClassified -= HandleSilhouetteClassified;
+            }
+
             if (stateManager != null)
             {
                 stateManager.StateChanged -= HandleStateChanged;
@@ -82,11 +108,21 @@ namespace ShadowPrototype
             {
                 ShowState(stateManager.CurrentState);
             }
+
+            ApplySubtitlePanelLayoutIfNeeded(force: false);
         }
 
         private void HandleStateChanged(GameStateManager.PipelineState nextState)
         {
             ShowState(nextState);
+        }
+
+        private void HandleSilhouetteClassified(string _label)
+        {
+            if (hasActiveState && activeState == GameStateManager.PipelineState.HologramOutput)
+            {
+                ShowHologramOutputLabel();
+            }
         }
 
         private void ShowState(GameStateManager.PipelineState nextState)
@@ -100,6 +136,13 @@ namespace ShadowPrototype
             activeState = nextState;
             StopSubtitleRoutine();
             HideImmediately();
+            ApplySubtitlePanelLayoutIfNeeded(force: true);
+
+            if (nextState == GameStateManager.PipelineState.HologramOutput)
+            {
+                ShowHologramOutputLabel();
+                return;
+            }
 
             List<SubtitleCue> cues;
             if (!cuesByState.TryGetValue(nextState, out cues) || cues.Count == 0)
@@ -110,13 +153,68 @@ namespace ShadowPrototype
             subtitleRoutine = StartCoroutine(PlaySubtitleCues(cues));
         }
 
+        private void ShowHologramOutputLabel()
+        {
+            StopSubtitleRoutine();
+            HideImmediately();
+
+            if (!TryBuildHologramOutputLabelMessage(out string labelMessage))
+            {
+                return;
+            }
+
+            subtitleRoutine = StartCoroutine(PlaySingleSubtitle(labelMessage));
+        }
+
+        private bool TryBuildHologramOutputLabelMessage(out string message)
+        {
+            message = string.Empty;
+            if (generationClient == null)
+            {
+                generationClient = FindObjectOfType<SF3DGenerationClient>();
+            }
+
+            if (generationClient == null)
+            {
+                return false;
+            }
+
+            string label = generationClient.LastGenerationLabel;
+            if (string.IsNullOrWhiteSpace(label))
+            {
+                return false;
+            }
+
+            string format = string.IsNullOrWhiteSpace(hologramOutputLabelFormat)
+                ? "{0}"
+                : hologramOutputLabelFormat;
+            try
+            {
+                message = string.Format(format, label.Trim());
+            }
+            catch (FormatException)
+            {
+                message = label.Trim();
+            }
+
+            return !string.IsNullOrWhiteSpace(message);
+        }
+
+        private IEnumerator PlaySingleSubtitle(string message)
+        {
+            SetSubtitleText(message);
+            yield return FadeTo(1f);
+            yield return new WaitForSecondsRealtime(messageDisplaySeconds);
+            subtitleRoutine = null;
+        }
+
         private IEnumerator PlaySubtitleCues(List<SubtitleCue> cues)
         {
             int cueIndex = 0;
 
             while (true)
             {
-                subtitleText.text = cues[cueIndex].Message;
+                SetSubtitleText(cues[cueIndex].Message);
                 yield return FadeTo(1f);
                 yield return new WaitForSecondsRealtime(messageDisplaySeconds);
 
@@ -177,9 +275,17 @@ namespace ShadowPrototype
                 canvasGroup.alpha = 0f;
             }
 
-            if (subtitleText != null)
+            SetSubtitleText(string.Empty);
+        }
+
+        private void SetSubtitleText(string message)
+        {
+            foreach (Text text in hologramSubtitleTexts)
             {
-                subtitleText.text = string.Empty;
+                if (text != null)
+                {
+                    text.text = message;
+                }
             }
         }
 
@@ -305,7 +411,7 @@ namespace ShadowPrototype
 
         private void CreateSubtitleCanvas()
         {
-            int activeDisplay = ResolveTargetDisplayIndex();
+            activeDisplay = ResolveTargetDisplayIndex();
             CreateClearCamera(activeDisplay);
 
             subtitleCanvasObject = new GameObject(SubtitleCanvasName, typeof(RectTransform));
@@ -322,27 +428,49 @@ namespace ShadowPrototype
             canvas.sortingOrder = sortingOrder;
 
             CanvasScaler scaler = subtitleCanvasObject.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920f, 1080f);
-            scaler.matchWidthOrHeight = 0.5f;
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+            scaler.scaleFactor = 1f;
 
             canvasGroup = subtitleCanvasObject.AddComponent<CanvasGroup>();
             canvasGroup.alpha = 0f;
             canvasGroup.interactable = false;
             canvasGroup.blocksRaycasts = false;
 
-            GameObject textObject = new GameObject("SubtitleText", typeof(RectTransform));
-            textObject.transform.SetParent(subtitleCanvasObject.transform, false);
+            subtitleFont = CreateSubtitleFont();
+            CreatePanelSubtitle("Front", HologramPanelLayout.FrontAnchor, FrontSubtitlePanelOffset, 180f);
+            ApplySubtitlePanelLayoutIfNeeded(force: true);
+        }
 
-            subtitleText = textObject.AddComponent<Text>();
-            subtitleText.font = CreateSubtitleFont();
-            subtitleText.fontSize = fontSize;
-            subtitleText.alignment = TextAnchor.MiddleCenter;
-            subtitleText.color = Color.white;
-            subtitleText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            subtitleText.verticalOverflow = VerticalWrapMode.Truncate;
-            subtitleText.raycastTarget = false;
-            subtitleText.supportRichText = false;
+        private void CreatePanelSubtitle(string panelName, Vector2 anchor, Vector2 offset, float rotationDegrees)
+        {
+            GameObject panelObject = new GameObject($"{panelName}SubtitlePanel", typeof(RectTransform));
+            panelObject.transform.SetParent(subtitleCanvasObject.transform, false);
+
+            RectTransform panelRect = panelObject.GetComponent<RectTransform>();
+            panelRect.anchorMin = anchor;
+            panelRect.anchorMax = anchor;
+            panelRect.pivot = new Vector2(0.5f, 0.5f);
+            panelRect.anchoredPosition = offset;
+            panelRect.localRotation = Quaternion.Euler(0f, 0f, rotationDegrees);
+            panelRect.localScale = new Vector3(
+                mirrorTextHorizontally ? -1f : 1f,
+                mirrorTextVertically ? -1f : 1f,
+                1f);
+            panelRoots.Add(panelRect);
+
+            GameObject textObject = new GameObject($"{panelName}SubtitleText", typeof(RectTransform));
+            textObject.transform.SetParent(panelObject.transform, false);
+
+            Text panelText = textObject.AddComponent<Text>();
+            panelText.font = subtitleFont;
+            panelText.fontSize = fontSize;
+            panelText.alignment = TextAnchor.MiddleCenter;
+            panelText.color = Color.white;
+            panelText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            panelText.verticalOverflow = VerticalWrapMode.Truncate;
+            panelText.raycastTarget = false;
+            panelText.supportRichText = false;
+            hologramSubtitleTexts.Add(panelText);
 
             Shadow textShadow = textObject.AddComponent<Shadow>();
             textShadow.effectColor = new Color(0f, 0f, 0f, 0.72f);
@@ -350,11 +478,9 @@ namespace ShadowPrototype
             textShadow.useGraphicAlpha = true;
 
             RectTransform textRect = textObject.GetComponent<RectTransform>();
-            textRect.anchorMin = new Vector2(0.5f, 0f);
-            textRect.anchorMax = new Vector2(0.5f, 0f);
-            textRect.pivot = new Vector2(0.5f, 0f);
-            textRect.anchoredPosition = new Vector2(0f, bottomOffsetPixels);
-            textRect.sizeDelta = new Vector2(1500f, 180f);
+            textRect.anchorMin = new Vector2(0.5f, 0.5f);
+            textRect.anchorMax = new Vector2(0.5f, 0.5f);
+            textRect.pivot = new Vector2(0.5f, 0.5f);
         }
 
         private void CreateClearCamera(int activeDisplay)
@@ -387,6 +513,10 @@ namespace ShadowPrototype
                 Destroy(clearCameraObject);
                 clearCameraObject = null;
             }
+
+            hologramSubtitleTexts.Clear();
+            panelRoots.Clear();
+            lastLayoutSize = default;
         }
 
         private int ResolveTargetDisplayIndex()
@@ -397,6 +527,57 @@ namespace ShadowPrototype
             }
 
             return Mathf.Clamp(targetDisplayIndex, 0, Display.displays.Length - 1);
+        }
+
+        private void ApplySubtitlePanelLayoutIfNeeded(bool force)
+        {
+            Vector2Int displaySize = HologramPanelLayout.GetDisplaySize(activeDisplay);
+            if (!force && displaySize == lastLayoutSize)
+            {
+                return;
+            }
+
+            lastLayoutSize = displaySize;
+            float panelSize = HologramPanelLayout.CalculatePanelSize(displaySize);
+
+            foreach (RectTransform panelRoot in panelRoots)
+            {
+                if (panelRoot == null)
+                {
+                    continue;
+                }
+
+                ApplyPanelRootLayout(panelRoot);
+                panelRoot.sizeDelta = new Vector2(panelSize, panelSize);
+
+                RectTransform textRect = panelRoot.childCount > 0
+                    ? panelRoot.GetChild(0) as RectTransform
+                    : null;
+                if (textRect == null)
+                {
+                    continue;
+                }
+
+                textRect.anchoredPosition = new Vector2(0f, SubtitleYPosition);
+                textRect.sizeDelta = new Vector2(
+                    panelSize * SubtitleWidthRatio,
+                    panelSize * SubtitleHeightRatio);
+            }
+        }
+
+        private static void ApplyPanelRootLayout(RectTransform panelRoot)
+        {
+            if (panelRoot.name == "FrontSubtitlePanel")
+            {
+                SetPanelRootLayout(panelRoot, HologramPanelLayout.FrontAnchor, FrontSubtitlePanelOffset);
+            }
+        }
+
+        private static void SetPanelRootLayout(RectTransform panelRoot, Vector2 anchor, Vector2 offset)
+        {
+            panelRoot.anchorMin = anchor;
+            panelRoot.anchorMax = anchor;
+            panelRoot.anchoredPosition = offset;
         }
 
         private Font CreateSubtitleFont()

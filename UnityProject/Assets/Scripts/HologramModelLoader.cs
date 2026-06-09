@@ -8,6 +8,9 @@ using UnityEngine.SceneManagement;
 public class HologramModelLoader : MonoBehaviour
 {
     private const float RotationDurationSeconds = 15f;
+    private const float ModelDisplayScale = 2.0f;
+    private const float CameraFitPadding = 1.12f;
+    private const float MinimumOrthographicSize = 1.0f;
 
     [Header("Placement")]
     [SerializeField] private Vector3 modelWorldOffset = Vector3.zero;
@@ -83,30 +86,111 @@ public class HologramModelLoader : MonoBehaviour
         SceneManager.MoveGameObjectToScene(loadedModel, gameObject.scene);
         loadedModel.transform.SetParent(transform, false);
         await gltf.InstantiateMainSceneAsync(loadedModel.transform);
-        CenterAndNormalize(loadedModel, transform.position + modelWorldOffset);
+        if (CenterAndNormalize(loadedModel, transform.position + modelWorldOffset, out Bounds normalizedBounds))
+        {
+            FitHologramCamerasToBounds(normalizedBounds);
+        }
+
         Texture2D embeddedBaseColorTexture = LoadEmbeddedBaseColorTexture(path);
         MakeMaterialsUnlit(loadedModel, embeddedBaseColorTexture);
     }
 
-    private static void CenterAndNormalize(GameObject model, Vector3 targetWorldPosition)
+    private static bool CenterAndNormalize(GameObject model, Vector3 targetWorldPosition, out Bounds bounds)
     {
-        if (!TryGetRendererBounds(model, out Bounds bounds))
+        if (!TryGetRendererBounds(model, out bounds))
         {
-            return;
+            return false;
         }
 
         float maxSize = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
         if (maxSize > 0)
         {
-            model.transform.localScale = Vector3.one * (1f / maxSize);
+            model.transform.localScale = Vector3.one * (ModelDisplayScale / maxSize);
         }
 
         if (!TryGetRendererBounds(model, out bounds))
         {
-            return;
+            return false;
         }
 
-        model.transform.position += targetWorldPosition - bounds.center;
+        Vector3 moveDelta = targetWorldPosition - bounds.center;
+        model.transform.position += moveDelta;
+        bounds.center = bounds.center + moveDelta;
+        return true;
+    }
+
+    private void FitHologramCamerasToBounds(Bounds bounds)
+    {
+        foreach (GameObject rootObject in gameObject.scene.GetRootGameObjects())
+        {
+            Camera[] cameras = rootObject.GetComponentsInChildren<Camera>(true);
+            foreach (Camera sceneCamera in cameras)
+            {
+                if (IsHologramRenderCamera(sceneCamera))
+                {
+                    FitCameraToBounds(sceneCamera, bounds);
+                }
+            }
+        }
+    }
+
+    private static bool IsHologramRenderCamera(Camera sceneCamera)
+    {
+        return sceneCamera != null &&
+            sceneCamera.targetTexture != null &&
+            (sceneCamera.name == "Cam_Front" ||
+             sceneCamera.name == "Cam_Left" ||
+             sceneCamera.name == "Cam_Right");
+    }
+
+    private static void FitCameraToBounds(Camera sceneCamera, Bounds bounds)
+    {
+        Vector3[] corners = GetBoundsCorners(bounds);
+        float maxCameraX = 0f;
+        float maxCameraY = 0f;
+        float farthestCameraZ = 0f;
+
+        for (int index = 0; index < corners.Length; index++)
+        {
+            Vector3 cameraPoint = sceneCamera.transform.InverseTransformPoint(corners[index]);
+            maxCameraX = Mathf.Max(maxCameraX, Mathf.Abs(cameraPoint.x));
+            maxCameraY = Mathf.Max(maxCameraY, Mathf.Abs(cameraPoint.y));
+            farthestCameraZ = Mathf.Max(farthestCameraZ, cameraPoint.z);
+        }
+
+        float aspect = sceneCamera.aspect;
+        if (sceneCamera.targetTexture != null && sceneCamera.targetTexture.height > 0)
+        {
+            aspect = sceneCamera.targetTexture.width / (float)sceneCamera.targetTexture.height;
+        }
+
+        float projectedHalfSize = Mathf.Max(maxCameraY, maxCameraX / Mathf.Max(0.01f, aspect));
+        float rotationSafeHalfSize = bounds.extents.magnitude;
+        float requiredHalfSize = Mathf.Max(projectedHalfSize, rotationSafeHalfSize);
+
+        sceneCamera.orthographic = true;
+        sceneCamera.orthographicSize = Mathf.Max(MinimumOrthographicSize, requiredHalfSize * CameraFitPadding);
+        sceneCamera.nearClipPlane = 0.01f;
+        sceneCamera.farClipPlane = Mathf.Max(sceneCamera.farClipPlane, farthestCameraZ + rotationSafeHalfSize + 10f);
+
+        Debug.Log($"HologramModelLoader: fitted {sceneCamera.name} orthographicSize={sceneCamera.orthographicSize:0.00}.");
+    }
+
+    private static Vector3[] GetBoundsCorners(Bounds bounds)
+    {
+        Vector3 min = bounds.min;
+        Vector3 max = bounds.max;
+        return new[]
+        {
+            new Vector3(min.x, min.y, min.z),
+            new Vector3(min.x, min.y, max.z),
+            new Vector3(min.x, max.y, min.z),
+            new Vector3(min.x, max.y, max.z),
+            new Vector3(max.x, min.y, min.z),
+            new Vector3(max.x, min.y, max.z),
+            new Vector3(max.x, max.y, min.z),
+            new Vector3(max.x, max.y, max.z),
+        };
     }
 
     private static bool TryGetRendererBounds(GameObject model, out Bounds bounds)
@@ -206,7 +290,7 @@ public class HologramModelLoader : MonoBehaviour
         {
             name = "GLB_Embedded_BaseColor",
             hideFlags = HideFlags.DontSave,
-            wrapMode = TextureWrapMode.Repeat,
+            wrapMode = TextureWrapMode.Clamp,
             filterMode = FilterMode.Bilinear
         };
 
@@ -301,7 +385,32 @@ public class HologramModelLoader : MonoBehaviour
 
         SetMaterialTexture(runtimeMaterial, baseMap);
         SetMaterialColor(runtimeMaterial, baseColor);
+        ConfigureDoubleSidedRendering(runtimeMaterial);
         return runtimeMaterial;
+    }
+
+    private static void ConfigureDoubleSidedRendering(Material material)
+    {
+        if (material == null)
+        {
+            return;
+        }
+
+        material.doubleSidedGI = true;
+
+        string[] cullProperties =
+        {
+            "_Cull",
+            "_CullMode",
+        };
+
+        foreach (string propertyName in cullProperties)
+        {
+            if (material.HasProperty(propertyName))
+            {
+                material.SetFloat(propertyName, (float)UnityEngine.Rendering.CullMode.Off);
+            }
+        }
     }
 
     private static Texture GetMaterialTexture(Material material)

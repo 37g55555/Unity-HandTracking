@@ -1,4 +1,5 @@
 using System.Collections;
+using ShadowPrototype;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
@@ -7,11 +8,8 @@ using UnityEngine.UI;
 public class HologramSceneManager : MonoBehaviour
 {
     private const string ReturnSceneName = "Main";
-    private const int TargetDisplayIndex = 1;
+    private const int TargetDisplayIndex = 0;
     private const string HologramCanvasName = "HologramCanvas";
-    private const float HologramPanelMaxSizePixels = 702f;
-    private const float HologramPanelScreenFraction = 0.46f;
-    private const float HologramPanelPaddingPixels = 24f;
     private static readonly Vector3 SceneWorldOffset = new Vector3(50f, 0f, 0f);
 
     [SerializeField] private string returnShrinkTargetName = "SoftWhiteCirclePlane";
@@ -124,7 +122,7 @@ public class HologramSceneManager : MonoBehaviour
 
     private void ApplyHologramCanvasLayoutIfNeeded(bool force)
     {
-        Vector2Int displaySize = GetDisplaySize(activeTargetDisplay);
+        Vector2Int displaySize = HologramPanelLayout.GetDisplaySize(activeTargetDisplay);
         if (!force && displaySize == lastLayoutSize)
         {
             return;
@@ -171,10 +169,10 @@ public class HologramSceneManager : MonoBehaviour
             graphic.raycastTarget = false;
         }
 
-        float panelSize = CalculatePanelSize(displaySize);
-        SetPanelLayout(hologramCanvas.transform, "Front", new Vector2(0.5f, 0.75f), panelSize);
-        SetPanelLayout(hologramCanvas.transform, "Left", new Vector2(0.25f, 0.3f), panelSize);
-        SetPanelLayout(hologramCanvas.transform, "Right", new Vector2(0.75f, 0.3f), panelSize);
+        float panelSize = HologramPanelLayout.CalculatePanelSize(displaySize);
+        SetPanelLayout(hologramCanvas.transform, "Front", HologramPanelLayout.FrontAnchor, HologramPanelLayout.FrontOffset, panelSize);
+        SetPanelLayout(hologramCanvas.transform, "Left", HologramPanelLayout.LeftAnchor, HologramPanelLayout.LeftOffset, panelSize);
+        SetPanelLayout(hologramCanvas.transform, "Right", HologramPanelLayout.RightAnchor, HologramPanelLayout.RightOffset, panelSize);
     }
 
     private Canvas FindHologramCanvas(Scene scene)
@@ -241,19 +239,7 @@ public class HologramSceneManager : MonoBehaviour
         return null;
     }
 
-    private float CalculatePanelSize(Vector2Int displaySize)
-    {
-        float displayWidth = Mathf.Max(1f, displaySize.x);
-        float displayHeight = Mathf.Max(1f, displaySize.y);
-        float fractionSize = Mathf.Min(displayWidth, displayHeight) * HologramPanelScreenFraction;
-        float horizontalFit = (displayWidth * 0.5f) - (HologramPanelPaddingPixels * 2f);
-        float verticalFit = (displayHeight * 0.5f) - (HologramPanelPaddingPixels * 2f);
-        float fittedSize = Mathf.Min(HologramPanelMaxSizePixels, fractionSize, horizontalFit, verticalFit);
-
-        return Mathf.Max(1f, fittedSize);
-    }
-
-    private static void SetPanelLayout(Transform canvasTransform, string panelName, Vector2 anchor, float panelSize)
+    private static void SetPanelLayout(Transform canvasTransform, string panelName, Vector2 anchor, Vector2 offset, float panelSize)
     {
         Transform panel = canvasTransform.Find(panelName);
         if (panel == null || !panel.TryGetComponent(out RectTransform rectTransform))
@@ -263,21 +249,8 @@ public class HologramSceneManager : MonoBehaviour
 
         rectTransform.anchorMin = anchor;
         rectTransform.anchorMax = anchor;
-        rectTransform.anchoredPosition = Vector2.zero;
+        rectTransform.anchoredPosition = offset;
         rectTransform.sizeDelta = new Vector2(panelSize, panelSize);
     }
 
-    private static Vector2Int GetDisplaySize(int targetDisplay)
-    {
-        if (targetDisplay >= 0 && targetDisplay < Display.displays.Length)
-        {
-            Display display = Display.displays[targetDisplay];
-            if (display.renderingWidth > 0 && display.renderingHeight > 0)
-            {
-                return new Vector2Int(display.renderingWidth, display.renderingHeight);
-            }
-        }
-
-        return new Vector2Int(Screen.width, Screen.height);
-    }
 }

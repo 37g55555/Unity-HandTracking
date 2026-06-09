@@ -21,8 +21,8 @@ PREVIEW_WINDOW_NAME = "Shadow Capture"
 CAMERA_WIDTH = 1920
 CAMERA_HEIGHT = 1080
 CAMERA_FPS = 15
-EPSILON_RATIO = 0.0025
-INTERIOR_SPACING = 10
+EPSILON_RATIO = 0.0015
+INTERIOR_SPACING = 7
 FOREARM_TRIM_ENABLED = True
 FOREARM_TRIM_CENTER_X_RATIO = 0.5
 FOREARM_TRIM_CENTER_Y_RATIO = 0.5
@@ -713,7 +713,7 @@ def extract_contour(mask, epsilon_ratio=0.005):
     return contour
 
 
-def generate_mesh(contour, interior_spacing=15):
+def generate_mesh(contour, interior_spacing=7):
     boundary = contour.astype(np.float64)
     n_boundary = len(boundary)
 
@@ -779,7 +779,7 @@ def generate_mesh(contour, interior_spacing=15):
 
 def save_contour_image(filepath, mask, contour):
     preview = np.zeros((mask.shape[0], mask.shape[1], 3), dtype=np.uint8)
-    cv2.drawContours(preview, [contour.astype(np.int32)], -1, (255, 255, 255), 2)
+    cv2.drawContours(preview, [contour.astype(np.int32)], -1, (255, 255, 255), -1)
     cv2.imwrite(filepath, preview)
 
 

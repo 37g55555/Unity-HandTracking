@@ -11,8 +11,13 @@ UnityProject/.vs/
 UnityProject/.vsconfig
 UnityProject/*.csproj
 UnityProject/*.sln
+Temp/
+/fog.mp4
+/fog_first.mp4
 output/sf3d/
+output/api_temp/
+output/shadowmesh/background.png
+output/soft_white_circle.png
 output/recordings/
-sf3d/temp_outputs/
 __pycache__/
 *.pyc

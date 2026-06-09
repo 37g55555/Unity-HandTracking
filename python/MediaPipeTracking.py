@@ -8,6 +8,12 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
+from preview_window_utils import (
+    configure_preview_window,
+    get_foreground_window,
+    keep_preview_window_no_activate,
+)
+
 CAMERA_WIDTH = 1920
 CAMERA_HEIGHT = 1080
 CAMERA_FPS = 30
@@ -16,7 +22,8 @@ PACKET_HEIGHT = 1080
 UDP_HOST = "127.0.0.1"
 UDP_PORT = 5053
 MODEL_PATH = Path(__file__).resolve().parent / "MediaPipe.task"
-
+PREVIEW_WINDOW_NAME = "Hand Tracking"
+QUIT_KEY = ord("q")
 
 def log(message):
     print(message, flush=True)
@@ -75,6 +82,22 @@ def build_udp_payload(result):
     return data
 
 
+def draw_hand_landmarks(display, result):
+    if not result.hand_landmarks:
+        return
+
+    height, width = display.shape[:2]
+    for hand_landmarks in result.hand_landmarks:
+        points = []
+        for landmark in hand_landmarks:
+            x = int(max(0.0, min(1.0, landmark.x)) * (width - 1))
+            y = int(max(0.0, min(1.0, landmark.y)) * (height - 1))
+            points.append((x, y))
+
+        for point in points:
+            cv2.circle(display, point, 4, (0, 255, 0), -1)
+
+
 def run_tracking(camera_id):
     ensure_model_exists()
 
@@ -83,8 +106,12 @@ def run_tracking(camera_id):
     landmarker = create_landmarker()
     udp_target = (UDP_HOST, UDP_PORT)
     last_timestamp_ms = 0
+    restore_focus_window = get_foreground_window()
+    preview_focus_restored = False
 
     log(f"[OK] Sending landmarks to Unity UDP {UDP_HOST}:{UDP_PORT}.")
+    cv2.namedWindow(PREVIEW_WINDOW_NAME, cv2.WINDOW_NORMAL)
+    configure_preview_window(cv2, PREVIEW_WINDOW_NAME, restore_focus_window)
 
     try:
         while True:
@@ -102,13 +129,24 @@ def run_tracking(camera_id):
             last_timestamp_ms = timestamp_ms
 
             result = landmarker.detect_for_video(mp_image, timestamp_ms)
-            if result.hand_landmarks:
+            hand_count = len(result.hand_landmarks) if result.hand_landmarks else 0
+            if hand_count > 0:
                 payload = build_udp_payload(result)
                 sock.sendto(str(payload).encode("utf-8"), udp_target)
+
+            draw_hand_landmarks(frame, result)
+            cv2.imshow(PREVIEW_WINDOW_NAME, frame)
+            if not preview_focus_restored:
+                keep_preview_window_no_activate(PREVIEW_WINDOW_NAME, restore_focus_window)
+                preview_focus_restored = True
+
+            if cv2.waitKey(1) & 0xFF == QUIT_KEY:
+                break
     finally:
         landmarker.close()
         sock.close()
         cap.release()
+        cv2.destroyWindow(PREVIEW_WINDOW_NAME)
 
 
 def main():

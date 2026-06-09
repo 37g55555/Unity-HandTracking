@@ -24,14 +24,14 @@ hf auth login
 
 hf download Qwen/Qwen2.5-VL-3B-Instruct
 hf download stabilityai/stable-fast-3d
-hf download lllyasviel/sd-controlnet-canny
 hf download stable-diffusion-v1-5/stable-diffusion-v1-5
+hf download lllyasviel/sd-controlnet-canny
 ```
 
 ### 모델 파일 확인
 
 Qwen VLM 모델은 `sf3d/app.py` 실행 중 Hugging Face/transformers를 통해 로드된다.
-SF3D와 ControlNet 모델은 `sf3d/app.py` 실행 중 Hugging Face/diffusers를 통해 로드된다.
+SF3D와 SD 1.5 ControlNet 모델은 `sf3d/app.py` 실행 중 Hugging Face/diffusers를 통해 로드된다.
 
 ### Hugging Face 인증
 
@@ -45,8 +45,8 @@ https://huggingface.co/settings/tokens
 ```text
 https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct
 https://huggingface.co/stabilityai/stable-fast-3d
-https://huggingface.co/lllyasviel/sd-controlnet-canny
 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5
+https://huggingface.co/lllyasviel/sd-controlnet-canny
 ```
 
 
@@ -117,8 +117,9 @@ Unity Hub에서 `UnityProject` 폴더를 프로젝트로 연다.
 | --- | --- |
 | `python/ShadowMesh.py` | 웹캠으로 배경/그림자를 캡처해 2D shadow mesh를 생성. |
 | `python/MediaPipeTracking.py` | 웹캠 손 추적 결과를 UDP로 Unity에 전송. |
-| `sf3d/app.py` | FastAPI 서버. Qwen 기반 실루엣 분류, ControlNet 기반 texture 생성, SF3D 기반 GLB 생성을 담당. |
-| `sf3d/silhouette_labeler.py` | `Qwen/Qwen2.5-VL-3B-Instruct`로 그림자 실루엣과 가장 닮은 동물/사물 이름을 한 단어로 추론. |
+| `sf3d/app.py` | FastAPI 서버. Qwen 기반 실루엣 분류, SD 1.5 ControlNet 기반 texture 생성, SF3D 기반 GLB 생성을 담당. |
+| `sf3d/sf3d/` | `sf3d.system`, `sf3d.utils`로 import되는 Stable Fast 3D 소스 패키지. 생성 파일이 아니므로 삭제하지 않는다. |
+| `sf3d/silhouette_labeler.py` | `Qwen/Qwen2.5-VL-3B-Instruct`로 그림자 실루엣의 label과 texture 생성을 위한 visual_hint를 추론. |
 
 
 ## Unity Inspector Settings
@@ -235,7 +236,7 @@ output\sf3d
 | 파일 | 설명 |
 | --- | --- |
 | `deformed_shadow.png` | Unity에서 추출한 변형 그림자 실루엣 |
-| `last_texture.png` | ControlNet으로 생성된 texture preview |
+| `last_texture.png` | SD 1.5 ControlNet으로 생성된 texture preview |
 | `shadow_model.glb` | SF3D로 생성된 3D 모델 |
 
 

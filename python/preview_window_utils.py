@@ -1,11 +1,15 @@
 import sys
 
-TARGET_WINDOWS_DISPLAY_NUMBER = 1
-TARGET_MONITOR_INDEX = 0
+TARGET_MONITOR_INDEX = 1
 WINDOWED_PREVIEW_WIDTH = 1280
 WINDOWED_PREVIEW_HEIGHT = 720
 WINDOWED_PREVIEW_OFFSET_X = 40
 WINDOWED_PREVIEW_OFFSET_Y = 40
+SW_SHOWNOACTIVATE = 4
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_NOZORDER = 0x0004
+SWP_NOACTIVATE = 0x0010
 
 
 def get_display_bounds():
@@ -51,7 +55,6 @@ def get_display_bounds():
             rect = info.rcMonitor
             monitors.append({
                 "bounds": (rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top),
-                "display_number": parse_display_number(info.szDevice),
             })
         return True
 
@@ -59,9 +62,7 @@ def get_display_bounds():
     if not monitors:
         return None
 
-    for monitor in monitors:
-        if monitor["display_number"] == TARGET_WINDOWS_DISPLAY_NUMBER:
-            return monitor["bounds"]
+    monitors.sort(key=lambda monitor: (monitor["bounds"][0], monitor["bounds"][1]))
 
     if len(monitors) > TARGET_MONITOR_INDEX:
         return monitors[TARGET_MONITOR_INDEX]["bounds"]
@@ -69,26 +70,60 @@ def get_display_bounds():
     return None
 
 
-def parse_display_number(device_name):
-    if not device_name:
+def get_foreground_window():
+    if not sys.platform.startswith("win"):
         return None
 
-    digits = []
-    for character in reversed(device_name):
-        if not character.isdigit():
-            break
-
-        digits.append(character)
-
-    if not digits:
+    try:
+        import ctypes
+        return ctypes.windll.user32.GetForegroundWindow()
+    except (AttributeError, OSError):
         return None
 
-    return int("".join(reversed(digits)))
+
+def restore_foreground_window(window_handle):
+    if not sys.platform.startswith("win") or not window_handle:
+        return
+
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        if user32.IsWindow(window_handle):
+            user32.SetForegroundWindow(window_handle)
+    except (AttributeError, OSError):
+        return
 
 
-def configure_preview_window(cv2_module, window_name):
+def keep_preview_window_no_activate(window_name, restore_window=None):
+    if not sys.platform.startswith("win"):
+        return
+
+    try:
+        import ctypes
+    except ImportError:
+        return
+
+    user32 = ctypes.windll.user32
+    window_handle = user32.FindWindowW(None, window_name)
+    if window_handle:
+        user32.ShowWindow(window_handle, SW_SHOWNOACTIVATE)
+        user32.SetWindowPos(
+            window_handle,
+            0,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        )
+
+    restore_foreground_window(restore_window)
+
+
+def configure_preview_window(cv2_module, window_name, restore_focus_window=None):
     bounds = get_display_bounds()
     if bounds is None:
+        keep_preview_window_no_activate(window_name, restore_focus_window)
         return
 
     x, y, display_width, display_height = bounds
@@ -103,3 +138,4 @@ def configure_preview_window(cv2_module, window_name):
         cv2_module.WINDOW_NORMAL)
     cv2_module.moveWindow(window_name, window_x, window_y)
     cv2_module.resizeWindow(window_name, window_width, window_height)
+    keep_preview_window_no_activate(window_name, restore_focus_window)
