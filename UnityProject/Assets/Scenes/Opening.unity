@@ -487,12 +487,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   openingVideoClip: {fileID: 0}
-  openingVideoPath: opening.mp4
+  openingVideoPath: OpeningVideos/opening_0.mp4
   sortingOrder: 3000
   backgroundColor: {r: 0, g: 0, b: 0, a: 1}
   continueWhenVideoMissing: 1
-  prepareTimeoutSeconds: 5
-  playbackStallTimeoutSeconds: 5
+  prepareTimeoutSeconds: 15
+  playbackStallTimeoutSeconds: 15
   renderTextureSize: {x: 1920, y: 1080}
 --- !u!114 &775207391
 MonoBehaviour:

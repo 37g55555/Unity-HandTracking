@@ -64,6 +64,8 @@ namespace ShadowPrototype
         private bool openingSubtitleAudioStarted;
         private float openingSubtitleAudioStartedAt;
         private float openingSubtitleAudioDuration;
+        private bool openingVideoCompleted;
+        private string pendingKeywordUntilOpeningVideoComplete;
         private readonly List<LaunchedProcess> launchedProcesses = new List<LaunchedProcess>();
 
         private void Start()
@@ -121,6 +123,8 @@ namespace ShadowPrototype
 
             qwenClient?.ResetKeyword();
             StopOpeningSubtitleAudio();
+            openingVideoCompleted = false;
+            pendingKeywordUntilOpeningVideoComplete = null;
 
             StartCoroutine(StartPipelineRoutine());
         }
@@ -160,6 +164,8 @@ namespace ShadowPrototype
         {
             stateManager.OnOpeningStarted();
             yield return PlayOpeningVideoRoutine();
+            openingVideoCompleted = true;
+            ApplyPendingKeywordAfterOpeningVideo();
 
             bool isCaptureFileMode = IsCaptureFileMode();
             if (!isCaptureFileMode && !IsCameraAvailable(GetCaptureCameraId()))
@@ -283,6 +289,8 @@ namespace ShadowPrototype
                 yield break;
             }
 
+            yield return WaitForOpeningVideoCompleteRoutine();
+            ApplyPendingKeywordAfterOpeningVideo();
             yield return WaitForKeywordSubtitleTimingRoutine();
 
             yield return HideKeywordSubtitleRoutine();
@@ -348,6 +356,37 @@ namespace ShadowPrototype
         private void HandleKeywordClassified(string keyword)
         {
             Debug.Log($"PipelineManager: Qwen keyword ready: {keyword}");
+            if (!openingVideoCompleted)
+            {
+                pendingKeywordUntilOpeningVideoComplete = keyword;
+                return;
+            }
+
+            ApplyKeywordPresentation(keyword);
+        }
+
+        private IEnumerator WaitForOpeningVideoCompleteRoutine()
+        {
+            while (!openingVideoCompleted)
+            {
+                yield return null;
+            }
+        }
+
+        private void ApplyPendingKeywordAfterOpeningVideo()
+        {
+            if (string.IsNullOrWhiteSpace(pendingKeywordUntilOpeningVideoComplete))
+            {
+                return;
+            }
+
+            string keyword = pendingKeywordUntilOpeningVideoComplete;
+            pendingKeywordUntilOpeningVideoComplete = null;
+            ApplyKeywordPresentation(keyword);
+        }
+
+        private void ApplyKeywordPresentation(string keyword)
+        {
             stateManager?.SetKeyword(keyword);
             PlayOpeningSubtitleAudio();
         }

@@ -21,6 +21,7 @@ namespace ShadowPrototype
         private const int IntroBackgroundScrollStepCount = 2;
         private const int IntroDarkFadeStepIndex = 1;
         private const int IntroStarRevealStepIndex = 3;
+        private const int SceneTransitionBackgroundDestroyFrames = 1;
         private const float DefaultOuterRadiusViewportY = 0.2777778f;
         private const float DefaultInnerRadiusViewportY = 0.11851852f;
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
@@ -48,7 +49,7 @@ namespace ShadowPrototype
         [SerializeField, Range(0, 255)] private int introBackgroundFinalAlpha = 230;
         [SerializeField] private Transform introBackgroundTransform;
         [SerializeField] private NarrationSubtitleSequencePlayer introNarrationPlayer;
-        [SerializeField, Min(0)] private int introNarrationStepCount = 4;
+        [SerializeField, Min(0)] private int introNarrationStepCount = 5;
         [SerializeField] private float introBackgroundScrollTargetX = -10.42593f;
         [SerializeField] private Renderer introDarkRenderer;
         [SerializeField, Range(0, 255)] private int introDarkFinalAlpha = 230;
@@ -64,6 +65,7 @@ namespace ShadowPrototype
         [SerializeField] private MediaPipeMeshDeformationInput deformationInput;
         [SerializeField] private MediaPipeInteractionVisualizer interactionVisualizer;
         [SerializeField] private MediaPipeTrackingProcessLauncher mediaPipeLauncher;
+        [SerializeField] private bool prewarmMediaPipeDuringIntro = true;
 
         [Header("Guide")]
         [SerializeField] private bool createGuideOverlay = true;
@@ -93,19 +95,18 @@ namespace ShadowPrototype
 
         [Header("Outro")]
         [SerializeField, Min(0.0f)] private float outroReturnSeconds = 2.0f;
-        [SerializeField] private Vector2 outroShadowStarTargetPosition = new Vector2(0.95f, -2.8f);
-        [SerializeField, Min(0.01f)] private float outroShadowStarTargetScale = 0.8f;
-        [SerializeField, Min(0.0f)] private float outroNarrationStartDelaySeconds = 1.0f;
-        [SerializeField, Min(0.0f)] private float outroDarkFadeSeconds = 2.0f;
-        [SerializeField, Min(0)] private int outroNarrationStartStepIndex = 4;
-        [SerializeField, Min(1)] private int outroNarrationStepCount = 2;
+        [SerializeField] private Vector2 outroShadowStarTargetPosition = new Vector2(1.0f, -2.8f);
+        [SerializeField, Min(0.01f)] private float outroShadowStarTargetScale = 0.6f;
+
+        [Header("Scene Transition")]
+        [SerializeField, Min(0.0f)] private float mission2SceneTransitionDelaySeconds = 1.0f;
 
         [Header("Scene UI")]
         [SerializeField] private RectTransform matchProgressFillRect;
         [SerializeField] private RectTransform matchThresholdMarker;
         [SerializeField] private string interactionInstructionText = "\uADF8\uB9BC\uC790\uB97C \uD615\uD0DC\uC5D0 \uB9DE\uCDB0\uC8FC\uC138\uC694.";
         [SerializeField] private Color interactionInstructionTextColor = Color.black;
-        [SerializeField, Min(12)] private int interactionInstructionFontSize = 42;
+        [SerializeField, Min(12)] private int interactionInstructionFontSize = 36;
         [SerializeField, Min(0.0f)] private float interactionInstructionTopMargin = 56.0f;
         [SerializeField, Range(0.2f, 1.0f)] private float interactionInstructionWidthRatio = 0.9f;
         [SerializeField] private GameObject interactionInstructionObject;
@@ -164,6 +165,12 @@ namespace ShadowPrototype
             if (currentPhase == Mission1Phase.Interaction)
             {
                 EnterInteraction();
+                yield break;
+            }
+
+            if (currentPhase == Mission1Phase.Outro)
+            {
+                EnterOutro();
                 yield break;
             }
 
@@ -237,6 +244,11 @@ namespace ShadowPrototype
             SetIntroDarkAlpha(0.0f);
             SetIntroStarAlpha(0.0f);
             SetInteractionSystemsEnabled(false);
+            if (prewarmMediaPipeDuringIntro)
+            {
+                StartMediaPipeTracking();
+            }
+
             SetGuideVisible(false);
             SetMatchProgressBarVisible(false);
             SetInteractionInstructionVisible(false);
@@ -282,7 +294,7 @@ namespace ShadowPrototype
             stateManager?.SetState(GameStateManager.PipelineState.Mission1);
         }
 
-        private void EnterOutro()
+        public void EnterOutro()
         {
             currentPhase = Mission1Phase.Outro;
             interactionStarted = false;
@@ -406,6 +418,8 @@ namespace ShadowPrototype
 
         private void StartMediaPipeTracking()
         {
+            ResolveInteractionComponents();
+
             if (mediaPipeReceiver != null)
             {
                 mediaPipeReceiver.enabled = true;
@@ -1095,10 +1109,16 @@ namespace ShadowPrototype
 
             EnterOutro();
             yield return PlayOutroReturnRoutine();
-            yield return PlayOutroNarrationRoutine();
+
+            float sceneDelay = Mathf.Max(0.0f, mission2SceneTransitionDelaySeconds);
+            if (sceneDelay > 0.0f)
+            {
+                yield return new WaitForSecondsRealtime(sceneDelay);
+            }
 
             DestroyMission1ShadowMeshRoot();
-            DestroyIntroStarObject(hideGuide: true);
+            PreserveIntroBackgroundThroughNextSceneFirstFrame();
+            PreserveIntroStarThroughNextSceneFirstFrame(hideGuide: true);
             stateManager?.SetState(GameStateManager.PipelineState.Mission2);
             LoadNextScene();
         }
@@ -1148,56 +1168,6 @@ namespace ShadowPrototype
             ApplyOutroReturnFrame(shadowRoot, shadowTargetPosition, shadowTargetScale, 1.0f);
         }
 
-        private IEnumerator PlayOutroNarrationRoutine()
-        {
-            NarrationSubtitleSequencePlayer narrationPlayer = ResolveIntroNarrationPlayer();
-            if (narrationPlayer == null || narrationPlayer.StepCount == 0)
-            {
-                yield break;
-            }
-
-            float delay = Mathf.Max(0.0f, outroNarrationStartDelaySeconds);
-            if (delay > 0.0f)
-            {
-                yield return new WaitForSecondsRealtime(delay);
-            }
-
-            yield return FadeOutroDarkRoutine();
-
-            int startIndex = Mathf.Clamp(outroNarrationStartStepIndex, 0, narrationPlayer.StepCount);
-            int stepCount = Mathf.Clamp(outroNarrationStepCount, 0, narrationPlayer.StepCount - startIndex);
-            if (stepCount <= 0)
-            {
-                yield break;
-            }
-
-            yield return narrationPlayer.PlayRangeAndWaitRoutine(startIndex, stepCount);
-        }
-
-        private IEnumerator FadeOutroDarkRoutine()
-        {
-            float duration = Mathf.Max(0.0f, outroDarkFadeSeconds);
-            SetIntroDarkAlpha(IntroDarkFinalAlpha01);
-
-            if (duration <= 0.0f)
-            {
-                SetIntroDarkAlpha(0.0f);
-                yield break;
-            }
-
-            float elapsed = 0.0f;
-            while (elapsed < duration)
-            {
-                elapsed += Time.unscaledDeltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
-                SetIntroDarkAlpha(Mathf.LerpUnclamped(IntroDarkFinalAlpha01, 0.0f, eased));
-                yield return null;
-            }
-
-            SetIntroDarkAlpha(0.0f);
-        }
-
         private void ApplyOutroReturnFrame(
             Transform shadowRoot,
             Vector3 shadowPosition,
@@ -1206,7 +1176,7 @@ namespace ShadowPrototype
         {
             float alpha = Mathf.Clamp01(visibility);
             SetIntroBackgroundAlpha(alpha * IntroBackgroundFinalAlpha01);
-            SetIntroDarkAlpha(alpha * IntroDarkFinalAlpha01);
+            SetIntroDarkAlpha(0.0f);
             SetIntroStarAlpha(alpha * IntroStarFinalAlpha01);
 
             if (shadowRoot != null)
@@ -1222,6 +1192,74 @@ namespace ShadowPrototype
                 starTransform.localRotation = introStarRestLocalRotation;
                 starTransform.localScale = introStarRestLocalScale;
             }
+        }
+
+        private void PreserveIntroBackgroundThroughNextSceneFirstFrame()
+        {
+            Transform backgroundTransform = ResolveIntroBackgroundTransform();
+            if (backgroundTransform == null)
+            {
+                return;
+            }
+
+            GameObject backgroundObject = backgroundTransform.gameObject;
+            backgroundObject.name = "Mission1TransitionBackground";
+            backgroundObject.SetActive(true);
+            backgroundTransform.SetParent(null, true);
+            SetIntroBackgroundAlpha(IntroBackgroundFinalAlpha01);
+
+            DontDestroyOnLoad(backgroundObject);
+
+            SceneLoadDeferredDestroyer destroyer =
+                backgroundObject.GetComponent<SceneLoadDeferredDestroyer>();
+            if (destroyer == null)
+            {
+                destroyer = backgroundObject.AddComponent<SceneLoadDeferredDestroyer>();
+            }
+
+            destroyer.DestroyAfterNextSceneLoad(SceneTransitionBackgroundDestroyFrames);
+        }
+
+        private void PreserveIntroStarThroughNextSceneFirstFrame(bool hideGuide)
+        {
+            if (hideGuide)
+            {
+                SetGuideVisible(false);
+            }
+
+            Transform starTransform = ResolveIntroStarTransform();
+            if (starTransform == null)
+            {
+                introStarRenderers = Array.Empty<Renderer>();
+                return;
+            }
+
+            GameObject starObject = starTransform.gameObject;
+            starObject.name = "Mission1TransitionStar";
+            starObject.SetActive(true);
+            starTransform.SetParent(null, true);
+            SetIntroStarAlpha(IntroStarFinalAlpha01);
+
+            DontDestroyOnLoad(starObject);
+
+            SceneLoadDeferredDestroyer destroyer =
+                starObject.GetComponent<SceneLoadDeferredDestroyer>();
+            if (destroyer == null)
+            {
+                destroyer = starObject.AddComponent<SceneLoadDeferredDestroyer>();
+            }
+
+            if (starObject == recreatedIntroStarObject)
+            {
+                destroyer.RegisterRuntimeObject(recreatedIntroStarMesh);
+                destroyer.RegisterRuntimeObject(recreatedIntroStarMaterial);
+                recreatedIntroStarObject = null;
+                recreatedIntroStarMesh = null;
+                recreatedIntroStarMaterial = null;
+            }
+
+            introStarRenderers = Array.Empty<Renderer>();
+            destroyer.DestroyAfterNextSceneLoad(SceneTransitionBackgroundDestroyFrames);
         }
 
         private void LoadNextScene()
@@ -2613,6 +2651,74 @@ namespace ShadowPrototype
             public float Phase;
             public Vector2 WobbleDirection;
             public float WobbleAmplitude;
+        }
+    }
+
+    internal sealed class SceneLoadDeferredDestroyer : MonoBehaviour
+    {
+        private int framesToKeepAfterSceneLoad = 1;
+        private readonly List<UnityEngine.Object> runtimeObjectsToDestroy = new List<UnityEngine.Object>();
+
+        public void RegisterRuntimeObject(UnityEngine.Object runtimeObject)
+        {
+            if (runtimeObject == null || runtimeObjectsToDestroy.Contains(runtimeObject))
+            {
+                return;
+            }
+
+            runtimeObjectsToDestroy.Add(runtimeObject);
+        }
+
+        public void DestroyAfterNextSceneLoad(int framesToKeep)
+        {
+            framesToKeepAfterSceneLoad = Mathf.Max(1, framesToKeep);
+            SceneManager.sceneLoaded -= HandleSceneLoaded;
+            SceneManager.sceneLoaded += HandleSceneLoaded;
+        }
+
+        private void OnDestroy()
+        {
+            SceneManager.sceneLoaded -= HandleSceneLoaded;
+            DestroyRegisteredRuntimeObjects();
+        }
+
+        private void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            SceneManager.sceneLoaded -= HandleSceneLoaded;
+            StartCoroutine(DestroyAfterFramesRoutine());
+        }
+
+        private IEnumerator DestroyAfterFramesRoutine()
+        {
+            for (int i = 0; i < framesToKeepAfterSceneLoad; i++)
+            {
+                yield return new WaitForEndOfFrame();
+            }
+
+            Destroy(gameObject);
+        }
+
+        private void DestroyRegisteredRuntimeObjects()
+        {
+            for (int i = 0; i < runtimeObjectsToDestroy.Count; i++)
+            {
+                UnityEngine.Object runtimeObject = runtimeObjectsToDestroy[i];
+                if (runtimeObject == null)
+                {
+                    continue;
+                }
+
+                if (Application.isPlaying)
+                {
+                    Destroy(runtimeObject);
+                }
+                else
+                {
+                    DestroyImmediate(runtimeObject);
+                }
+            }
+
+            runtimeObjectsToDestroy.Clear();
         }
     }
 }

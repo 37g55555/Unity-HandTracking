@@ -13,17 +13,19 @@ namespace ShadowPrototype
         [SerializeField] private MediaPipeUdpReceiver mediaPipeReceiver;
         [SerializeField] private Camera targetCamera;
         [SerializeField] private Transform targetShadowTransform;
+        [SerializeField] private Mission2StarMeshIntroAnimator mission2Controller;
 
         [Header("Sun Follow")]
         [SerializeField] private bool mirrorHandX;
         [SerializeField, Min(0.0f)] private float startDelaySeconds = 2.0f;
         [SerializeField, Min(0.0f)] private float sunFollowSpeed = 12.0f;
+        [SerializeField, Min(0.0f)] private float initialHandAttachSeconds = 0.65f;
         [SerializeField, Min(0.0f)] private float screenEdgePaddingWorld = 0.08f;
 
         [Header("Shadow Scale")]
         [SerializeField, Min(0.01f)] private float nearDistanceX = 0.85f;
         [SerializeField, Min(0.01f)] private float farDistanceX = 8.0f;
-        [SerializeField, Min(0.01f)] private float minShadowScale = 0.6f;
+        [SerializeField, Min(0.01f)] private float minShadowScale = 0.8f;
         [SerializeField, Min(0.01f)] private float maxShadowScale = 3.0f;
         [SerializeField, Min(0.0f)] private float shadowScaleSpeed = 7.0f;
 
@@ -31,11 +33,15 @@ namespace ShadowPrototype
         [SerializeField] private string nextSceneName = "Mission3";
         [SerializeField, Min(0.0f)] private float scaleCompletionTolerance = 0.01f;
         [SerializeField, Range(0.0f, 1.0f)] private float completionDingVolume = 0.85f;
-        [SerializeField, Min(0.0f)] private float sceneTransitionDelaySeconds = 0.6f;
+        [SerializeField, Min(0.0f)] private float sceneTransitionDelaySeconds;
 
         private float lockedSunY;
         private float lockedSunZ;
         private float activationTime;
+        private float initialAttachStartTime;
+        private float initialAttachStartX;
+        private bool hasInitialAttachStart;
+        private bool isInitialAttachActive;
         private bool missionCompleted;
         private AudioClip completionDingClip;
 
@@ -55,6 +61,22 @@ namespace ShadowPrototype
         {
             farDistanceX = Mathf.Max(farDistanceX, nearDistanceX + 0.01f);
             minShadowScale = Mathf.Min(minShadowScale, maxShadowScale);
+        }
+
+        public void BeginInteraction()
+        {
+            if (sunTransform == null)
+            {
+                sunTransform = transform;
+            }
+
+            lockedSunY = sunTransform.position.y;
+            lockedSunZ = sunTransform.position.z;
+            activationTime = Time.unscaledTime + startDelaySeconds;
+            hasInitialAttachStart = false;
+            isInitialAttachActive = false;
+            missionCompleted = false;
+            enabled = true;
         }
 
         private void LateUpdate()
@@ -118,6 +140,8 @@ namespace ShadowPrototype
                     targetShadowTransform = mission2StarShape.transform;
                 }
             }
+
+            ResolveMission2Controller();
         }
 
         private void UpdateSunXFromHand()
@@ -134,9 +158,42 @@ namespace ShadowPrototype
 
             float clampedX = ClampSunXToCamera(handWorldX);
             Vector3 currentPosition = sunTransform.position;
-            float blend = GetFrameBlend(sunFollowSpeed);
-            float nextX = Mathf.Lerp(currentPosition.x, clampedX, blend);
+            float nextX = GetNextSunX(currentPosition.x, clampedX);
             sunTransform.position = new Vector3(nextX, lockedSunY, lockedSunZ);
+        }
+
+        private float GetNextSunX(float currentX, float targetX)
+        {
+            if (!hasInitialAttachStart)
+            {
+                hasInitialAttachStart = true;
+                isInitialAttachActive = initialHandAttachSeconds > 0.0f;
+                initialAttachStartTime = Time.unscaledTime;
+                initialAttachStartX = currentX;
+            }
+
+            if (isInitialAttachActive)
+            {
+                float duration = Mathf.Max(0.0f, initialHandAttachSeconds);
+                if (duration <= 0.0f)
+                {
+                    isInitialAttachActive = false;
+                    return targetX;
+                }
+
+                float elapsed = Time.unscaledTime - initialAttachStartTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
+                if (t >= 1.0f)
+                {
+                    isInitialAttachActive = false;
+                }
+
+                return Mathf.LerpUnclamped(initialAttachStartX, targetX, eased);
+            }
+
+            float blend = GetFrameBlend(sunFollowSpeed);
+            return Mathf.Lerp(currentX, targetX, blend);
         }
 
         private void UpdateShadowScaleFromSunDistance()
@@ -308,8 +365,20 @@ namespace ShadowPrototype
 
         private IEnumerator CompleteMissionRoutine()
         {
-            StopMediaPipeTracking();
             PlayCompletionDing();
+
+            Mission2StarMeshIntroAnimator resolvedController = ResolveMission2Controller();
+            if (resolvedController != null)
+            {
+                resolvedController.HideInteractionInstruction();
+            }
+
+            StopMediaPipeTracking();
+
+            if (resolvedController != null)
+            {
+                yield return resolvedController.EnterOutroAndWaitRoutine();
+            }
 
             if (sceneTransitionDelaySeconds > 0.0f)
             {
@@ -335,6 +404,16 @@ namespace ShadowPrototype
             }
 
             SceneManager.LoadScene(nextSceneName);
+        }
+
+        private Mission2StarMeshIntroAnimator ResolveMission2Controller()
+        {
+            if (mission2Controller == null)
+            {
+                mission2Controller = FindObjectOfType<Mission2StarMeshIntroAnimator>();
+            }
+
+            return mission2Controller;
         }
 
         private static void StopMediaPipeTracking()

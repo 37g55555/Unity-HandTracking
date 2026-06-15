@@ -1,18 +1,101 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace ShadowPrototype
 {
     public sealed class Mission2StarMeshIntroAnimator : MonoBehaviour
     {
-        [SerializeField] private Transform targetTransform;
-        [SerializeField] private Vector2 targetPosition = new Vector2(-4.0f, -3.0f);
-        [SerializeField, Min(0.0f)] private float targetUniformScale = 1.0f;
-        [SerializeField, Min(0.0f)] private float durationSeconds = 2.0f;
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        private static readonly int ColorId = Shader.PropertyToID("_Color");
+
+        public enum Mission2Phase
+        {
+            Intro,
+            Interaction,
+            Outro
+        }
+
+        [Header("Phase")]
+        [SerializeField] private Mission2Phase initialPhase = Mission2Phase.Intro;
+        [SerializeField] private bool autoEnterInteractionAfterIntro = true;
+
+        [Header("Flow")]
         [SerializeField] private bool playOnStart = true;
         [SerializeField] private bool setMission2StateOnStart = true;
 
+        [Header("Dark Fade")]
+        [SerializeField] private Renderer darkRenderer;
+        [SerializeField, Range(0, 255)] private int darkStartAlpha = 230;
+        [SerializeField, Min(0.0f)] private float darkFadeSeconds = 2.0f;
+
+        [Header("Background Fade")]
+        [SerializeField] private Renderer introBackgroundRenderer;
+        [SerializeField, Range(0, 255)] private int introBackgroundStartAlpha = 230;
+        [SerializeField, Min(0.0f)] private float introBackgroundFadeOutSeconds = 2.0f;
+        [SerializeField, Min(0.0f)] private float outroBackgroundFadeInSeconds = 2.0f;
+
+        [Header("Sun Intro")]
+        [SerializeField] private Transform introSunTransform;
+        [SerializeField] private float introSunTargetX = 7.5f;
+
+        [Header("Narration")]
+        [SerializeField] private NarrationSubtitleSequencePlayer introNarrationPlayer;
+        [SerializeField, Min(0)] private int introNarrationStartStepIndex;
+        [SerializeField, Min(0)] private int introNarrationStepCount = 6;
+
+        [Header("Shadow Star Narration Motion")]
+        [SerializeField] private Transform shadowStarTransform;
+        [SerializeField] private float shadowStarDropTargetY = -3.3f;
+        [SerializeField, Min(0.0f)] private float shadowStarDropSeconds = 0.18f;
+        [SerializeField] private float shadowStarAfterNarrationTargetX = -4.0f;
+        [SerializeField, Min(0.0f)] private float shadowStarAfterNarrationMoveSeconds = 7.0f;
+
+        [Header("Outro")]
+        [SerializeField] private Camera targetCamera;
+        [SerializeField, Min(0)] private int outroNarrationStartStepIndex = 6;
+        [SerializeField, Min(0)] private int outroNarrationStepCount = 2;
+        [SerializeField, Min(0.0f)] private float outroShadowStarExitSeconds = 3.0f;
+        [SerializeField, Min(0.0f)] private float outroShadowStarExitPaddingWorld = 1.0f;
+        [SerializeField, Min(0.0f)] private float outroShadowStarFallbackExitDistance = 12.0f;
+        [SerializeField, Range(0, 255)] private int outroSceneFadeOutAlpha = 255;
+        [SerializeField, Min(0.0f)] private float outroSceneFadeOutSeconds = 2.0f;
+
+        [Header("Interaction Systems")]
+        [SerializeField] private Mission2SunHandSystem sunHandSystem;
+        [SerializeField] private MediaPipeUdpReceiver mediaPipeReceiver;
+        [SerializeField] private MediaPipeTrackingProcessLauncher mediaPipeLauncher;
+        [SerializeField] private bool prewarmMediaPipeDuringIntro = true;
+
+        [Header("Interaction UI")]
+        [SerializeField] private string interactionInstructionText = "\uADF8\uB9BC\uC790\uB97C \uD0A4\uC6B0\uB824\uBA74...?";
+        [SerializeField] private Color interactionInstructionTextColor = Color.black;
+        [SerializeField, Min(12)] private int interactionInstructionFontSize = 36;
+        [SerializeField, Range(0.2f, 1.0f)] private float interactionInstructionWidthRatio = 0.9f;
+        [SerializeField] private GameObject interactionInstructionObject;
+        [SerializeField] private Text interactionInstructionTextComponent;
+
         private Coroutine animationRoutine;
+        private Mission2Phase currentPhase;
+        private MaterialPropertyBlock darkPropertyBlock;
+        private MaterialPropertyBlock backgroundPropertyBlock;
+        private bool createdInteractionInstructionObject;
+
+        public Mission2Phase CurrentPhase => currentPhase;
+
+        private void Awake()
+        {
+            currentPhase = initialPhase;
+            ResolveInteractionSystems();
+            ResolveDarkRenderer();
+            ResolveIntroBackgroundRenderer();
+            ResolveIntroSunTransform();
+            ResolveNarrationPlayer();
+            SetDarkAlpha(currentPhase == Mission2Phase.Intro ? DarkStartAlpha01 : 0.0f);
+            SetIntroBackgroundAlpha(currentPhase == Mission2Phase.Intro ? IntroBackgroundStartAlpha01 : 0.0f);
+            SetInteractionSystemsEnabled(false);
+            SetInteractionInstructionVisible(currentPhase == Mission2Phase.Interaction);
+        }
 
         private void Start()
         {
@@ -21,6 +104,19 @@ namespace ShadowPrototype
                 FindObjectOfType<GameStateManager>()?.SetState(GameStateManager.PipelineState.Mission2);
             }
 
+            if (currentPhase == Mission2Phase.Interaction)
+            {
+                EnterInteraction();
+                return;
+            }
+
+            if (currentPhase == Mission2Phase.Outro)
+            {
+                EnterOutro();
+                return;
+            }
+
+            EnterIntro();
             if (playOnStart)
             {
                 Play();
@@ -34,86 +130,711 @@ namespace ShadowPrototype
                 StopCoroutine(animationRoutine);
             }
 
-            animationRoutine = StartCoroutine(AnimateWhenTargetIsReady());
+            EnterIntro();
+            animationRoutine = StartCoroutine(PlayIntroSequenceRoutine());
         }
 
-        private IEnumerator AnimateWhenTargetIsReady()
+        private IEnumerator PlayIntroSequenceRoutine()
         {
-            float waitDeadline = Time.unscaledTime + 1.0f;
-            while (ResolveTargetTransform() == null && Time.unscaledTime < waitDeadline)
+            yield return FadeDarkRoutine();
+            yield return PlayIntroNarrationRoutine();
+            yield return FadeIntroBackgroundOutRoutine();
+
+            if (autoEnterInteractionAfterIntro)
             {
-                yield return null;
+                EnterInteraction();
             }
 
-            Transform target = ResolveTargetTransform();
-            if (target == null)
-            {
-                Debug.LogWarning("Mission2StarMeshIntroAnimator: target star transform was not found.");
-                animationRoutine = null;
-                yield break;
-            }
-
-            yield return AnimateTargetRoot(target);
             animationRoutine = null;
         }
 
-        private IEnumerator AnimateTargetRoot(Transform target)
+        public void EnterIntro()
         {
-            Vector3 startPosition = target.position;
-            Vector3 startScale = target.localScale;
-            Vector3 endPosition = new Vector3(targetPosition.x, targetPosition.y, startPosition.z);
-            Vector3 endScale = Vector3.one * targetUniformScale;
-
-            if (durationSeconds <= 0.0f)
+            currentPhase = Mission2Phase.Intro;
+            ResolveDarkRenderer();
+            ResolveIntroBackgroundRenderer();
+            ResolveIntroSunTransform();
+            SetDarkAlpha(DarkStartAlpha01);
+            SetIntroBackgroundAlpha(IntroBackgroundStartAlpha01);
+            SetInteractionSystemsEnabled(false);
+            if (prewarmMediaPipeDuringIntro)
             {
-                target.position = endPosition;
-                target.localScale = endScale;
+                StartMediaPipeTracking();
+            }
+
+            SetInteractionInstructionVisible(false);
+        }
+
+        public void EnterInteraction()
+        {
+            currentPhase = Mission2Phase.Interaction;
+            ResolveInteractionSystems();
+            SetDarkAlpha(0.0f);
+            SetIntroBackgroundAlpha(0.0f);
+            SetInteractionInstructionVisible(true);
+            StartMediaPipeTracking();
+
+            if (sunHandSystem != null)
+            {
+                sunHandSystem.BeginInteraction();
+            }
+        }
+
+        public void HideInteractionInstruction()
+        {
+            SetInteractionInstructionVisible(false);
+        }
+
+        public void EnterOutro()
+        {
+            currentPhase = Mission2Phase.Outro;
+            SetInteractionInstructionVisible(false);
+            SetInteractionSystemsEnabled(false);
+        }
+
+        public IEnumerator EnterOutroAndWaitRoutine()
+        {
+            EnterOutro();
+            yield return FadeOutroBackgroundInRoutine();
+            yield return PlayOutroNarrationRoutine();
+            yield return MoveShadowStarLeftOffscreenRoutine();
+            yield return FadeSceneToBlackRoutine();
+        }
+
+        private void SetInteractionSystemsEnabled(bool isEnabled)
+        {
+            ResolveInteractionSystems();
+
+            if (sunHandSystem != null)
+            {
+                sunHandSystem.enabled = isEnabled;
+            }
+
+            if (mediaPipeReceiver != null)
+            {
+                mediaPipeReceiver.enabled = isEnabled;
+            }
+
+            if (mediaPipeLauncher != null)
+            {
+                mediaPipeLauncher.enabled = isEnabled;
+            }
+        }
+
+        private void StartMediaPipeTracking()
+        {
+            ResolveInteractionSystems();
+
+            if (mediaPipeReceiver != null)
+            {
+                mediaPipeReceiver.enabled = true;
+                mediaPipeReceiver.StartReceiver();
+            }
+
+            if (mediaPipeLauncher != null)
+            {
+                mediaPipeLauncher.enabled = true;
+                mediaPipeLauncher.Launch();
+            }
+        }
+
+        private void SetInteractionInstructionVisible(bool isVisible)
+        {
+            if (isVisible)
+            {
+                EnsureInteractionInstructionUi();
+            }
+
+            if (interactionInstructionObject != null)
+            {
+                interactionInstructionObject.SetActive(isVisible);
+            }
+        }
+
+        private void EnsureInteractionInstructionUi()
+        {
+            if (interactionInstructionObject == null)
+            {
+                GameObject foundObject = GameObject.Find("Mission2InteractionInstructionText");
+                interactionInstructionObject = foundObject;
+                if (foundObject != null && interactionInstructionTextComponent == null)
+                {
+                    interactionInstructionTextComponent = foundObject.GetComponent<Text>();
+                }
+            }
+
+            if (interactionInstructionObject == null)
+            {
+                Transform parentTransform = ResolveInstructionCanvasTransform();
+                interactionInstructionObject = new GameObject("Mission2InteractionInstructionText", typeof(RectTransform));
+                interactionInstructionObject.transform.SetParent(parentTransform, false);
+                createdInteractionInstructionObject = true;
+            }
+
+            RectTransform rectTransform = interactionInstructionObject.GetComponent<RectTransform>();
+            if (rectTransform == null)
+            {
+                rectTransform = interactionInstructionObject.AddComponent<RectTransform>();
+            }
+
+            rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            rectTransform.anchoredPosition = Vector2.zero;
+            rectTransform.sizeDelta = new Vector2(1920.0f * Mathf.Clamp01(interactionInstructionWidthRatio), 80.0f);
+
+            if (interactionInstructionTextComponent == null)
+            {
+                interactionInstructionTextComponent = interactionInstructionObject.GetComponent<Text>();
+                if (interactionInstructionTextComponent == null)
+                {
+                    interactionInstructionTextComponent = interactionInstructionObject.AddComponent<Text>();
+                }
+            }
+
+            interactionInstructionTextComponent.text = interactionInstructionText;
+            interactionInstructionTextComponent.color = interactionInstructionTextColor;
+            interactionInstructionTextComponent.fontSize = Mathf.Max(12, interactionInstructionFontSize);
+            interactionInstructionTextComponent.alignment = TextAnchor.MiddleCenter;
+            interactionInstructionTextComponent.horizontalOverflow = HorizontalWrapMode.Wrap;
+            interactionInstructionTextComponent.verticalOverflow = VerticalWrapMode.Truncate;
+            interactionInstructionTextComponent.raycastTarget = false;
+            interactionInstructionTextComponent.supportRichText = false;
+            interactionInstructionTextComponent.font = ResolveInteractionInstructionFont();
+        }
+
+        private Transform ResolveInstructionCanvasTransform()
+        {
+            GameObject canvasObject = GameObject.Find("Mission2InteractionInstructionCanvas");
+            if (canvasObject != null)
+            {
+                return canvasObject.transform;
+            }
+
+            canvasObject = new GameObject("Mission2InteractionInstructionCanvas", typeof(RectTransform));
+            Canvas canvas = canvasObject.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 5100;
+
+            CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920.0f, 1080.0f);
+            scaler.matchWidthOrHeight = 0.5f;
+
+            GraphicRaycaster raycaster = canvasObject.AddComponent<GraphicRaycaster>();
+            raycaster.enabled = false;
+            return canvasObject.transform;
+        }
+
+        private static Font ResolveInteractionInstructionFont()
+        {
+            Font resourceFont = Resources.Load<Font>("Fonts/KoPubWorld Batang Medium");
+            if (resourceFont != null)
+            {
+                return resourceFont;
+            }
+
+            return Font.CreateDynamicFontFromOSFont(
+                new[] { "KoPubWorld Batang Medium", "Malgun Gothic", "Arial" },
+                42);
+        }
+
+        private void ResolveInteractionSystems()
+        {
+            if (sunHandSystem == null)
+            {
+                sunHandSystem = FindObjectOfType<Mission2SunHandSystem>();
+            }
+
+            if (mediaPipeReceiver == null)
+            {
+                mediaPipeReceiver = FindObjectOfType<MediaPipeUdpReceiver>();
+            }
+
+            if (mediaPipeLauncher == null)
+            {
+                mediaPipeLauncher = FindObjectOfType<MediaPipeTrackingProcessLauncher>();
+            }
+        }
+
+        private IEnumerator FadeDarkRoutine()
+        {
+            float duration = Mathf.Max(0.0f, darkFadeSeconds);
+            Transform sunTransform = ResolveIntroSunTransform();
+            Vector3 sunStartPosition = sunTransform != null ? sunTransform.position : Vector3.zero;
+            Vector3 sunTargetPosition = sunStartPosition;
+            sunTargetPosition.x = introSunTargetX;
+
+            SetDarkAlpha(DarkStartAlpha01);
+
+            if (duration <= 0.0f)
+            {
+                SetDarkAlpha(0.0f);
+                if (sunTransform != null)
+                {
+                    sunTransform.position = sunTargetPosition;
+                }
+
                 yield break;
             }
 
             float elapsed = 0.0f;
-            while (elapsed < durationSeconds)
+            while (elapsed < duration)
             {
                 elapsed += Time.unscaledDeltaTime;
-                float t = Mathf.Clamp01(elapsed / durationSeconds);
-                float easedT = Mathf.SmoothStep(0.0f, 1.0f, t);
-                target.position = Vector3.LerpUnclamped(startPosition, endPosition, easedT);
-                target.localScale = Vector3.LerpUnclamped(startScale, endScale, easedT);
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
+                SetDarkAlpha(Mathf.LerpUnclamped(DarkStartAlpha01, 0.0f, eased));
+
+                if (sunTransform != null)
+                {
+                    sunTransform.position = Vector3.LerpUnclamped(sunStartPosition, sunTargetPosition, eased);
+                }
+
                 yield return null;
             }
 
-            target.position = endPosition;
-            target.localScale = endScale;
+            SetDarkAlpha(0.0f);
+            if (sunTransform != null)
+            {
+                sunTransform.position = sunTargetPosition;
+            }
         }
 
-        private Transform ResolveTargetTransform()
+        private IEnumerator PlayIntroNarrationRoutine()
         {
-            if (targetTransform != null)
+            NarrationSubtitleSequencePlayer narrationPlayer = ResolveNarrationPlayer();
+            if (narrationPlayer == null || narrationPlayer.StepCount == 0)
             {
-                return targetTransform;
+                yield break;
+            }
+
+            int startIndex = Mathf.Clamp(introNarrationStartStepIndex, 0, narrationPlayer.StepCount);
+            int stepCount = Mathf.Clamp(introNarrationStepCount, 0, narrationPlayer.StepCount - startIndex);
+            if (stepCount <= 0)
+            {
+                yield break;
+            }
+
+            yield return narrationPlayer.PlayRangeAndWaitRoutine(startIndex, 1);
+            yield return MoveShadowStarYRoutine(shadowStarDropTargetY, shadowStarDropSeconds, easeIn: true);
+
+            if (stepCount <= 1)
+            {
+                yield break;
+            }
+
+            yield return narrationPlayer.PlayRangeAndWaitRoutine(startIndex + 1, 1);
+            yield return MoveShadowStarXRoutine(
+                shadowStarAfterNarrationTargetX,
+                shadowStarAfterNarrationMoveSeconds,
+                easeIn: false);
+
+            if (stepCount > 2)
+            {
+                yield return narrationPlayer.PlayRangeAndWaitRoutine(startIndex + 2, stepCount - 2);
+            }
+        }
+
+        private IEnumerator FadeIntroBackgroundOutRoutine()
+        {
+            Renderer backgroundRenderer = ResolveIntroBackgroundRenderer();
+            if (backgroundRenderer == null)
+            {
+                yield break;
+            }
+
+            float duration = Mathf.Max(0.0f, introBackgroundFadeOutSeconds);
+            if (duration <= 0.0f)
+            {
+                SetIntroBackgroundAlpha(0.0f);
+                yield break;
+            }
+
+            float elapsed = 0.0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
+                SetIntroBackgroundAlpha(Mathf.LerpUnclamped(IntroBackgroundStartAlpha01, 0.0f, eased));
+                yield return null;
+            }
+
+            SetIntroBackgroundAlpha(0.0f);
+        }
+
+        private IEnumerator FadeOutroBackgroundInRoutine()
+        {
+            Renderer backgroundRenderer = ResolveIntroBackgroundRenderer();
+            if (backgroundRenderer == null)
+            {
+                yield break;
+            }
+
+            float duration = Mathf.Max(0.0f, outroBackgroundFadeInSeconds);
+            if (duration <= 0.0f)
+            {
+                SetIntroBackgroundAlpha(IntroBackgroundStartAlpha01);
+                yield break;
+            }
+
+            float elapsed = 0.0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
+                SetIntroBackgroundAlpha(Mathf.LerpUnclamped(0.0f, IntroBackgroundStartAlpha01, eased));
+                yield return null;
+            }
+
+            SetIntroBackgroundAlpha(IntroBackgroundStartAlpha01);
+        }
+
+        private IEnumerator PlayOutroNarrationRoutine()
+        {
+            NarrationSubtitleSequencePlayer narrationPlayer = ResolveNarrationPlayer();
+            if (narrationPlayer == null || narrationPlayer.StepCount == 0)
+            {
+                yield break;
+            }
+
+            int startIndex = Mathf.Clamp(outroNarrationStartStepIndex, 0, narrationPlayer.StepCount);
+            int stepCount = Mathf.Clamp(outroNarrationStepCount, 0, narrationPlayer.StepCount - startIndex);
+            if (stepCount <= 0)
+            {
+                yield break;
+            }
+
+            yield return narrationPlayer.PlayRangeAndWaitRoutine(startIndex, stepCount);
+        }
+
+        private IEnumerator MoveShadowStarLeftOffscreenRoutine()
+        {
+            Transform resolvedShadowStar = ResolveShadowStarTransform();
+            if (resolvedShadowStar == null)
+            {
+                yield break;
+            }
+
+            Vector3 targetPosition = ResolveShadowStarLeftOffscreenPosition(resolvedShadowStar);
+            yield return MoveShadowStarToPositionRoutine(
+                resolvedShadowStar,
+                targetPosition,
+                outroShadowStarExitSeconds);
+        }
+
+        private IEnumerator MoveShadowStarToPositionRoutine(
+            Transform targetTransform,
+            Vector3 targetPosition,
+            float durationSeconds)
+        {
+            if (targetTransform == null)
+            {
+                yield break;
+            }
+
+            Vector3 startPosition = targetTransform.position;
+            float duration = Mathf.Max(0.0f, durationSeconds);
+            if (duration <= 0.0f)
+            {
+                targetTransform.position = targetPosition;
+                yield break;
+            }
+
+            float elapsed = 0.0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
+                targetTransform.position = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
+                yield return null;
+            }
+
+            targetTransform.position = targetPosition;
+        }
+
+        private Vector3 ResolveShadowStarLeftOffscreenPosition(Transform shadowStar)
+        {
+            Vector3 position = shadowStar.position;
+            Camera camera = ResolveTargetCamera();
+            if (camera == null)
+            {
+                position.x -= Mathf.Max(0.0f, outroShadowStarFallbackExitDistance);
+                return position;
+            }
+
+            float planeDistance = Mathf.Abs(Vector3.Dot(
+                position - camera.transform.position,
+                camera.transform.forward));
+            planeDistance = Mathf.Max(camera.nearClipPlane, planeDistance);
+            Vector3 leftEdge = camera.ViewportToWorldPoint(new Vector3(0.0f, 0.5f, planeDistance));
+            Renderer renderer = shadowStar.GetComponentInChildren<Renderer>();
+            float halfWidth = renderer != null && renderer.bounds.size.x > 0.0f
+                ? renderer.bounds.extents.x
+                : 0.5f;
+            position.x = leftEdge.x - halfWidth - Mathf.Max(0.0f, outroShadowStarExitPaddingWorld);
+            return position;
+        }
+
+        private IEnumerator FadeSceneToBlackRoutine()
+        {
+            float duration = Mathf.Max(0.0f, outroSceneFadeOutSeconds);
+            float targetAlpha = Mathf.Clamp(outroSceneFadeOutAlpha, 0, 255) / 255.0f;
+            if (duration <= 0.0f)
+            {
+                SetDarkAlpha(targetAlpha);
+                yield break;
+            }
+
+            float elapsed = 0.0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
+                SetDarkAlpha(Mathf.LerpUnclamped(0.0f, targetAlpha, eased));
+                yield return null;
+            }
+
+            SetDarkAlpha(targetAlpha);
+        }
+
+        private IEnumerator MoveShadowStarYRoutine(float targetY, float durationSeconds, bool easeIn)
+        {
+            Transform resolvedShadowStar = ResolveShadowStarTransform();
+            if (resolvedShadowStar == null)
+            {
+                yield break;
+            }
+
+            Vector3 startPosition = resolvedShadowStar.position;
+            Vector3 targetPosition = startPosition;
+            targetPosition.y = targetY;
+
+            float duration = Mathf.Max(0.0f, durationSeconds);
+            if (duration <= 0.0f)
+            {
+                resolvedShadowStar.position = targetPosition;
+                yield break;
+            }
+
+            float elapsed = 0.0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = easeIn ? t * t : Mathf.SmoothStep(0.0f, 1.0f, t);
+                resolvedShadowStar.position = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
+                yield return null;
+            }
+
+            resolvedShadowStar.position = targetPosition;
+        }
+
+        private IEnumerator MoveShadowStarXRoutine(float targetX, float durationSeconds, bool easeIn)
+        {
+            Transform resolvedShadowStar = ResolveShadowStarTransform();
+            if (resolvedShadowStar == null)
+            {
+                yield break;
+            }
+
+            Vector3 startPosition = resolvedShadowStar.position;
+            Vector3 targetPosition = startPosition;
+            targetPosition.x = targetX;
+
+            float duration = Mathf.Max(0.0f, durationSeconds);
+            if (duration <= 0.0f)
+            {
+                resolvedShadowStar.position = targetPosition;
+                yield break;
+            }
+
+            float elapsed = 0.0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = easeIn ? t * t : Mathf.SmoothStep(0.0f, 1.0f, t);
+                resolvedShadowStar.position = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
+                yield return null;
+            }
+
+            resolvedShadowStar.position = targetPosition;
+        }
+
+        private float DarkStartAlpha01 => Mathf.Clamp(darkStartAlpha, 0, 255) / 255.0f;
+
+        private float IntroBackgroundStartAlpha01 => Mathf.Clamp(introBackgroundStartAlpha, 0, 255) / 255.0f;
+
+        private Renderer ResolveDarkRenderer()
+        {
+            if (darkRenderer != null)
+            {
+                return darkRenderer;
+            }
+
+            GameObject darkObject = GameObject.Find("dark");
+            if (darkObject != null)
+            {
+                darkRenderer = darkObject.GetComponent<Renderer>();
+            }
+
+            return darkRenderer;
+        }
+
+        private Renderer ResolveIntroBackgroundRenderer()
+        {
+            if (introBackgroundRenderer != null)
+            {
+                return introBackgroundRenderer;
+            }
+
+            GameObject backgroundObject = GameObject.Find("Background");
+            if (backgroundObject != null)
+            {
+                introBackgroundRenderer = backgroundObject.GetComponent<Renderer>();
+            }
+
+            return introBackgroundRenderer;
+        }
+
+        private Transform ResolveIntroSunTransform()
+        {
+            if (introSunTransform != null)
+            {
+                return introSunTransform;
+            }
+
+            if (sunHandSystem != null)
+            {
+                introSunTransform = sunHandSystem.transform;
+                return introSunTransform;
+            }
+
+            GameObject sunObject = GameObject.Find("Sun");
+            if (sunObject != null)
+            {
+                introSunTransform = sunObject.transform;
+            }
+
+            return introSunTransform;
+        }
+
+        private Camera ResolveTargetCamera()
+        {
+            if (targetCamera != null && targetCamera.isActiveAndEnabled)
+            {
+                return targetCamera;
+            }
+
+            targetCamera = Camera.main;
+            if (targetCamera == null)
+            {
+                targetCamera = FindObjectOfType<Camera>();
+            }
+
+            return targetCamera;
+        }
+
+        private NarrationSubtitleSequencePlayer ResolveNarrationPlayer()
+        {
+            if (introNarrationPlayer != null)
+            {
+                return introNarrationPlayer;
+            }
+
+            introNarrationPlayer = GetComponent<NarrationSubtitleSequencePlayer>();
+            if (introNarrationPlayer == null)
+            {
+                introNarrationPlayer = FindObjectOfType<NarrationSubtitleSequencePlayer>();
+            }
+
+            return introNarrationPlayer;
+        }
+
+        private void SetDarkAlpha(float alpha)
+        {
+            Renderer targetRenderer = ResolveDarkRenderer();
+            if (targetRenderer == null)
+            {
+                return;
+            }
+
+            if (darkPropertyBlock == null)
+            {
+                darkPropertyBlock = new MaterialPropertyBlock();
+            }
+
+            Color color = Color.black;
+            color.a = Mathf.Clamp01(alpha);
+            targetRenderer.GetPropertyBlock(darkPropertyBlock);
+            darkPropertyBlock.SetColor(BaseColorId, color);
+            darkPropertyBlock.SetColor(ColorId, color);
+            targetRenderer.SetPropertyBlock(darkPropertyBlock);
+        }
+
+        private void SetIntroBackgroundAlpha(float alpha)
+        {
+            Renderer targetRenderer = ResolveIntroBackgroundRenderer();
+            if (targetRenderer == null)
+            {
+                return;
+            }
+
+            if (backgroundPropertyBlock == null)
+            {
+                backgroundPropertyBlock = new MaterialPropertyBlock();
+            }
+
+            Color color = Color.white;
+            color.a = Mathf.Clamp01(alpha);
+            targetRenderer.GetPropertyBlock(backgroundPropertyBlock);
+            backgroundPropertyBlock.SetColor(BaseColorId, color);
+            backgroundPropertyBlock.SetColor(ColorId, color);
+            targetRenderer.SetPropertyBlock(backgroundPropertyBlock);
+        }
+
+        private Transform ResolveShadowStarTransform()
+        {
+            if (shadowStarTransform != null)
+            {
+                return shadowStarTransform;
             }
 
             GameObject shadowStar = GameObject.Find("ShadowStar");
             if (shadowStar != null)
             {
-                targetTransform = shadowStar.transform;
-                return targetTransform;
+                shadowStarTransform = shadowStar.transform;
+                return shadowStarTransform;
             }
 
             GameObject mission2Star = GameObject.Find("Mission2Star");
             if (mission2Star != null)
             {
-                targetTransform = mission2Star.transform;
-                return targetTransform;
+                shadowStarTransform = mission2Star.transform;
+                return shadowStarTransform;
             }
 
             Mission2StarShape mission2StarShape = FindObjectOfType<Mission2StarShape>();
             if (mission2StarShape != null)
             {
-                targetTransform = mission2StarShape.transform;
+                shadowStarTransform = mission2StarShape.transform;
             }
 
-            return targetTransform;
+            return shadowStarTransform;
+        }
+
+        private void OnDestroy()
+        {
+            if (createdInteractionInstructionObject && interactionInstructionObject != null)
+            {
+                Destroy(interactionInstructionObject);
+                interactionInstructionObject = null;
+            }
         }
     }
 }

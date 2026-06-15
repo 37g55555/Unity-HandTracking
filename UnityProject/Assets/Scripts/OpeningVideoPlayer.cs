@@ -18,8 +18,8 @@ namespace ShadowPrototype
         [SerializeField] private int sortingOrder = 3000;
         [SerializeField] private Color backgroundColor = Color.black;
         [SerializeField] private bool continueWhenVideoMissing = true;
-        [SerializeField, Min(0.1f)] private float prepareTimeoutSeconds = 5.0f;
-        [SerializeField, Min(0.1f)] private float playbackStallTimeoutSeconds = 5.0f;
+        [SerializeField, Min(0.1f)] private float prepareTimeoutSeconds = 15.0f;
+        [SerializeField, Min(0.1f)] private float playbackStallTimeoutSeconds = 15.0f;
         [SerializeField] private Vector2Int renderTextureSize = DefaultRenderTextureSize;
 
         private Canvas canvas;
@@ -122,7 +122,8 @@ namespace ShadowPrototype
             if (File.Exists(videoPath))
             {
                 videoPlayer.source = VideoSource.Url;
-                videoPlayer.url = new Uri(videoPath).AbsoluteUri;
+                videoPlayer.url = videoPath.Replace('\\', '/');
+                Debug.Log($"OpeningVideoPlayer: playing opening video from {videoPlayer.url}");
                 return true;
             }
 

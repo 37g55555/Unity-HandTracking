@@ -53,6 +53,23 @@ namespace ShadowPrototype
             }
         }
 
+        public void BeginTracking()
+        {
+            ResolveReferences();
+            StartReceiver();
+            Launch();
+        }
+
+        public void StopTracking()
+        {
+            StopReceiver();
+
+            if (stopProcessOnDisable)
+            {
+                StopProcess();
+            }
+        }
+
         private void Update()
         {
             ResolveReferences();

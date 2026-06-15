@@ -18,7 +18,7 @@ namespace ShadowPrototype
         [SerializeField] private string keywordResultFormat = DefaultKeywordResultFormat;
         [SerializeField] private Font subtitleFont;
         [SerializeField, Min(0f)] private float fadeSeconds = 0.2f;
-        [SerializeField, Min(12)] private int fontSize = 46;
+        [SerializeField, Min(12)] private int fontSize = 36;
         [SerializeField, Min(0f)] private float bottomMargin = 64f;
         [SerializeField, Range(0.2f, 1f)] private float widthRatio = 0.9f;
         [SerializeField, Min(32f)] private float panelHeight = 96f;
@@ -115,6 +115,11 @@ namespace ShadowPrototype
                 message = string.Format(DefaultKeywordResultFormat, keyword.Trim());
             }
 
+            if (!CanStartSubtitleCoroutine())
+            {
+                return;
+            }
+
             subtitleRoutine = StartCoroutine(ShowSubtitleRoutine(message));
         }
 
@@ -126,6 +131,11 @@ namespace ShadowPrototype
             }
 
             StopSubtitleRoutine();
+            if (!CanStartSubtitleCoroutine())
+            {
+                return;
+            }
+
             subtitleRoutine = StartCoroutine(ShowSubtitleRoutine(message.Trim()));
         }
 
@@ -139,6 +149,12 @@ namespace ShadowPrototype
         public void HideKeywordResult()
         {
             StopSubtitleRoutine();
+            if (!CanStartSubtitleCoroutine())
+            {
+                HideImmediately();
+                return;
+            }
+
             subtitleRoutine = StartCoroutine(HideSubtitleRoutine());
         }
 
@@ -201,6 +217,11 @@ namespace ShadowPrototype
 
             StopCoroutine(subtitleRoutine);
             subtitleRoutine = null;
+        }
+
+        private bool CanStartSubtitleCoroutine()
+        {
+            return isActiveAndEnabled && gameObject.activeInHierarchy;
         }
 
         private void HideImmediately()

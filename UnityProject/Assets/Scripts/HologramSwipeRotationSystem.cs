@@ -1,6 +1,7 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 namespace ShadowPrototype
 {
@@ -16,6 +17,7 @@ namespace ShadowPrototype
         [Header("References")]
         [SerializeField] private Transform rotationTarget;
         [SerializeField] private MediaPipeUdpReceiver mediaPipeReceiver;
+        [SerializeField] private HologramVideoPanelPlayer postSpinVideoPlayer;
         [SerializeField] private string fallbackTargetName = "StarCharacter";
 
         [Header("Fingertip Swipe")]
@@ -34,7 +36,17 @@ namespace ShadowPrototype
         [SerializeField, Min(0.0f)] private float maximumSpinRotations = 5.0f;
         [SerializeField, Min(0.0f)] private float minimumReturnToZeroSpeedDegreesPerSecond = 180.0f;
 
+        [Header("Rotation Feedback")]
+        [SerializeField] private AudioSource rotationAudioSource;
+        [SerializeField, Range(0.0f, 1.0f)] private float rotationDingVolume = 0.85f;
+
         [Header("Palm Fly Away")]
+        [SerializeField] private bool playPostSpinVideoBeforeFlyAway = true;
+        [SerializeField] private string postSpinVideoRelativePath = "HologramVideos/starChar_1_2_tts.mp4";
+        [SerializeField, Min(0.0f)] private float postSpinVideoDelaySeconds = 1.0f;
+        [SerializeField] private bool replaceTargetBeforePostSpinVideo = true;
+        [SerializeField] private string postSpinReplacementResourcePath = "Models/Weeping_Star";
+        [SerializeField] private bool destroyPreviousTargetAfterReplacement = true;
         [SerializeField, Min(1.0f)] private float palmSwipeThresholdPixels = 260.0f;
         [SerializeField, Min(1.0f)] private float palmMinimumSwipeSpeedPixelsPerSecond = 850.0f;
         [SerializeField, Min(0.01f)] private float palmSwipeWindowSeconds = 0.35f;
@@ -42,6 +54,11 @@ namespace ShadowPrototype
         [SerializeField, Min(0.0f)] private float minimumPalmSpanPixels = 80.0f;
         [SerializeField, Min(0.0f)] private float flyAwayDurationSeconds = 0.65f;
         [SerializeField] private Vector3 flyAwayLocalOffset = new Vector3(-4.0f, 3.0f, 0.0f);
+
+        [Header("Fly Away Instruction")]
+        [SerializeField] private GameObject flyAwayInstructionObject;
+        [SerializeField] private Text flyAwayInstructionText;
+        [SerializeField] private string flyAwayInstructionMessage = "스와이프하여 벽으로 돌려보내기";
 
         [Header("Completion")]
         [SerializeField] private string nextMainSceneName = "Mission4";
@@ -65,10 +82,33 @@ namespace ShadowPrototype
         private float returnToZeroSpeedDegreesPerSecond;
         private Coroutine returnToZeroRoutine;
         private Coroutine flyAwayRoutine;
+        private bool postSpinVideoPlayed;
+        private bool waitingForPostSpinVideo;
+        private bool postSpinTargetReplaced;
+        private AudioClip rotationDingClip;
 
         private void Awake()
         {
             ResolveReferences();
+            SetFlyAwayInstructionVisible(false);
+        }
+
+        private void OnEnable()
+        {
+            ResolveReferences();
+
+            if (waitingForPostSpinVideo)
+            {
+                waitingForPostSpinVideo = false;
+                canAcceptFlyAwayGesture = true;
+                ResetSwipeTracking();
+                ResetPalmTracking();
+                SetFlyAwayInstructionVisible(true);
+            }
+            else
+            {
+                SetFlyAwayInstructionVisible(false);
+            }
         }
 
         private void Start()
@@ -150,6 +190,54 @@ namespace ShadowPrototype
                 {
                     mediaPipeReceiver = FindObjectOfType<MediaPipeUdpReceiver>();
                 }
+            }
+
+            if (postSpinVideoPlayer == null)
+            {
+                postSpinVideoPlayer = GetComponent<HologramVideoPanelPlayer>();
+                if (postSpinVideoPlayer == null)
+                {
+                    postSpinVideoPlayer = FindObjectOfType<HologramVideoPanelPlayer>();
+                }
+            }
+
+            if (rotationAudioSource == null)
+            {
+                rotationAudioSource = GetComponent<AudioSource>();
+            }
+
+            ResolveFlyAwayInstruction();
+        }
+
+        private void ResolveFlyAwayInstruction()
+        {
+            if (flyAwayInstructionText == null && flyAwayInstructionObject != null)
+            {
+                flyAwayInstructionText = flyAwayInstructionObject.GetComponent<Text>();
+            }
+
+            if (flyAwayInstructionObject == null && flyAwayInstructionText != null)
+            {
+                flyAwayInstructionObject = flyAwayInstructionText.gameObject;
+            }
+        }
+
+        private void SetFlyAwayInstructionVisible(bool isVisible)
+        {
+            ResolveFlyAwayInstruction();
+
+            if (flyAwayInstructionText != null)
+            {
+                flyAwayInstructionText.text = flyAwayInstructionMessage;
+            }
+
+            if (flyAwayInstructionObject != null)
+            {
+                flyAwayInstructionObject.SetActive(isVisible);
+            }
+            else if (flyAwayInstructionText != null)
+            {
+                flyAwayInstructionText.gameObject.SetActive(isVisible);
             }
         }
 
@@ -402,6 +490,7 @@ namespace ShadowPrototype
             }
 
             accumulatedSpinDegrees += spinDegrees;
+            PlayRotationDing();
             isSpinning = false;
             spinRoutine = null;
 
@@ -411,6 +500,54 @@ namespace ShadowPrototype
                 spinLocked = true;
                 StartReturnToZero(spinDegrees / duration);
             }
+        }
+
+        private void PlayRotationDing()
+        {
+            if (rotationDingVolume <= 0.0f)
+            {
+                return;
+            }
+
+            rotationAudioSource = HologramAudioPlaybackUtility.Resolve2DAudioSource(
+                this,
+                rotationAudioSource);
+
+            if (rotationDingClip == null)
+            {
+                rotationDingClip = CreateRotationDingClip();
+            }
+
+            if (rotationAudioSource != null)
+            {
+                rotationAudioSource.PlayOneShot(rotationDingClip, rotationDingVolume);
+            }
+        }
+
+        private static AudioClip CreateRotationDingClip()
+        {
+            const int sampleRate = 44100;
+            const float durationSeconds = 0.58f;
+            int sampleCount = Mathf.CeilToInt(sampleRate * durationSeconds);
+            float[] samples = new float[sampleCount];
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float time = i / (float)sampleRate;
+                float attack = Mathf.Clamp01(time / 0.018f);
+                float decay = Mathf.Exp(-5.2f * time);
+                float primary = Mathf.Sin(2.0f * Mathf.PI * 880.0f * time);
+                float overtone = 0.42f * Mathf.Sin(2.0f * Mathf.PI * 1320.0f * time);
+                float chimeDelay = Mathf.Max(0.0f, time - 0.12f);
+                float chime = time >= 0.12f
+                    ? 0.5f * Mathf.Exp(-7.0f * chimeDelay) * Mathf.Sin(2.0f * Mathf.PI * 1760.0f * chimeDelay)
+                    : 0.0f;
+                samples[i] = 0.32f * attack * ((decay * (primary + overtone)) + chime);
+            }
+
+            AudioClip clip = AudioClip.Create("Mission3RotationDing", sampleCount, 1, sampleRate, false);
+            clip.SetData(samples, 0);
+            return clip;
         }
 
         private void StartReturnToZero(float currentSpinSpeed)
@@ -467,8 +604,93 @@ namespace ShadowPrototype
             }
 
             isReturningToZero = false;
-            canAcceptFlyAwayGesture = true;
             returnToZeroRoutine = null;
+
+            if (postSpinVideoDelaySeconds > 0.0f)
+            {
+                yield return new WaitForSecondsRealtime(postSpinVideoDelaySeconds);
+            }
+
+            if (TryPlayPostSpinVideo())
+            {
+                yield break;
+            }
+
+            canAcceptFlyAwayGesture = true;
+        }
+
+        private bool TryPlayPostSpinVideo()
+        {
+            if (!playPostSpinVideoBeforeFlyAway || postSpinVideoPlayed)
+            {
+                return false;
+            }
+
+            ResolveReferences();
+            if (postSpinVideoPlayer == null)
+            {
+                return false;
+            }
+
+            postSpinVideoPlayed = true;
+            waitingForPostSpinVideo = true;
+            canAcceptFlyAwayGesture = false;
+            ResetSwipeTracking();
+            ResetPalmTracking();
+            ReplaceTargetBeforePostSpinVideo();
+            postSpinVideoPlayer.Play(postSpinVideoRelativePath);
+            return true;
+        }
+
+        private void ReplaceTargetBeforePostSpinVideo()
+        {
+            if (!replaceTargetBeforePostSpinVideo ||
+                postSpinTargetReplaced ||
+                string.IsNullOrWhiteSpace(postSpinReplacementResourcePath))
+            {
+                return;
+            }
+
+            GameObject replacementPrefab = Resources.Load<GameObject>(postSpinReplacementResourcePath);
+            if (replacementPrefab == null)
+            {
+                Debug.LogWarning($"HologramSwipeRotationSystem: replacement prefab was not found in Resources: {postSpinReplacementResourcePath}");
+                return;
+            }
+
+            Transform previousTarget = rotationTarget;
+            Transform parent = previousTarget != null ? previousTarget.parent : transform;
+            Vector3 localPosition = previousTarget != null ? previousTarget.localPosition : Vector3.zero;
+            Quaternion localRotation = previousTarget != null ? previousTarget.localRotation : Quaternion.identity;
+            Vector3 localScale = previousTarget != null ? previousTarget.localScale : Vector3.one;
+            string targetName = previousTarget != null && !string.IsNullOrWhiteSpace(previousTarget.name)
+                ? previousTarget.name
+                : fallbackTargetName;
+
+            GameObject replacement = Instantiate(replacementPrefab, parent);
+            replacement.name = string.IsNullOrWhiteSpace(targetName) ? "StarCharacter" : targetName;
+            replacement.SetActive(true);
+
+            Transform replacementTransform = replacement.transform;
+            replacementTransform.localPosition = localPosition;
+            replacementTransform.localRotation = localRotation;
+            replacementTransform.localScale = localScale;
+            rotationTarget = replacementTransform;
+            postSpinTargetReplaced = true;
+
+            if (previousTarget == null || previousTarget == replacementTransform)
+            {
+                return;
+            }
+
+            if (destroyPreviousTargetAfterReplacement)
+            {
+                Destroy(previousTarget.gameObject);
+            }
+            else
+            {
+                previousTarget.gameObject.SetActive(false);
+            }
         }
 
         private void UpdateSmoothedPalm(Vector2 palmCenter)
@@ -537,6 +759,7 @@ namespace ShadowPrototype
 
             isFlyingAway = true;
             spinLocked = true;
+            SetFlyAwayInstructionVisible(false);
             if (spinRoutine != null)
             {
                 StopCoroutine(spinRoutine);
@@ -636,6 +859,23 @@ namespace ShadowPrototype
             }
 
             return null;
+        }
+
+        private void OnDestroy()
+        {
+            if (rotationDingClip == null)
+            {
+                return;
+            }
+
+            if (Application.isPlaying)
+            {
+                Destroy(rotationDingClip);
+            }
+            else
+            {
+                DestroyImmediate(rotationDingClip);
+            }
         }
     }
 }

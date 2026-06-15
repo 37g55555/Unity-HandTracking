@@ -614,7 +614,7 @@ MonoBehaviour:
       m_Calls: []
   m_FontData:
     m_Font: {fileID: 12800000, guid: e8d2dfe9bf284ac0b8c547da48181d5d, type: 3}
-    m_FontSize: 42
+    m_FontSize: 36
     m_FontStyle: 0
     m_BestFit: 0
     m_MinSize: 4
@@ -625,7 +625,7 @@ MonoBehaviour:
     m_HorizontalOverflow: 0
     m_VerticalOverflow: 0
     m_LineSpacing: 1
-  m_Text: "\uADF8\uB9BC\uC790\uB97C \uD615\uD0DC\uC5D0 \uB9DE\uCDB0\uC8FC\uC138\uC694."
+  m_Text: "\uADF8\uB9BC\uC790\uB97C \uD615\uD0DC\uC5D0 \uB9DE\uCDB0\uBCF4\uC790."
 --- !u!1 &600000
 GameObject:
   m_ObjectHideFlags: 0
@@ -771,7 +771,7 @@ MonoBehaviour:
   introBackgroundFinalAlpha: 230
   introBackgroundTransform: {fileID: 7000001}
   introNarrationPlayer: {fileID: 600011}
-  introNarrationStepCount: 4
+  introNarrationStepCount: 5
   introBackgroundScrollTargetX: -10.42593
   introDarkRenderer: {fileID: 775658785}
   introDarkFinalAlpha: 230
@@ -786,6 +786,7 @@ MonoBehaviour:
   deformationInput: {fileID: 600005}
   interactionVisualizer: {fileID: 600006}
   mediaPipeLauncher: {fileID: 600007}
+  prewarmMediaPipeDuringIntro: 1
   createGuideOverlay: 1
   guideLineWidthPixels: 4
   guideDashLengthPixels: 12
@@ -808,15 +809,12 @@ MonoBehaviour:
   outroReturnSeconds: 2
   outroShadowStarTargetPosition: {x: 1, y: -2.8}
   outroShadowStarTargetScale: 0.6
-  outroNarrationStartDelaySeconds: 1
-  outroDarkFadeSeconds: 2
-  outroNarrationStartStepIndex: 4
-  outroNarrationStepCount: 2
+  mission2SceneTransitionDelaySeconds: 1
   matchProgressFillRect: {fileID: 500201}
   matchThresholdMarker: {fileID: 500301}
   interactionInstructionText: "\uADF8\uB9BC\uC790\uB97C \uD615\uD0DC\uC5D0 \uB9DE\uCDB0\uC8FC\uC138\uC694."
   interactionInstructionTextColor: {r: 0, g: 0, b: 0, a: 1}
-  interactionInstructionFontSize: 42
+  interactionInstructionFontSize: 36
   interactionInstructionTopMargin: 56
   interactionInstructionWidthRatio: 0.9
   interactionInstructionObject: {fileID: 500400}
@@ -971,12 +969,9 @@ MonoBehaviour:
   - audioClip: {fileID: 8300000, guid: 3534f532fc774e269d5c24441fe187aa, type: 3}
     subtitle: "\uADF8 \uB54C, \uD55C \uCABD \uBCBD\uC5D0 \uBCC4\uBE5B\uC774 \uB4DC\uB9AC\uC6E0\uC2B5\uB2C8\uB2E4."
     gapAfterSeconds: 1
-  - audioClip: {fileID: 8300000, guid: 6c93f9519cf8ad1479987bcee03783a1, type: 3}
-    subtitle: "\uC544\uCE68\uC774 \uBC1D\uACE0, \uADF8\uB9BC\uC790\uB294 \uB2E4\uC2DC
-      \uD798\uCC28\uAC8C \uCD9C\uBC1C\uD588\uC2B5\uB2C8\uB2E4."
-    gapAfterSeconds: 1
-  - audioClip: {fileID: 8300000, guid: 8cff13e65cae18745ab20336b5571f9c, type: 3}
-    subtitle: "\" \uC88B\uC544, \uB2E4\uC2DC \uAC00 \uBCFC\uAE4C? \""
+  - audioClip: {fileID: 8300000, guid: 7d489726eef6d4841a9b741379e6d567, type: 3}
+    subtitle: "\" \uC800\uAE30\uC5D0 \uBAB8\uC744 \uB9DE\uCD94\uACE0 \uC544\uCE68\uC744
+      \uAE30\uB2E4\uB824\uC57C\uACA0\uC5B4! \""
     gapAfterSeconds: 1
 --- !u!1 &7000000
 GameObject:
@@ -990,7 +985,7 @@ GameObject:
   - component: {fileID: 7000002}
   - component: {fileID: 7000003}
   m_Layer: 0
-  m_Name: Mission1Background
+  m_Name: Background
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
