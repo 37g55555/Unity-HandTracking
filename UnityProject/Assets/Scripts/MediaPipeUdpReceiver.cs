@@ -14,6 +14,8 @@ namespace ShadowPrototype
         private const int Port = 5053;
         private const float StaleAfterSeconds = 1.0f;
 
+        [SerializeField] private bool startReceiverOnStart;
+
         private readonly object dataLock = new object();
 
         private Thread receiveThread;
@@ -22,6 +24,14 @@ namespace ShadowPrototype
         private Vector3[] latestLandmarks = Array.Empty<Vector3>();
         private DateTime latestPacketUtc = DateTime.MinValue;
         private string pendingError;
+
+        private void Start()
+        {
+            if (startReceiverOnStart)
+            {
+                StartReceiver();
+            }
+        }
 
         public bool HasRecentData
         {

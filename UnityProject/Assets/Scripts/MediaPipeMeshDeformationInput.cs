@@ -40,7 +40,7 @@ namespace ShadowPrototype
         private const float DefaultPinchEnterThresholdPixels = 38.0f;
         private const float DefaultPinchExitThresholdPixels = 58.0f;
         private const float DefaultGrabActivationHoldSeconds = 0.12f;
-        private const float DefaultAffectedRadiusLocal = 0.5f;
+        private const float DefaultAffectedRadiusLocal = 0.4f;
         private const float DefaultPullStrength = 1.0f;
         private const float MaxPullDeltaPerFrame = 0.045f;
         private const float MinAffectedRadiusLocal = 0.12f;
@@ -99,6 +99,34 @@ namespace ShadowPrototype
             pullStrength = Mathf.Clamp01(pullStrength);
         }
 
+        private Camera ResolveTargetCamera()
+        {
+            if (targetCamera != null && targetCamera.isActiveAndEnabled)
+            {
+                return targetCamera;
+            }
+
+            targetCamera = Camera.main;
+            return targetCamera;
+        }
+
+        private void ResolveRuntimeReferences()
+        {
+            if (targetMeshDeformer == null)
+            {
+                targetMeshDeformer = FindObjectOfType<ShadowMeshDeformer>();
+            }
+
+            if (mediaPipeReceiver == null)
+            {
+                mediaPipeReceiver = GetComponent<MediaPipeUdpReceiver>();
+                if (mediaPipeReceiver == null)
+                {
+                    mediaPipeReceiver = FindObjectOfType<MediaPipeUdpReceiver>();
+                }
+            }
+        }
+
         public bool TryGetHandInteractionState(int handIndex, out HandInteractionSnapshot snapshot)
         {
             snapshot = default;
@@ -122,6 +150,7 @@ namespace ShadowPrototype
         private void Update()
         {
             EnsureHandStatesInitialized();
+            ResolveRuntimeReferences();
 
             if (targetMeshDeformer == null || mediaPipeReceiver == null || !targetMeshDeformer.HasMesh)
             {
@@ -554,7 +583,8 @@ namespace ShadowPrototype
         {
             localPoint = Vector2.zero;
 
-            if (targetCamera == null || targetMeshDeformer == null)
+            Camera camera = ResolveTargetCamera();
+            if (camera == null || targetMeshDeformer == null)
             {
                 return false;
             }
@@ -564,7 +594,7 @@ namespace ShadowPrototype
                 Mathf.Clamp01(trackedPoint.y / TrackedFrameHeight),
                 0.0f);
 
-            Ray ray = targetCamera.ViewportPointToRay(viewportPoint);
+            Ray ray = camera.ViewportPointToRay(viewportPoint);
             Plane meshPlane = new Plane(targetMeshDeformer.transform.forward, targetMeshDeformer.transform.position);
             if (!meshPlane.Raycast(ray, out float enter))
             {

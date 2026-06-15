@@ -6,64 +6,127 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.Networking;
+using UnityEngine.SceneManagement;
 using Debug = UnityEngine.Debug;
 
 namespace ShadowPrototype
 {
     public class PipelineManager : MonoBehaviour
     {
-        private const string DefaultCaptureCameraArguments = "--mode live --camera 0 --bg";
-        private const string DefaultHandTrackingCameraArguments = "--camera 1";
-        private const string DefaultSf3dServerArguments = "-m uvicorn app:app --host 127.0.0.1 --port 8000";
+        private const string DefaultCaptureCameraArguments = "--mode file";
+        private const string DefaultQwenServerArguments = "-m uvicorn app:app --host 127.0.0.1 --port 8000";
         private const string ShadowCaptureProcessLabel = "ShadowCapture";
-        private const string HandTrackingProcessLabel = "HandTracking";
-        private const string Sf3dServerProcessLabel = "API";
+        private const string QwenServerProcessLabel = "Qwen";
         private const string ShadowContourFileName = "shadow_contour.png";
-        private const int ExportResolution = 1024;
-        private const float Sf3dHealthCheckIntervalSeconds = 0.25f;
-        private const int Sf3dHealthRequestTimeoutSeconds = 1;
-        private const float Sf3dStartupTimeoutSeconds = 180.0f;
-        private static readonly Color ExportFillColor = Color.black;
-        private static readonly Color ExportBackgroundColor = new Color(0f, 0f, 0f, 0f);
+        private const float ContourFileSettleDelaySeconds = 0.2f;
+        private const float ContourFileReadyTimeoutSeconds = 5.0f;
+        private const float ContourPollingIntervalSeconds = 0.25f;
+        private const float QwenHealthCheckIntervalSeconds = 0.25f;
+        private const int QwenHealthRequestTimeoutSeconds = 1;
+        private const float QwenStartupTimeoutSeconds = 180.0f;
         private static readonly Vector2Int TerminalWindowOffset = new Vector2Int(40, 40);
         private static readonly Vector2Int TerminalWindowSize = new Vector2Int(980, 620);
         private static readonly Vector2Int TerminalWindowCascadeOffset = new Vector2Int(32, 32);
 
         [Header("Paths")]
-        [SerializeField] private string exportFileName = "deformed_shadow.png";
-        [SerializeField] private string pythonExecutablePath = @"D:\anaconda3\envs\artifact\python.exe";
-        [SerializeField] private string sf3dWorkingDirectory = @"D:\Unity-HandTracking\sf3d";
-        [SerializeField] private string sf3dServerArguments = DefaultSf3dServerArguments;
-        [SerializeField] private string captureWorkingDirectory = @"D:\Unity-HandTracking";
+        [SerializeField] private string pythonExecutablePath = @"C:\Users\creal\miniconda3\envs\artifact\python.exe";
+        [SerializeField] private string qwenWorkingDirectory = @"C:\capstone\Shadow-to-3D-Generator\qwen";
+        [SerializeField] private string qwenServerArguments = DefaultQwenServerArguments;
+        [SerializeField] private string captureWorkingDirectory = @"C:\capstone\Shadow-to-3D-Generator";
         [SerializeField] private string captureScriptName = @"python\ShadowMesh.py";
         [SerializeField] private string captureArguments = DefaultCaptureCameraArguments;
-        [SerializeField] private string handTrackingWorkingDirectory = @"D:\Unity-HandTracking";
-        [SerializeField] private string handTrackingScriptName = @"python\MediaPipeTracking.py";
-        [SerializeField] private string handTrackingArguments = DefaultHandTrackingCameraArguments;
 
-        [SerializeField] private SF3DGenerationClient sf3dClient;
+        [SerializeField] private QwenClient qwenClient;
         [SerializeField] private GameStateManager stateManager;
         [SerializeField] private ShadowMeshFileLoader meshFileLoader;
-        [SerializeField] private MediaPipeUdpReceiver mediaPipeReceiver;
-        [SerializeField] private ShadowMeshDeformer shadowMeshDeformer;
-        [SerializeField] private SmokeTransitionEffect smokeTransitionEffect;
+        [SerializeField] private OpeningVideoPlayer openingVideoPlayer;
+        [SerializeField] private MainSubtitleController subtitleController;
+        [SerializeField] private SoftWhiteCirclePlaneScaleAnimator mission1TransitionPlaneAnimator;
+        [SerializeField] private SceneFlowController sceneFlowController;
+        [SerializeField] private AudioSource openingSubtitleAudioSource;
+        [SerializeField] private AudioClip openingSubtitleAudioClip;
 
-        private bool handTrackingStartedForCurrentCapture;
-        private bool waitingForSmokeExit;
+        [SerializeField] private string mission1SceneName = "Mission1";
+
         private DateTime flowStartedUtc;
-        private bool sf3dServerReady;
-        private bool sf3dServerStarting;
-        private bool sf3dServerReadyLogged;
+        private bool qwenServerReady;
+        private bool qwenServerStarting;
+        private bool qwenServerReadyLogged;
+        private FileSystemWatcher contourWatcher;
+        private readonly object pendingContourLock = new object();
+        private string pendingContourPath;
+        private DateTime? minimumAcceptedContourWriteTimeUtc;
+        private DateTime lastPolledContourWriteTimeUtc = DateTime.MinValue;
+        private float nextContourPollTime;
+        private Coroutine keywordClassificationRoutine;
         private int terminalLaunchCount;
+        private bool openingSubtitleAudioStarted;
+        private float openingSubtitleAudioStartedAt;
+        private float openingSubtitleAudioDuration;
         private readonly List<LaunchedProcess> launchedProcesses = new List<LaunchedProcess>();
 
         private void Start()
         {
-            flowStartedUtc = DateTime.UtcNow;
-            bool useExistingShadowMesh = IsCaptureFileMode();
+            SubscribeEvents();
+            SetupContourWatcher();
+            StartCoroutine(PrepareQwenLabelerAtStartupRoutine());
+            StartPipeline();
+        }
 
+        private void Update()
+        {
+            PollContourFileIfNeeded();
+            StartPendingContourClassificationIfNeeded();
+        }
+
+        private void OnDisable()
+        {
+            UnsubscribeEvents();
+            DisposeContourWatcher();
+            StopOpeningSubtitleAudio();
+            StopLaunchedProcesses();
+        }
+
+        private void OnDestroy()
+        {
+            UnsubscribeEvents();
+            DisposeContourWatcher();
+            StopOpeningSubtitleAudio();
+            StopLaunchedProcesses();
+        }
+
+        private void OnApplicationQuit()
+        {
+            StopOpeningSubtitleAudio();
+            StopLaunchedProcesses();
+        }
+
+        public void StartPipeline()
+        {
+            if (stateManager == null)
+            {
+                Debug.LogWarning("PipelineManager: pipeline cannot start because GameStateManager is not assigned.");
+                return;
+            }
+
+            flowStartedUtc = DateTime.UtcNow;
+            ConfigureCaptureAcceptance(IsCaptureFileMode());
+            stateManager.ResetForCapture();
+            keywordClassificationRoutine = null;
+            lock (pendingContourLock)
+            {
+                pendingContourPath = null;
+            }
+
+            qwenClient?.ResetKeyword();
+            StopOpeningSubtitleAudio();
+
+            StartCoroutine(StartPipelineRoutine());
+        }
+
+        private void ConfigureCaptureAcceptance(bool useExistingShadowMesh)
+        {
             if (meshFileLoader != null)
             {
                 meshFileLoader.SetLoadExistingMeshOnStart(useExistingShadowMesh);
@@ -78,352 +141,487 @@ namespace ShadowPrototype
                 }
             }
 
-            SubscribeEvents();
-            StartPipeline();
-        }
-
-        private void Update()
-        {
-            if (WasExportKeyPressed())
+            if (useExistingShadowMesh)
             {
-                RequestShadowSilhouetteExport();
+                minimumAcceptedContourWriteTimeUtc = null;
+                lastPolledContourWriteTimeUtc = DateTime.MinValue;
             }
-        }
-
-        private void OnDisable()
-        {
-            UnsubscribeEvents();
-            StopLaunchedProcesses();
-        }
-
-        private void OnDestroy()
-        {
-            UnsubscribeEvents();
-            StopLaunchedProcesses();
-        }
-
-        private void OnApplicationQuit()
-        {
-            StopLaunchedProcesses();
-        }
-
-        public void StartPipeline()
-        {
-            if (stateManager == null)
+            else
             {
-                Debug.LogWarning("PipelineManager: pipeline cannot start because GameStateManager is not assigned.");
-                return;
+                minimumAcceptedContourWriteTimeUtc = flowStartedUtc;
+                string contourPath = GetShadowContourPath();
+                lastPolledContourWriteTimeUtc = File.Exists(contourPath)
+                    ? File.GetLastWriteTimeUtc(contourPath)
+                    : DateTime.MinValue;
             }
-
-            stateManager.ResetForCapture();
-            handTrackingStartedForCurrentCapture = false;
-            waitingForSmokeExit = false;
-            sf3dClient?.ResetSilhouetteLabel();
-
-            StartCoroutine(StartPipelineRoutine());
         }
 
         private IEnumerator StartPipelineRoutine()
         {
-            yield return StartSf3dServerRoutine();
-            if (sf3dServerReady && sf3dClient != null)
-            {
-                sf3dClient.WarmupLabeler();
-            }
+            stateManager.OnOpeningStarted();
+            yield return PlayOpeningVideoRoutine();
 
             bool isCaptureFileMode = IsCaptureFileMode();
             if (!isCaptureFileMode && !IsCameraAvailable(GetCaptureCameraId()))
             {
-                Debug.LogWarning("PipelineManager: ShadowMesh camera was not found; capture process will not start.");
-                stateManager.OnShadowMeshLoadFailed("ShadowMesh camera was not found.");
-                yield break;
+                Debug.LogWarning("PipelineManager: ShadowMesh camera was not reported by Unity; launching capture process anyway.");
             }
 
             if (isCaptureFileMode)
             {
+                Debug.Log("PipelineManager: opening complete; loading existing shadow mesh.");
                 meshFileLoader?.LoadExistingMesh();
+                string contourPath = GetShadowContourPath();
+                if (File.Exists(contourPath))
+                {
+                    QueueContourClassification(contourPath);
+                }
+                else
+                {
+                    ShowPipelineStatus($"file mode contour PNG was not found: {contourPath}");
+                }
             }
             else
             {
-                stateManager.OnShadowCaptureStarted();
+                Debug.Log("PipelineManager: opening complete; launching shadow capture process.");
                 LaunchCaptureProcess();
             }
+
+        }
+
+        private IEnumerator PrepareQwenLabelerAtStartupRoutine()
+        {
+            yield return EnsureQwenServerReady();
+            if (!qwenServerReady || qwenClient == null)
+            {
+                yield break;
+            }
+
+            qwenClient.WarmupLabeler();
+        }
+
+        private IEnumerator PlayOpeningVideoRoutine()
+        {
+            if (openingVideoPlayer == null)
+            {
+                openingVideoPlayer = GetComponent<OpeningVideoPlayer>();
+            }
+
+            if (openingVideoPlayer == null)
+            {
+                openingVideoPlayer = FindObjectOfType<OpeningVideoPlayer>();
+            }
+
+            if (openingVideoPlayer == null)
+            {
+                Debug.LogWarning("PipelineManager: OpeningVideoPlayer is not assigned; skipping opening video.");
+                yield break;
+            }
+
+            yield return openingVideoPlayer.PlayOpeningRoutine();
         }
 
         private void SubscribeEvents()
         {
-            if (stateManager != null)
+            if (qwenClient != null)
             {
-                stateManager.ShadowMeshLoaded -= HandleShadowMeshLoaded;
-                stateManager.ShadowMeshLoaded += HandleShadowMeshLoaded;
+                qwenClient.KeywordClassified -= HandleKeywordClassified;
+                qwenClient.KeywordClassified += HandleKeywordClassified;
             }
-
-            if (sf3dClient != null)
-            {
-                sf3dClient.TextureGenerated -= HandleTextureGenerated;
-                sf3dClient.TextureGenerated += HandleTextureGenerated;
-                sf3dClient.GlbGenerated -= HandleGlbGenerated;
-                sf3dClient.GlbGenerated += HandleGlbGenerated;
-                sf3dClient.SilhouetteClassified -= HandleSilhouetteClassified;
-                sf3dClient.SilhouetteClassified += HandleSilhouetteClassified;
-            }
-
-            SubscribeSmokeTransitionExit();
         }
 
         private void UnsubscribeEvents()
         {
-            if (stateManager != null)
+            if (qwenClient != null)
             {
-                stateManager.ShadowMeshLoaded -= HandleShadowMeshLoaded;
+                qwenClient.KeywordClassified -= HandleKeywordClassified;
             }
-
-            if (sf3dClient != null)
-            {
-                sf3dClient.TextureGenerated -= HandleTextureGenerated;
-                sf3dClient.GlbGenerated -= HandleGlbGenerated;
-                sf3dClient.SilhouetteClassified -= HandleSilhouetteClassified;
-            }
-
-            UnsubscribeSmokeTransitionExit();
         }
 
-        private void HandleShadowMeshLoaded(string path, int vertexCount, int boundaryCount)
+        private IEnumerator ClassifyKeywordThenStartMission1Routine(string contourPath)
         {
-            if (handTrackingStartedForCurrentCapture)
+            yield return WaitForContourFileReady(contourPath);
+            if (!ShouldAcceptContour(contourPath))
             {
-                return;
+                ShowPipelineStatus($"Qwen keyword classification skipped because contour PNG is not ready: {contourPath}");
+                keywordClassificationRoutine = null;
+                yield break;
             }
 
-            StartHandTrackingIfNeeded();
-        }
-
-        private void StartHandTrackingIfNeeded()
-        {
-            if (handTrackingStartedForCurrentCapture)
+            yield return EnsureQwenLabelerReady();
+            if (!qwenServerReady)
             {
-                return;
+                ShowPipelineStatus("Qwen API is not ready.");
+                keywordClassificationRoutine = null;
+                yield break;
             }
 
-            handTrackingStartedForCurrentCapture = true;
-            bool shouldStartHandTracking = IsCameraAvailable(GetHandTrackingCameraId());
-
-            if (shouldStartHandTracking)
+            if (qwenClient == null)
             {
-                LaunchHandTrackingProcess();
+                ShowPipelineStatus("Qwen client is not assigned.");
+                keywordClassificationRoutine = null;
+                yield break;
+            }
 
-                if (mediaPipeReceiver != null)
-                {
-                    mediaPipeReceiver.StartReceiver();
-                }
-            }
-            else
+            if (!qwenClient.IsLabelerReady)
             {
-                Debug.Log("PipelineManager: MediaPipe camera was not found; skipping hand tracking.");
+                ShowPipelineStatus("Qwen labeler warmup failed; keyword classification was skipped.");
+                keywordClassificationRoutine = null;
+                yield break;
             }
+
+            qwenClient.ClassifySilhouette(contourPath);
+            while (qwenClient.IsClassifying)
+            {
+                yield return null;
+            }
+
+            if (!qwenClient.HasKeyword)
+            {
+                ShowPipelineStatus("Qwen keyword classification did not return a keyword.");
+                keywordClassificationRoutine = null;
+                yield break;
+            }
+
+            yield return WaitForKeywordSubtitleTimingRoutine();
+
+            yield return HideKeywordSubtitleRoutine();
+            yield return PlayMission1TransitionPlaneRoutine();
 
             stateManager?.OnMediaPipeTrackingStarted();
-            StartCoroutine(ClassifySilhouetteWhenSf3dReady());
+            LoadMission1Scene();
+            keywordClassificationRoutine = null;
         }
 
-        private void RequestShadowSilhouetteExport()
+        private IEnumerator HideKeywordSubtitleRoutine()
         {
-            if (stateManager == null ||
-                stateManager.CurrentState != GameStateManager.PipelineState.MediaPipeTracking)
+            if (subtitleController == null)
             {
-                return;
+                subtitleController = FindObjectOfType<MainSubtitleController>();
             }
 
-            if (sf3dClient != null && sf3dClient.IsClassifying)
+            if (subtitleController == null)
             {
-                ShowExportStatus("Silhouette classification is still running.");
-                return;
+                yield break;
             }
 
-            if (sf3dClient != null && !sf3dClient.HasSilhouetteLabel)
-            {
-                ShowExportStatus("Silhouette classification is not ready.");
-                return;
-            }
-
-            if (sf3dClient != null &&
-                sf3dClient.IsRunning)
-            {
-                ShowExportStatus("SF3D generation is already running.");
-                return;
-            }
-
-            ExportCurrentShadowSilhouette();
+            yield return subtitleController.HideKeywordResultAndWait();
         }
 
-        private void ExportCurrentShadowSilhouette()
+        private IEnumerator PlayMission1TransitionPlaneRoutine()
         {
-            stateManager?.OnMeshExtractionStarted();
-            StopHandTrackingProcess();
-
-            if (shadowMeshDeformer == null || !shadowMeshDeformer.HasMesh)
+            if (mission1TransitionPlaneAnimator == null)
             {
-                ShowExportStatus("Shadow mesh is not loaded.");
-                Debug.LogWarning("PipelineManager: shadow export skipped because no mesh is loaded.");
-                return;
+                mission1TransitionPlaneAnimator = FindObjectOfType<SoftWhiteCirclePlaneScaleAnimator>();
             }
 
-            string outputPath = GetSilhouetteExportPath();
-            if (sf3dClient == null)
+            if (mission1TransitionPlaneAnimator == null)
             {
-                ShowExportStatus("SF3D client is not assigned.");
-                return;
+                yield break;
             }
 
-            if (shadowMeshDeformer.TryEncodeSilhouetteToPng(
-                    out byte[] pngBytes,
-                    ExportResolution,
-                    ExportFillColor,
-                    ExportBackgroundColor))
+            mission1TransitionPlaneAnimator.SetDestroyTargetPlaneOnTargetScaleReached(false);
+            yield return mission1TransitionPlaneAnimator.PlayAndWaitRoutine();
+            mission1TransitionPlaneAnimator.KeepTargetPlaneUntilNextSceneFirstFrame();
+        }
+
+        private void LoadMission1Scene()
+        {
+            if (sceneFlowController == null)
             {
-                if (!TrySaveSilhouettePng(outputPath, pngBytes))
+                sceneFlowController = FindObjectOfType<SceneFlowController>();
+            }
+
+            if (sceneFlowController == null)
+            {
+                if (!string.IsNullOrWhiteSpace(mission1SceneName))
                 {
-                    ShowExportStatus("Shadow image save failed.");
-                    return;
+                    SceneManager.LoadScene(mission1SceneName);
                 }
 
-                ShowExportStatus($"Saved shadow image: {outputPath}");
-                StartCoroutine(GenerateFromPngBytesWhenSf3dReady(pngBytes));
                 return;
             }
 
-            ShowExportStatus("Shadow image export failed.");
+            sceneFlowController.LoadScene(mission1SceneName);
         }
 
-        private IEnumerator ClassifySilhouetteWhenSf3dReady()
+        private void HandleKeywordClassified(string keyword)
         {
-            yield return EnsureSf3dServerReady();
-            if (!sf3dServerReady)
+            Debug.Log($"PipelineManager: Qwen keyword ready: {keyword}");
+            stateManager?.SetKeyword(keyword);
+            PlayOpeningSubtitleAudio();
+        }
+
+        private IEnumerator WaitForKeywordSubtitleTimingRoutine()
+        {
+            if (!openingSubtitleAudioStarted)
             {
-                ShowExportStatus("API is not ready.");
+                PlayOpeningSubtitleAudio();
+            }
+
+            if (!openingSubtitleAudioStarted || openingSubtitleAudioDuration <= 0.0f)
+            {
                 yield break;
             }
 
-            if (sf3dClient == null)
+            float elapsedSinceAudioStarted = Time.realtimeSinceStartup - openingSubtitleAudioStartedAt;
+            float waitSeconds = Mathf.Max(0.0f, openingSubtitleAudioDuration - elapsedSinceAudioStarted);
+            if (waitSeconds > 0.0f)
             {
-                ShowExportStatus("SF3D client is not assigned.");
-                yield break;
-            }
-
-            while (sf3dClient.IsLabelerWarmingUp)
-            {
-                yield return null;
-            }
-
-            string contourPath = GetShadowContourPath();
-            sf3dClient.ClassifySilhouette(contourPath);
-        }
-
-        private IEnumerator GenerateFromPngBytesWhenSf3dReady(byte[] pngBytes)
-        {
-            yield return EnsureSf3dServerReady();
-            if (!sf3dServerReady)
-            {
-                ShowExportStatus("API is not ready.");
-                yield break;
-            }
-
-            if (sf3dClient == null)
-            {
-                ShowExportStatus("SF3D client is not assigned.");
-                yield break;
-            }
-
-            while (sf3dClient.IsTextureWarmingUp)
-            {
-                yield return null;
-            }
-
-            sf3dClient.GenerateFromPngBytes(pngBytes, exportFileName);
-        }
-
-        private void HandleTextureGenerated(string texturePath)
-        {
-            Debug.Log($"PipelineManager: texture generated, starting 3D reconstruction: {texturePath}");
-            stateManager?.OnReconstructionStarted();
-        }
-
-        private bool TrySaveSilhouettePng(string outputPath, byte[] pngBytes)
-        {
-            try
-            {
-                string outputDirectory = Path.GetDirectoryName(outputPath);
-                if (!string.IsNullOrEmpty(outputDirectory))
-                {
-                    Directory.CreateDirectory(outputDirectory);
-                }
-
-                File.WriteAllBytes(outputPath, pngBytes);
-                return true;
-            }
-            catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException || exception is ArgumentException)
-            {
-                Debug.LogWarning($"PipelineManager: shadow image save failed: {exception.Message}");
-                return false;
+                yield return new WaitForSecondsRealtime(waitSeconds);
             }
         }
 
-        private void HandleGlbGenerated(string glbPath)
+        private void PlayOpeningSubtitleAudio()
         {
-            bool shouldWaitForSmokeExit = smokeTransitionEffect != null && smokeTransitionEffect.isActiveAndEnabled;
-            waitingForSmokeExit = shouldWaitForSmokeExit;
-            stateManager?.OnHologramOutputStarted();
-
-            if (!shouldWaitForSmokeExit)
-            {
-                sf3dClient?.LoadTargetSceneAfterGeneration();
-            }
-        }
-
-        private void HandleSmokeExitCompleted()
-        {
-            if (!waitingForSmokeExit)
+            if (openingSubtitleAudioClip == null || openingSubtitleAudioStarted)
             {
                 return;
             }
 
-            waitingForSmokeExit = false;
-            sf3dClient?.LoadTargetSceneAfterGeneration();
-        }
-
-        private void SubscribeSmokeTransitionExit()
-        {
-            if (smokeTransitionEffect == null)
+            AudioSource audioSource = ResolveOpeningSubtitleAudioSource();
+            if (audioSource == null)
             {
                 return;
             }
 
-            smokeTransitionEffect.ExitCompleted -= HandleSmokeExitCompleted;
-            smokeTransitionEffect.ExitCompleted += HandleSmokeExitCompleted;
-        }
-
-        private void UnsubscribeSmokeTransitionExit()
-        {
-            if (smokeTransitionEffect == null)
+            if (openingSubtitleAudioClip.loadState != AudioDataLoadState.Loaded)
             {
-                return;
+                openingSubtitleAudioClip.LoadAudioData();
             }
 
-            smokeTransitionEffect.ExitCompleted -= HandleSmokeExitCompleted;
+            audioSource.Stop();
+            audioSource.clip = openingSubtitleAudioClip;
+            audioSource.Play();
+
+            openingSubtitleAudioStarted = true;
+            openingSubtitleAudioStartedAt = Time.realtimeSinceStartup;
+            openingSubtitleAudioDuration = GetAudioClipDuration(openingSubtitleAudioClip, audioSource);
         }
 
-        private void HandleSilhouetteClassified(string label)
+        private AudioSource ResolveOpeningSubtitleAudioSource()
         {
-            Debug.Log($"PipelineManager: silhouette label ready for texture prompt: {label}");
-            if (sf3dClient != null && !sf3dClient.IsRunning)
+            if (openingSubtitleAudioSource == null)
             {
-                sf3dClient.WarmupTexturePipeline();
+                openingSubtitleAudioSource = GetComponent<AudioSource>();
             }
+
+            if (openingSubtitleAudioSource == null)
+            {
+                openingSubtitleAudioSource = gameObject.AddComponent<AudioSource>();
+            }
+
+            openingSubtitleAudioSource.playOnAwake = false;
+            openingSubtitleAudioSource.loop = false;
+            openingSubtitleAudioSource.spatialBlend = 0.0f;
+            return openingSubtitleAudioSource;
+        }
+
+        private void StopOpeningSubtitleAudio()
+        {
+            if (openingSubtitleAudioSource != null && openingSubtitleAudioSource.isPlaying)
+            {
+                openingSubtitleAudioSource.Stop();
+            }
+
+            openingSubtitleAudioStarted = false;
+            openingSubtitleAudioStartedAt = 0.0f;
+            openingSubtitleAudioDuration = 0.0f;
+        }
+
+        private static float GetAudioClipDuration(AudioClip clip, AudioSource audioSource)
+        {
+            if (clip == null)
+            {
+                return 0.0f;
+            }
+
+            float pitch = audioSource != null ? Mathf.Abs(audioSource.pitch) : 1.0f;
+            return clip.length / Mathf.Max(0.01f, pitch);
         }
 
         private void LaunchCaptureProcess()
         {
             LaunchPythonScriptInTerminal(ShadowCaptureProcessLabel, captureWorkingDirectory, captureScriptName, captureArguments);
+        }
+
+        private void SetupContourWatcher()
+        {
+            DisposeContourWatcher();
+
+            string outputDirectory = GetShadowOutputDirectory();
+            if (string.IsNullOrWhiteSpace(outputDirectory))
+            {
+                Debug.LogWarning("PipelineManager: shadow output directory is empty; contour watcher was not started.");
+                return;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(outputDirectory);
+                contourWatcher = new FileSystemWatcher(outputDirectory, ShadowContourFileName)
+                {
+                    IncludeSubdirectories = false,
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.Size
+                };
+                contourWatcher.Changed += HandleContourFileEvent;
+                contourWatcher.Created += HandleContourFileEvent;
+                contourWatcher.Renamed += HandleContourFileRenamed;
+                contourWatcher.EnableRaisingEvents = true;
+                Debug.Log($"PipelineManager: watching contour PNG at {Path.Combine(outputDirectory, ShadowContourFileName)}");
+            }
+            catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException || exception is ArgumentException)
+            {
+                Debug.LogWarning($"PipelineManager: contour watcher could not be started: {exception.Message}");
+            }
+        }
+
+        private void DisposeContourWatcher()
+        {
+            if (contourWatcher == null)
+            {
+                return;
+            }
+
+            contourWatcher.EnableRaisingEvents = false;
+            contourWatcher.Changed -= HandleContourFileEvent;
+            contourWatcher.Created -= HandleContourFileEvent;
+            contourWatcher.Renamed -= HandleContourFileRenamed;
+            contourWatcher.Dispose();
+            contourWatcher = null;
+        }
+
+        private void HandleContourFileEvent(object sender, FileSystemEventArgs eventArgs)
+        {
+            QueueContourClassification(eventArgs.FullPath);
+        }
+
+        private void HandleContourFileRenamed(object sender, RenamedEventArgs eventArgs)
+        {
+            QueueContourClassification(eventArgs.FullPath);
+        }
+
+        private void QueueContourClassification(string contourPath)
+        {
+            if (keywordClassificationRoutine != null)
+            {
+                return;
+            }
+
+            if (!ShouldAcceptContour(contourPath))
+            {
+                return;
+            }
+
+            lock (pendingContourLock)
+            {
+                pendingContourPath = contourPath;
+            }
+        }
+
+        private void StartPendingContourClassificationIfNeeded()
+        {
+            if (keywordClassificationRoutine != null ||
+                qwenClient == null ||
+                qwenClient.HasKeyword)
+            {
+                return;
+            }
+
+            string contourPath = null;
+            lock (pendingContourLock)
+            {
+                if (!string.IsNullOrEmpty(pendingContourPath))
+                {
+                    contourPath = pendingContourPath;
+                    pendingContourPath = null;
+                }
+            }
+
+            if (string.IsNullOrEmpty(contourPath))
+            {
+                return;
+            }
+
+            Debug.Log($"PipelineManager: contour PNG ready for Qwen: {contourPath}");
+            keywordClassificationRoutine = StartCoroutine(ClassifyKeywordThenStartMission1Routine(contourPath));
+        }
+
+        private void PollContourFileIfNeeded()
+        {
+            if (Time.unscaledTime < nextContourPollTime)
+            {
+                return;
+            }
+
+            nextContourPollTime = Time.unscaledTime + ContourPollingIntervalSeconds;
+
+            string contourPath = GetShadowContourPath();
+            if (!ShouldAcceptContour(contourPath))
+            {
+                return;
+            }
+
+            DateTime writeTimeUtc = File.GetLastWriteTimeUtc(contourPath);
+            if (writeTimeUtc <= lastPolledContourWriteTimeUtc)
+            {
+                return;
+            }
+
+            lastPolledContourWriteTimeUtc = writeTimeUtc;
+            QueueContourClassification(contourPath);
+        }
+
+        private IEnumerator WaitForContourFileReady(string contourPath)
+        {
+            float deadline = Time.realtimeSinceStartup + ContourFileReadyTimeoutSeconds;
+            long lastLength = -1;
+
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                if (ShouldAcceptContour(contourPath))
+                {
+                    long currentLength = new FileInfo(contourPath).Length;
+                    if (currentLength > 0 && currentLength == lastLength)
+                    {
+                        yield break;
+                    }
+
+                    lastLength = currentLength;
+                }
+
+                yield return new WaitForSecondsRealtime(ContourFileSettleDelaySeconds);
+            }
+        }
+
+        private bool ShouldAcceptContour(string contourPath)
+        {
+            if (string.IsNullOrWhiteSpace(contourPath) || !File.Exists(contourPath))
+            {
+                return false;
+            }
+
+            FileInfo contourFile;
+            try
+            {
+                contourFile = new FileInfo(contourPath);
+            }
+            catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException || exception is ArgumentException)
+            {
+                return false;
+            }
+
+            if (!contourFile.Exists || contourFile.Length <= 0)
+            {
+                return false;
+            }
+
+            if (!minimumAcceptedContourWriteTimeUtc.HasValue)
+            {
+                return true;
+            }
+
+            return contourFile.LastWriteTimeUtc >= minimumAcceptedContourWriteTimeUtc.Value;
         }
 
         private bool IsCaptureFileMode()
@@ -439,11 +637,6 @@ namespace ShadowPrototype
         private int GetCaptureCameraId()
         {
             return ParseCameraId(captureArguments, 0);
-        }
-
-        private int GetHandTrackingCameraId()
-        {
-            return ParseCameraId(handTrackingArguments, 1);
         }
 
         private static int ParseCameraId(string arguments, int defaultCameraId)
@@ -481,88 +674,105 @@ namespace ShadowPrototype
             return cameraId >= 0 && cameraId < devices.Length;
         }
 
-        private void LaunchHandTrackingProcess()
+        private IEnumerator EnsureQwenLabelerReady()
         {
-            LaunchPythonScriptInTerminal(HandTrackingProcessLabel, handTrackingWorkingDirectory, handTrackingScriptName, handTrackingArguments);
-            StartCoroutine(RestoreUnityWindowFocusRoutine());
+            yield return EnsureQwenServerReady();
+            if (!qwenServerReady || qwenClient == null)
+            {
+                yield break;
+            }
+
+            if (!qwenClient.IsLabelerReady && !qwenClient.IsLabelerWarmingUp)
+            {
+                qwenClient.WarmupLabeler();
+            }
+
+            while (qwenClient.IsLabelerWarmingUp)
+            {
+                yield return null;
+            }
         }
 
-        private IEnumerator StartSf3dServerRoutine()
+        private IEnumerator StartQwenServerRoutine()
         {
-            if (sf3dClient == null)
+            if (qwenClient == null)
             {
                 yield break;
             }
 
-            if (sf3dServerStarting)
+            if (qwenServerStarting)
             {
-                yield return WaitForSf3dServerReady();
+                while (qwenServerStarting && !qwenServerReady)
+                {
+                    yield return null;
+                }
+
                 yield break;
             }
 
-            sf3dServerStarting = true;
-            yield return CheckSf3dServerReady();
-            if (sf3dServerReady)
+            qwenServerStarting = true;
+            yield return CheckQwenServerReady();
+            if (qwenServerReady)
             {
-                sf3dServerStarting = false;
+                qwenServerStarting = false;
                 yield break;
             }
 
-            LaunchPythonCommandInTerminal(Sf3dServerProcessLabel, sf3dWorkingDirectory, sf3dServerArguments);
-            yield return WaitForSf3dServerReady();
-            sf3dServerStarting = false;
+            LaunchPythonCommandInTerminal(QwenServerProcessLabel, qwenWorkingDirectory, qwenServerArguments);
+            yield return WaitForQwenServerReady();
+            qwenServerStarting = false;
         }
 
-        private IEnumerator EnsureSf3dServerReady()
+        private IEnumerator EnsureQwenServerReady()
         {
-            if (sf3dServerReady)
+            if (qwenServerReady)
             {
                 yield break;
             }
 
-            yield return StartSf3dServerRoutine();
+            yield return StartQwenServerRoutine();
         }
 
-        private IEnumerator WaitForSf3dServerReady()
+        private IEnumerator WaitForQwenServerReady()
         {
             float startedAt = Time.realtimeSinceStartup;
-            while (Time.realtimeSinceStartup - startedAt < Sf3dStartupTimeoutSeconds)
+            while (Time.realtimeSinceStartup - startedAt < QwenStartupTimeoutSeconds)
             {
-                yield return CheckSf3dServerReady();
-                if (sf3dServerReady)
+                yield return CheckQwenServerReady();
+                if (qwenServerReady)
                 {
                     yield break;
                 }
 
-                yield return new WaitForSecondsRealtime(Sf3dHealthCheckIntervalSeconds);
+                yield return new WaitForSecondsRealtime(QwenHealthCheckIntervalSeconds);
             }
 
-            Debug.LogWarning("PipelineManager: API did not respond before timeout.");
+            Debug.LogWarning("PipelineManager: Qwen API did not respond before timeout.");
         }
 
-        private IEnumerator CheckSf3dServerReady()
+        private IEnumerator CheckQwenServerReady()
         {
-            string healthUrl = $"{sf3dClient.BaseUrl.TrimEnd('/')}/health";
+            string healthUrl = $"{qwenClient.BaseUrl.TrimEnd('/')}/health";
             using UnityWebRequest request = UnityWebRequest.Get(healthUrl);
-            request.timeout = Sf3dHealthRequestTimeoutSeconds;
+            request.timeout = QwenHealthRequestTimeoutSeconds;
             yield return request.SendWebRequest();
 
-            sf3dServerReady = request.result == UnityWebRequest.Result.Success;
-            if (sf3dServerReady)
+            qwenServerReady = request.result == UnityWebRequest.Result.Success;
+            if (qwenServerReady)
             {
-                LogSf3dServerReadyOnce();
+                LogQwenServerReadyOnce();
             }
         }
 
-        private void LogSf3dServerReadyOnce()
+        private void LogQwenServerReadyOnce()
         {
-            if (sf3dServerReadyLogged)
+            if (qwenServerReadyLogged)
             {
                 return;
             }
 
-            sf3dServerReadyLogged = true;
-            Debug.Log("PipelineManager: API is ready.");
+            qwenServerReadyLogged = true;
+            Debug.Log("PipelineManager: Qwen API is ready.");
         }
 
         private void LaunchPythonScriptInTerminal(
@@ -734,12 +944,6 @@ namespace ShadowPrototype
 #endif
         }
 
-        private void StopHandTrackingProcess()
-        {
-            mediaPipeReceiver?.StopReceiver();
-            StopLaunchedProcesses(HandTrackingProcessLabel);
-        }
-
         private void StopLaunchedProcesses()
         {
             StopLaunchedProcesses(null);
@@ -751,7 +955,7 @@ namespace ShadowPrototype
             {
                 LaunchedProcess launchedProcess = launchedProcesses[index];
                 if (string.IsNullOrEmpty(processLabel) &&
-                    string.Equals(launchedProcess.Label, Sf3dServerProcessLabel, StringComparison.Ordinal))
+                    string.Equals(launchedProcess.Label, QwenServerProcessLabel, StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -810,35 +1014,17 @@ namespace ShadowPrototype
             taskkill?.WaitForExit(2000);
         }
 
-        private string GetSilhouetteExportPath()
-        {
-            string baseDirectory = captureWorkingDirectory;
-
-            string outputDirectory = Path.Combine(baseDirectory, "output", "sf3d");
-            return Path.Combine(outputDirectory, exportFileName);
-        }
-
         private string GetShadowContourPath()
         {
-            string baseDirectory = captureWorkingDirectory;
-
-            string outputDirectory = Path.Combine(baseDirectory, "output", "shadowmesh");
-            return Path.Combine(outputDirectory, ShadowContourFileName);
+            return Path.Combine(GetShadowOutputDirectory(), ShadowContourFileName);
         }
 
-        private static bool WasExportKeyPressed()
+        private string GetShadowOutputDirectory()
         {
-            Keyboard keyboard = Keyboard.current;
-            if (keyboard == null)
-            {
-                return false;
-            }
-
-            return keyboard.enterKey.wasPressedThisFrame ||
-                   keyboard.numpadEnterKey.wasPressedThisFrame;
+            return Path.GetFullPath(Path.Combine(captureWorkingDirectory, "output", "shadowmesh"));
         }
 
-        private void ShowExportStatus(string message)
+        private void ShowPipelineStatus(string message)
         {
             Debug.Log($"PipelineManager: {message}");
         }

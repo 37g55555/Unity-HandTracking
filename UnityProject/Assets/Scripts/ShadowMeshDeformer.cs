@@ -110,6 +110,26 @@ namespace ShadowPrototype
             return false;
         }
 
+        public bool TryGetCurrentLocalTriangles(out Vector2[] vertices2D, out int[] triangles)
+        {
+            vertices2D = Array.Empty<Vector2>();
+            triangles = Array.Empty<int>();
+
+            if (!HasMesh)
+            {
+                return false;
+            }
+
+            vertices2D = new Vector2[workingVertices.Length];
+            for (int i = 0; i < workingVertices.Length; i++)
+            {
+                vertices2D[i] = GetCurrentVertex2D(i);
+            }
+
+            triangles = (int[])GetActiveTriangles().Clone();
+            return true;
+        }
+
         public bool TryGetNearestBoundaryVertex(
             Vector2 localPoint,
             out int boundaryArrayIndex,
@@ -231,7 +251,6 @@ namespace ShadowPrototype
 
             float radiusSquared = radius * radius;
             bool affected = false;
-
             for (int i = 0; i < workingVertices.Length; i++)
             {
                 Vector2 vertex = GetCurrentVertex2D(i);
@@ -254,6 +273,50 @@ namespace ShadowPrototype
             }
 
             meshDirty = true;
+            return true;
+        }
+
+        public bool SetRuntimeMeshVertices(Vector3[] localVertices, bool forceColliderRefresh = false)
+        {
+            if (!HasMesh || localVertices == null || localVertices.Length != workingVertices.Length)
+            {
+                return false;
+            }
+
+            baseVertices = (Vector3[])localVertices.Clone();
+            workingVertices = (Vector3[])localVertices.Clone();
+
+            if (persistentOffsets == null || persistentOffsets.Length != workingVertices.Length)
+            {
+                persistentOffsets = new Vector3[workingVertices.Length];
+            }
+            else
+            {
+                Array.Clear(persistentOffsets, 0, persistentOffsets.Length);
+            }
+
+            if (transientOffsets == null || transientOffsets.Length != workingVertices.Length)
+            {
+                transientOffsets = new Vector3[workingVertices.Length];
+            }
+            else
+            {
+                Array.Clear(transientOffsets, 0, transientOffsets.Length);
+            }
+
+            runtimeMesh.vertices = workingVertices;
+            runtimeMesh.triangles = GetActiveTriangles();
+            runtimeMesh.RecalculateBounds();
+            runtimeMesh.RecalculateNormals();
+
+            if (meshCollider != null && forceColliderRefresh)
+            {
+                meshCollider.sharedMesh = null;
+                meshCollider.sharedMesh = runtimeMesh;
+                colliderRefreshTimer = ColliderRefreshInterval;
+            }
+
+            meshDirty = false;
             return true;
         }
 

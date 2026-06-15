@@ -62,5 +62,23 @@ namespace ShadowPrototype
             transform.localPosition = new Vector3(targetLocalPosition.x, targetLocalPosition.y, transform.localPosition.z);
             transform.localScale = new Vector3(rootScale.x, rootScale.y, transform.localScale.z);
         }
+
+        public void CenterMeshInCamera(ShadowMeshDeformer meshDeformer, Camera overlayCamera)
+        {
+            if (meshDeformer == null || overlayCamera == null || !overlayCamera.orthographic || !meshDeformer.HasMesh)
+            {
+                return;
+            }
+
+            Bounds meshBounds = meshDeformer.GetWorldBounds();
+            float planeDistance = Mathf.Abs(Vector3.Dot(
+                meshBounds.center - overlayCamera.transform.position,
+                overlayCamera.transform.forward));
+            planeDistance = Mathf.Max(overlayCamera.nearClipPlane, planeDistance);
+
+            Vector3 cameraCenter = overlayCamera.ViewportToWorldPoint(new Vector3(0.5f, 0.5f, planeDistance));
+            Vector3 offset = cameraCenter - meshBounds.center;
+            transform.position += offset;
+        }
     }
 }

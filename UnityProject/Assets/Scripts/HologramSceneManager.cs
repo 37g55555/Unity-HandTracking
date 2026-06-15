@@ -1,21 +1,14 @@
-using System.Collections;
 using ShadowPrototype;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 public class HologramSceneManager : MonoBehaviour
 {
-    private const string ReturnSceneName = "Main";
-    private const int TargetDisplayIndex = 0;
+    private const int TargetDisplayIndex = DisplayRoutingSettings.HologramUnityDisplayIndex;
     private const string HologramCanvasName = "HologramCanvas";
     private static readonly Vector3 SceneWorldOffset = new Vector3(50f, 0f, 0f);
 
-    [SerializeField] private string returnShrinkTargetName = "SoftWhiteCirclePlane";
-    [SerializeField, Min(0f)] private float returnShrinkDurationSeconds = 2f;
-
-    private bool isClosing;
     private int activeTargetDisplay;
     private Vector2Int lastLayoutSize;
 
@@ -69,55 +62,6 @@ public class HologramSceneManager : MonoBehaviour
     private void Update()
     {
         ApplyHologramCanvasLayoutIfNeeded(force: false);
-
-        Keyboard keyboard = Keyboard.current;
-        if (keyboard == null)
-        {
-            return;
-        }
-
-        if (keyboard.enterKey.wasPressedThisFrame ||
-            keyboard.numpadEnterKey.wasPressedThisFrame)
-        {
-            if (isClosing)
-            {
-                return;
-            }
-
-            isClosing = true;
-            StartCoroutine(ReturnToMainRoutine());
-        }
-    }
-
-    private IEnumerator ReturnToMainRoutine()
-    {
-        Transform shrinkTarget = FindTransformInLoadedScenes(returnShrinkTargetName);
-        if (shrinkTarget == null)
-        {
-            Debug.LogWarning($"HologramSceneManager: return shrink target was not found: {returnShrinkTargetName}");
-            SceneManager.LoadScene(ReturnSceneName, LoadSceneMode.Single);
-            yield break;
-        }
-
-        Vector3 startScale = shrinkTarget.localScale;
-        ShadowPrototype.SoftWhiteCirclePlaneScaleAnimator scaleAnimator =
-            shrinkTarget.GetComponent<ShadowPrototype.SoftWhiteCirclePlaneScaleAnimator>();
-        float elapsed = 0f;
-        float duration = Mathf.Max(0f, returnShrinkDurationSeconds);
-
-        while (elapsed < duration)
-        {
-            elapsed += Time.unscaledDeltaTime;
-            float t = duration <= 0f ? 1f : Mathf.Clamp01(elapsed / duration);
-            float eased = scaleAnimator != null
-                ? scaleAnimator.EvaluateScaleCurve(t)
-                : Mathf.SmoothStep(0f, 1f, t);
-            shrinkTarget.localScale = Vector3.LerpUnclamped(startScale, Vector3.zero, eased);
-            yield return null;
-        }
-
-        shrinkTarget.localScale = Vector3.zero;
-        SceneManager.LoadScene(ReturnSceneName, LoadSceneMode.Single);
     }
 
     private void ApplyHologramCanvasLayoutIfNeeded(bool force)
@@ -186,53 +130,6 @@ public class HologramSceneManager : MonoBehaviour
                 {
                     return sceneCanvas;
                 }
-            }
-        }
-
-        return null;
-    }
-
-    private static Transform FindTransformInLoadedScenes(string targetName)
-    {
-        if (string.IsNullOrWhiteSpace(targetName))
-        {
-            return null;
-        }
-
-        for (int sceneIndex = 0; sceneIndex < SceneManager.sceneCount; sceneIndex++)
-        {
-            Scene scene = SceneManager.GetSceneAt(sceneIndex);
-            if (!scene.isLoaded)
-            {
-                continue;
-            }
-
-            foreach (GameObject rootObject in scene.GetRootGameObjects())
-            {
-                Transform found = FindTransformRecursive(rootObject.transform, targetName);
-                if (found != null)
-                {
-                    return found;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private static Transform FindTransformRecursive(Transform root, string targetName)
-    {
-        if (root.name == targetName)
-        {
-            return root;
-        }
-
-        for (int childIndex = 0; childIndex < root.childCount; childIndex++)
-        {
-            Transform found = FindTransformRecursive(root.GetChild(childIndex), targetName);
-            if (found != null)
-            {
-                return found;
             }
         }
 

@@ -7,22 +7,26 @@ namespace ShadowPrototype
     {
         public enum PipelineState
         {
-            ShadowCapturing,
-            MediaPipeTracking,
-            MeshExtracting,
-            Reconstructing3D,
-            HologramOutput,
-            Error
+            Opening,
+            Mission1,
+            Mission2,
+            Mission3,
+            Mission4,
+            Mission5,
+            Ending
         }
 
-        [SerializeField] private PipelineState currentState = PipelineState.ShadowCapturing;
-        [SerializeField] private string currentStateName = nameof(PipelineState.ShadowCapturing);
+        [SerializeField] private PipelineState currentState = PipelineState.Opening;
+        [SerializeField] private string currentStateName = nameof(PipelineState.Opening);
+        [SerializeField] private string keyword = string.Empty;
         public event Action<PipelineState> StateChanged;
+        public event Action<string> KeywordChanged;
         public event Action<string, int, int> ShadowMeshLoaded;
         public event Action<string> ShadowMeshLoadFailed;
 
         public PipelineState CurrentState => currentState;
         public string CurrentStateName => currentStateName;
+        public string Keyword => keyword;
 
         private void Awake()
         {
@@ -31,13 +35,19 @@ namespace ShadowPrototype
 
         public void ResetForCapture()
         {
-            currentState = PipelineState.ShadowCapturing;
+            currentState = PipelineState.Opening;
             currentStateName = currentState.ToString();
+            keyword = string.Empty;
         }
 
-        public void OnShadowCaptureStarted()
+        public void SetState(PipelineState nextState)
         {
-            SetState(PipelineState.ShadowCapturing);
+            ApplyState(nextState);
+        }
+
+        public void OnOpeningStarted()
+        {
+            ApplyState(PipelineState.Opening);
         }
 
         public void OnShadowMeshLoaded(string path, int vertexCount, int boundaryCount)
@@ -46,34 +56,31 @@ namespace ShadowPrototype
             ShadowMeshLoaded?.Invoke(path, vertexCount, boundaryCount);
         }
 
+        public void SetKeyword(string nextKeyword)
+        {
+            keyword = string.IsNullOrWhiteSpace(nextKeyword) ? string.Empty : nextKeyword.Trim();
+            Debug.Log($"GameStateManager: keyword changed to '{keyword}'.");
+            KeywordChanged?.Invoke(keyword);
+        }
+
         public void OnMediaPipeTrackingStarted()
         {
-            SetState(PipelineState.MediaPipeTracking);
+            ApplyState(PipelineState.Mission1);
         }
 
-        public void OnMeshExtractionStarted()
+        public void OnEndingStarted()
         {
-            SetState(PipelineState.MeshExtracting);
-        }
-
-        public void OnReconstructionStarted()
-        {
-            SetState(PipelineState.Reconstructing3D);
-        }
-
-        public void OnHologramOutputStarted()
-        {
-            SetState(PipelineState.HologramOutput);
+            ApplyState(PipelineState.Ending);
         }
 
         public void OnShadowMeshLoadFailed(string path)
         {
-            SetState(PipelineState.Error);
+            ApplyState(PipelineState.Ending);
             Debug.LogWarning($"GameStateManager: shadow mesh load failed; keeping the previous mesh. Path: {path}");
             ShadowMeshLoadFailed?.Invoke(path);
         }
 
-        private void SetState(PipelineState nextState)
+        private void ApplyState(PipelineState nextState)
         {
             if (currentState == nextState)
             {

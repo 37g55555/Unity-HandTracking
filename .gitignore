@@ -12,9 +12,6 @@ UnityProject/.vsconfig
 UnityProject/*.csproj
 UnityProject/*.sln
 Temp/
-/fog.mp4
-/fog_first.mp4
-output/sf3d/
 output/api_temp/
 output/shadowmesh/background.png
 output/soft_white_circle.png

@@ -11,11 +11,11 @@ namespace ShadowPrototype
 
         [Header("Hand Shadow")]
         [SerializeField] private bool showHandShadow = true;
-        [SerializeField] private Color handShadowColor = new Color(0.42f, 0.42f, 0.42f, 0.48f);
+        [SerializeField] private Color handShadowColor = new Color(0.0f, 0.0f, 0.0f, 0.9019608f);
         [SerializeField] private float screenHandShadowDistance = 2.0f;
         [SerializeField] private float screenHandShadowScale = 1.0f;
-        [SerializeField] private float handShadowFingerWidthScale = 0.055f;
-        [SerializeField] private Color handShadowOutlineColor = Color.white;
+        [SerializeField] private float handShadowFingerWidthScale = 0.1f;
+        [SerializeField] private Color handShadowOutlineColor = new Color(1.0f, 1.0f, 1.0f, 0.078431375f);
         [SerializeField] private float handShadowOutlineScale = 1.08f;
 
         private static readonly Color HoverColor = new Color(0.45f, 0.78f, 1.0f);
@@ -63,8 +63,43 @@ namespace ShadowPrototype
             SetVisible(false);
         }
 
+        private void OnDisable()
+        {
+            SetVisible(false);
+        }
+
+        public void HideRuntimeVisuals()
+        {
+            SetVisible(false);
+        }
+
+        private Camera ResolveTargetCamera()
+        {
+            if (targetCamera != null && targetCamera.isActiveAndEnabled)
+            {
+                return targetCamera;
+            }
+
+            targetCamera = Camera.main;
+            return targetCamera;
+        }
+
+        private void ResolveRuntimeReferences()
+        {
+            if (deformationInput == null)
+            {
+                deformationInput = FindObjectOfType<MediaPipeMeshDeformationInput>();
+            }
+
+            if (targetMeshDeformer == null)
+            {
+                targetMeshDeformer = FindObjectOfType<ShadowMeshDeformer>();
+            }
+        }
+
         private void LateUpdate()
         {
+            ResolveRuntimeReferences();
             EnsureVisualObjects();
 
             if (deformationInput == null || targetMeshDeformer == null || !targetMeshDeformer.HasMesh)
@@ -200,7 +235,8 @@ namespace ShadowPrototype
         private bool TryProjectHandShadowPoint(Vector2 trackedPoint, out Vector2 localPoint)
         {
             localPoint = Vector2.zero;
-            if (targetCamera == null)
+            Camera camera = ResolveTargetCamera();
+            if (camera == null)
             {
                 return false;
             }
@@ -209,8 +245,8 @@ namespace ShadowPrototype
                 Mathf.Clamp01(trackedPoint.x / MediaPipeMeshDeformationInput.TrackedFrameWidth),
                 Mathf.Clamp01(trackedPoint.y / MediaPipeMeshDeformationInput.TrackedFrameHeight),
                 screenHandShadowDistance);
-            Vector3 worldPoint = targetCamera.ViewportToWorldPoint(viewportPoint);
-            Vector3 cameraLocalPoint = targetCamera.transform.InverseTransformPoint(worldPoint);
+            Vector3 worldPoint = camera.ViewportToWorldPoint(viewportPoint);
+            Vector3 cameraLocalPoint = camera.transform.InverseTransformPoint(worldPoint);
             handShadowVertexZ = cameraLocalPoint.z;
             localPoint = new Vector2(cameraLocalPoint.x, cameraLocalPoint.y) * screenHandShadowScale;
             return true;
@@ -575,8 +611,9 @@ namespace ShadowPrototype
                     : null;
             }
 
-            Transform desiredParent = targetCamera != null
-                ? targetCamera.transform
+            Camera camera = ResolveTargetCamera();
+            Transform desiredParent = camera != null
+                ? camera.transform
                 : targetMeshDeformer.transform;
 
             if (handShadowObject.transform.parent != desiredParent)

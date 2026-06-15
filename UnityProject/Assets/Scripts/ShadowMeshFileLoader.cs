@@ -16,13 +16,15 @@ namespace ShadowPrototype
         [SerializeField] private string relativeWatchDirectory = @"..\output\shadowmesh";
         [SerializeField] private string meshFileName = "shadow_mesh.obj";
         [SerializeField] private string metadataFileName = "shadow_metadata.json";
-        [SerializeField] private string absoluteWatchDirectoryOverride = @"D:\Unity-HandTracking\output\shadowmesh";
+        [SerializeField] private string absoluteWatchDirectoryOverride = @"C:\capstone\Shadow-to-3D-Generator\output\shadowmesh";
 
         [SerializeField] private ShadowMeshDeformer shadowMeshDeformer;
         [SerializeField] private GameStateManager stateManager;
         [SerializeField] private ShadowMeshRootController shadowMeshRoot;
         [SerializeField] private Camera targetCamera;
         [SerializeField] private bool applyCapturedPositionFromMetadata = true;
+        [SerializeField] private bool centerMeshInCamera;
+        [SerializeField] private bool loadExistingMeshOnStart;
 
         private FileSystemWatcher watcher;
         private readonly object pendingLock = new object();
@@ -31,7 +33,6 @@ namespace ShadowPrototype
         private DateTime? minimumAcceptedMeshWriteTimeUtc;
         private DateTime lastPolledMeshWriteTimeUtc = DateTime.MinValue;
         private float nextPollTime;
-        private bool loadExistingMeshOnStart;
 
         public string WatchDirectoryAbsolute => GetWatchDirectoryAbsolute();
 
@@ -123,9 +124,13 @@ namespace ShadowPrototype
         private void SetupWatcher()
         {
             string watchDirectory = GetWatchDirectoryAbsolute();
-            if (!Directory.Exists(watchDirectory))
+            try
             {
-                Debug.LogWarning($"ShadowMeshFileLoader: watch directory was not found: {watchDirectory}");
+                Directory.CreateDirectory(watchDirectory);
+            }
+            catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException || exception is ArgumentException)
+            {
+                Debug.LogWarning($"ShadowMeshFileLoader: watch directory could not be created: {watchDirectory}. {exception.Message}");
                 return;
             }
 
@@ -200,6 +205,7 @@ namespace ShadowPrototype
                     int[] boundaryIndices = metadata == null ? null : metadata.boundary_indices;
                     shadowMeshDeformer.ReplaceMesh(mesh, boundaryIndices);
                     ApplyCapturedPosition(metadata);
+                    CenterShadowMeshInCamera();
                     EnsureShadowMaterial();
                     stateManager?.OnShadowMeshLoaded(meshPath, mesh.vertexCount, boundaryIndices == null ? 0 : boundaryIndices.Length);
                     loadSucceeded = true;
@@ -297,22 +303,51 @@ namespace ShadowPrototype
                 hideFlags = HideFlags.DontSave
             };
 
-            if (material.HasProperty("_BaseColor"))
-            {
-                material.SetColor("_BaseColor", Color.black);
-            }
-
-            if (material.HasProperty("_Color"))
-            {
-                material.SetColor("_Color", Color.black);
-            }
+            SetMaterialColor(material, Color.black);
 
             if (material.HasProperty("_Cull"))
             {
                 material.SetFloat("_Cull", 0.0f);
             }
 
+            ConfigureOpaqueMaterial(material);
+
+            renderer.sortingOrder = 50;
             renderer.sharedMaterial = material;
+        }
+
+        private static void SetMaterialColor(Material material, Color color)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            if (material.HasProperty("_BaseColor"))
+            {
+                material.SetColor("_BaseColor", color);
+            }
+
+            if (material.HasProperty("_Color"))
+            {
+                material.SetColor("_Color", color);
+            }
+        }
+
+        private static void ConfigureOpaqueMaterial(Material material)
+        {
+            if (material.HasProperty("_Surface"))
+            {
+                material.SetFloat("_Surface", 0.0f);
+            }
+
+            if (material.HasProperty("_ZWrite"))
+            {
+                material.SetFloat("_ZWrite", 1.0f);
+            }
+
+            material.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.renderQueue = 2000;
         }
 
         private ShadowMetadata TryReadMetadata(string meshPath)
@@ -375,6 +410,28 @@ namespace ShadowPrototype
                 frameSize,
                 camera,
                 meshLocalScale);
+        }
+
+        private void CenterShadowMeshInCamera()
+        {
+            if (!centerMeshInCamera)
+            {
+                return;
+            }
+
+            ShadowMeshRootController rootController = ResolveShadowMeshRoot();
+            if (rootController == null)
+            {
+                return;
+            }
+
+            Camera camera = ResolveTargetCamera();
+            if (camera == null)
+            {
+                return;
+            }
+
+            rootController.CenterMeshInCamera(shadowMeshDeformer, camera);
         }
 
         private ShadowMeshRootController ResolveShadowMeshRoot()

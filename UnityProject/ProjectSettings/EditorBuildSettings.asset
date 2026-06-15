@@ -6,9 +6,27 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/Main.unity
-    guid: 99c9720ab356a0642a771bea13969a05
+    path: Assets/Scenes/Opening.unity
+    guid: 184b8b260bb94b2199adfd7f22a7a111
   - enabled: 1
-    path: Assets/Scenes/hologramOut.unity
+    path: Assets/Scenes/Mission1.unity
+    guid: 36f7f38d3ff440b2a5d326593c5e0221
+  - enabled: 1
+    path: Assets/Scenes/Mission2.unity
+    guid: 46f7f38d3ff440b2a5d326593c5e0222
+  - enabled: 1
+    path: Assets/Scenes/Mission3.unity
+    guid: 56f7f38d3ff440b2a5d326593c5e0223
+  - enabled: 1
+    path: Assets/Scenes/Mission4.unity
+    guid: 66f7f38d3ff440b2a5d326593c5e0224
+  - enabled: 1
+    path: Assets/Scenes/Mission5.unity
+    guid: 76f7f38d3ff440b2a5d326593c5e0225
+  - enabled: 1
+    path: Assets/Scenes/Ending.unity
+    guid: 86f7f38d3ff440b2a5d326593c5e0226
+  - enabled: 1
+    path: Assets/Scenes/Mission3_H.unity
     guid: 4133c127775d6934fa7562a4851f3314
   m_configObjects: {}

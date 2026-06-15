@@ -13,10 +13,8 @@ from preview_window_utils import (
     get_foreground_window,
     keep_preview_window_no_activate,
 )
+from camera_utils import open_camera
 
-CAMERA_WIDTH = 1920
-CAMERA_HEIGHT = 1080
-CAMERA_FPS = 30
 PACKET_WIDTH = 1920
 PACKET_HEIGHT = 1080
 UDP_HOST = "127.0.0.1"
@@ -32,30 +30,6 @@ def log(message):
 def ensure_model_exists():
     if not MODEL_PATH.exists():
         raise SystemExit(f"MediaPipe model was not found: {MODEL_PATH}")
-
-
-def open_camera(camera_id):
-    backend = cv2.CAP_DSHOW if hasattr(cv2, "CAP_DSHOW") else None
-    cap = cv2.VideoCapture(camera_id, backend) if backend is not None else cv2.VideoCapture(camera_id)
-
-    if not cap.isOpened():
-        raise SystemExit(f"Camera {camera_id} could not be opened.")
-
-    if hasattr(cv2, "VideoWriter_fourcc"):
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
-    cap.set(cv2.CAP_PROP_FPS, CAMERA_FPS)
-
-    ok, frame = cap.read()
-    if not ok or frame is None or frame.size == 0:
-        cap.release()
-        raise SystemExit(f"Camera {camera_id} did not return a valid frame.")
-
-    log(f"[OK] Camera {camera_id} ready.")
-    return cap
 
 
 def create_landmarker():
@@ -101,7 +75,7 @@ def draw_hand_landmarks(display, result):
 def run_tracking(camera_id):
     ensure_model_exists()
 
-    cap = open_camera(camera_id)
+    cap = open_camera(camera_id, log=log)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     landmarker = create_landmarker()
     udp_target = (UDP_HOST, UDP_PORT)
