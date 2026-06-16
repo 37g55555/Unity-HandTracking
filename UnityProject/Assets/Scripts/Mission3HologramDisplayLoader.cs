@@ -113,6 +113,17 @@ namespace ShadowPrototype
             LoadHologramScene();
         }
 
+        public void SkipToInteraction()
+        {
+            if (phaseRoutine != null)
+            {
+                StopCoroutine(phaseRoutine);
+                phaseRoutine = null;
+            }
+
+            EnterInteraction();
+        }
+
         public void LoadHologramScene()
         {
             if (loadRoutine != null)
@@ -147,6 +158,7 @@ namespace ShadowPrototype
             float duration = Mathf.Max(fadeDuration, moveDuration);
             Transform resolvedShadowStar = ResolveShadowStarTransform();
             Vector3 shadowStarStartPosition = resolvedShadowStar != null ? resolvedShadowStar.position : Vector3.zero;
+            Quaternion shadowStarStartRotation = resolvedShadowStar != null ? resolvedShadowStar.localRotation : Quaternion.identity;
             Vector3 shadowStarTargetPosition = shadowStarStartPosition;
             shadowStarTargetPosition.x = introShadowStarTargetX;
             SetDarkAlpha(IntroStartAlpha01);
@@ -156,7 +168,7 @@ namespace ShadowPrototype
                 SetDarkAlpha(0.0f);
                 if (resolvedShadowStar != null)
                 {
-                    resolvedShadowStar.position = shadowStarTargetPosition;
+                    StarWalkMotion.FinishWorld(resolvedShadowStar, shadowStarTargetPosition, shadowStarStartRotation);
                 }
 
                 yield break;
@@ -188,10 +200,17 @@ namespace ShadowPrototype
                     {
                         float moveT = Mathf.Clamp01(elapsed / moveDuration);
                         float moveEased = Mathf.SmoothStep(0.0f, 1.0f, moveT);
-                        resolvedShadowStar.position = Vector3.LerpUnclamped(
+                        Vector3 framePosition = Vector3.LerpUnclamped(
                             shadowStarStartPosition,
                             shadowStarTargetPosition,
                             moveEased);
+                        StarWalkMotion.ApplyWorld(
+                            resolvedShadowStar,
+                            framePosition,
+                            shadowStarStartPosition,
+                            shadowStarTargetPosition,
+                            moveEased,
+                            shadowStarStartRotation);
                     }
                 }
 
@@ -201,7 +220,7 @@ namespace ShadowPrototype
             SetDarkAlpha(0.0f);
             if (resolvedShadowStar != null)
             {
-                resolvedShadowStar.position = shadowStarTargetPosition;
+                StarWalkMotion.FinishWorld(resolvedShadowStar, shadowStarTargetPosition, shadowStarStartRotation);
             }
         }
 
@@ -224,26 +243,47 @@ namespace ShadowPrototype
             Vector3 startPosition = resolvedBackground != null ? resolvedBackground.position : Vector3.zero;
             Vector3 targetPosition = startPosition;
             targetPosition.x = introBackgroundScrollTargetX;
+            Transform resolvedShadowStar = ResolveShadowStarTransform();
+            Vector3 shadowStarBasePosition = resolvedShadowStar != null ? resolvedShadowStar.position : Vector3.zero;
+            Quaternion shadowStarBaseRotation = resolvedShadowStar != null ? resolvedShadowStar.localRotation : Quaternion.identity;
+            float shadowStarWalkElapsed = 0.0f;
+            bool backgroundScrolls = resolvedBackground != null && !Mathf.Approximately(targetPosition.x, startPosition.x);
+            float shadowStarWalkDirection = backgroundScrolls ? -Mathf.Sign(targetPosition.x - startPosition.x) : 1.0f;
 
             yield return narrationPlayer.PlayRangeAndWaitRoutine(
                 startIndex,
                 stepCount,
                 (stepIndex, elapsedSeconds, durationSeconds, deltaSeconds) =>
                 {
-                    if (resolvedBackground == null || durationSeconds <= 0.0f)
+                    if (resolvedBackground == null || durationSeconds <= 0.0f || !backgroundScrolls)
                     {
+                        StarWalkMotion.FinishWorld(resolvedShadowStar, shadowStarBasePosition, shadowStarBaseRotation);
                         return;
                     }
+
+                    shadowStarWalkElapsed += Mathf.Max(0.0f, deltaSeconds);
+                    StarWalkMotion.ApplyWorldInPlace(
+                        resolvedShadowStar,
+                        shadowStarBasePosition,
+                        shadowStarWalkElapsed,
+                        shadowStarWalkDirection,
+                        shadowStarBaseRotation);
 
                     float t = Mathf.Clamp01(elapsedSeconds / durationSeconds);
                     float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
                     resolvedBackground.position = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
+                },
+                (stepIndex, gapElapsed, gapDuration, deltaSeconds) =>
+                {
+                    StarWalkMotion.FinishWorld(resolvedShadowStar, shadowStarBasePosition, shadowStarBaseRotation);
                 });
 
             if (resolvedBackground != null)
             {
                 resolvedBackground.position = targetPosition;
             }
+
+            StarWalkMotion.FinishWorld(resolvedShadowStar, shadowStarBasePosition, shadowStarBaseRotation);
         }
 
         private IEnumerator PlayNextIntroNarrationRoutine()
@@ -299,6 +339,7 @@ namespace ShadowPrototype
             }
 
             Vector3 startPosition = resolvedShadowStar.position;
+            Quaternion startRotation = resolvedShadowStar.localRotation;
             Vector2[] pathPoints = introShadowStarRoadPathPoints;
             if (pathPoints == null || pathPoints.Length == 0)
             {
@@ -309,7 +350,7 @@ namespace ShadowPrototype
             Vector3 targetPosition = ToWorldPathPoint(pathPoints[pathPoints.Length - 1], startPosition.z);
             if (duration <= 0.0f)
             {
-                resolvedShadowStar.position = targetPosition;
+                StarWalkMotion.FinishWorld(resolvedShadowStar, targetPosition, startRotation);
                 yield break;
             }
 
@@ -319,11 +360,18 @@ namespace ShadowPrototype
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
                 float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
-                resolvedShadowStar.position = EvaluateRoadPath(startPosition, pathPoints, eased);
+                Vector3 framePosition = EvaluateRoadPath(startPosition, pathPoints, eased);
+                StarWalkMotion.ApplyWorld(
+                    resolvedShadowStar,
+                    framePosition,
+                    startPosition,
+                    targetPosition,
+                    eased,
+                    startRotation);
                 yield return null;
             }
 
-            resolvedShadowStar.position = targetPosition;
+            StarWalkMotion.FinishWorld(resolvedShadowStar, targetPosition, startRotation);
         }
 
         private Vector3 EvaluateRoadPath(Vector3 startPosition, Vector2[] pathPoints, float t)
@@ -448,20 +496,12 @@ namespace ShadowPrototype
 
         private int ResolveTargetDisplayIndex()
         {
-            if (Display.displays == null || Display.displays.Length == 0)
-            {
-                return 0;
-            }
-
-            return Mathf.Clamp(DisplayRoutingSettings.HologramUnityDisplayIndex, 0, Display.displays.Length - 1);
+            return DisplayRoutingSettings.ResolveUnityDisplayIndex(DisplayRoutingSettings.HologramUnityDisplayIndex);
         }
 
         private static void ActivateTargetDisplay(int displayIndex)
         {
-            if (displayIndex > 0 && displayIndex < Display.displays.Length)
-            {
-                Display.displays[displayIndex].Activate();
-            }
+            DisplayRoutingSettings.ActivateUnityDisplay(displayIndex);
         }
 
         private void ApplyHologramTargetDisplay(int displayIndex)

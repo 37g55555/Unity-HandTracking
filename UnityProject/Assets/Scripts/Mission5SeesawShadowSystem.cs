@@ -22,7 +22,7 @@ namespace ShadowPrototype
         [SerializeField] private string pythonExecutablePath = @"C:\Users\creal\miniconda3\envs\artifact\python.exe";
         [SerializeField] private string workingDirectory = @"C:\capstone\Shadow-to-3D-Generator";
         [SerializeField] private string scriptName = @"python\Mission5ShadowAreaTracking.py";
-        [SerializeField, Min(0)] private int cameraDeviceIndex;
+        [SerializeField, Min(0)] private int cameraDeviceIndex = 1;
         [SerializeField, Min(1)] private int udpPort = 5055;
         [SerializeField, Min(0.0f)] private float staleDataTimeoutSeconds = 1.0f;
 
@@ -158,17 +158,22 @@ namespace ShadowPrototype
                 return;
             }
 
+            CameraPythonProcessCleanup.KillStaleCameraProcesses(ProcessLabel, workingDirectory);
+
             string command =
                 $"$Host.UI.RawUI.WindowTitle = {QuotePowerShellArgument(ProcessLabel)}; " +
                 $"Set-Location -LiteralPath {QuotePowerShellArgument(workingDirectory)}; " +
                 $"& {QuotePowerShellArgument(pythonExecutablePath)} {QuotePowerShellArgument(scriptPath)} " +
                 $"--camera {cameraDeviceIndex} " +
+                "--fallback-cameras 0 " +
+                "--width 640 --height 360 --fps 30 --camera-buffer-size 1 " +
+                "--camera-auto-exposure 0.75 --preview " +
                 $"--udp-port {udpPort}";
 
             var startInfo = new ProcessStartInfo
             {
                 FileName = "powershell.exe",
-                Arguments = $"-NoExit -NoProfile -ExecutionPolicy Bypass -Command {EscapeWindowsArgument(command)}",
+                Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command {EscapeWindowsArgument(command)}",
                 UseShellExecute = true,
                 WorkingDirectory = workingDirectory,
                 CreateNoWindow = false,
@@ -179,6 +184,9 @@ namespace ShadowPrototype
             try
             {
                 launchedProcess.Start();
+                StartCoroutine(TerminalWindowPlacement.MoveProcessWindowToTerminalDisplayRoutine(
+                    launchedProcess,
+                    ProcessLabel));
             }
             catch (Exception exception)
             {

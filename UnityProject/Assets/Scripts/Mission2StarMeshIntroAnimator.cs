@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -8,6 +9,7 @@ namespace ShadowPrototype
     {
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
+        private const int MinimumSunSlideCueRepeatCount = 3;
 
         public enum Mission2Phase
         {
@@ -47,9 +49,9 @@ namespace ShadowPrototype
         [Header("Shadow Star Narration Motion")]
         [SerializeField] private Transform shadowStarTransform;
         [SerializeField] private float shadowStarDropTargetY = -3.3f;
-        [SerializeField, Min(0.0f)] private float shadowStarDropSeconds = 0.18f;
+        [SerializeField, Min(0.0f)] private float shadowStarDropSeconds = 0.32f;
         [SerializeField] private float shadowStarAfterNarrationTargetX = -4.0f;
-        [SerializeField, Min(0.0f)] private float shadowStarAfterNarrationMoveSeconds = 7.0f;
+        [SerializeField, Min(0.0f)] private float shadowStarAfterNarrationMoveSeconds = 3.5f;
 
         [Header("Outro")]
         [SerializeField] private Camera targetCamera;
@@ -75,11 +77,28 @@ namespace ShadowPrototype
         [SerializeField] private GameObject interactionInstructionObject;
         [SerializeField] private Text interactionInstructionTextComponent;
 
+        [Header("Interaction Start Cue")]
+        [SerializeField] private bool playSunSlideCueOnInteractionStart = true;
+        [SerializeField, Min(1)] private int sunSlideCueRepeatCount = 3;
+        [SerializeField, Min(0.0f)] private float sunSlideCueDistanceX = 3.3f;
+        [SerializeField, Min(0.01f)] private float sunSlideCueSlideSeconds = 0.84f;
+        [SerializeField, Min(0.0f)] private float sunSlideCueReturnSeconds = 0.36f;
+        [SerializeField, Min(0.0f)] private float sunSlideCuePauseSeconds = 0.28f;
+        [SerializeField, Range(0.0f, 1.0f)] private float sunSlideCueGhostAlpha = 0.28f;
+        [SerializeField, Min(0)] private int sunSlideCueGhostCount = 5;
+        [SerializeField, Min(0.01f)] private float sunSlideCueGhostLifetimeSeconds = 0.55f;
+        [SerializeField] private bool animateShadowStarScaleWithSunSlideCue = true;
+        [SerializeField, Min(1.0f)] private float sunSlideCueShadowStarScaleMultiplier = 1.25f;
+        [SerializeField] private bool handDetectionCancelsSunSlideCue = true;
+
         private Coroutine animationRoutine;
+        private Coroutine interactionStartCueRoutine;
         private Mission2Phase currentPhase;
         private MaterialPropertyBlock darkPropertyBlock;
         private MaterialPropertyBlock backgroundPropertyBlock;
         private bool createdInteractionInstructionObject;
+        private bool sunSlideCueInterruptedByHand;
+        private readonly List<GameObject> sunSlideGhostObjects = new List<GameObject>();
 
         public Mission2Phase CurrentPhase => currentPhase;
 
@@ -150,6 +169,7 @@ namespace ShadowPrototype
 
         public void EnterIntro()
         {
+            StopInteractionStartCue();
             currentPhase = Mission2Phase.Intro;
             ResolveDarkRenderer();
             ResolveIntroBackgroundRenderer();
@@ -174,6 +194,45 @@ namespace ShadowPrototype
             SetInteractionInstructionVisible(true);
             StartMediaPipeTracking();
 
+            StopInteractionStartCue();
+            if (playSunSlideCueOnInteractionStart && sunSlideCueRepeatCount > 0)
+            {
+                if (sunHandSystem != null)
+                {
+                    sunHandSystem.enabled = false;
+                }
+
+                interactionStartCueRoutine = StartCoroutine(PlayInteractionStartCueThenBeginRoutine());
+                return;
+            }
+
+            BeginSunInteraction();
+        }
+
+        public void SkipToInteraction()
+        {
+            if (animationRoutine != null)
+            {
+                StopCoroutine(animationRoutine);
+                animationRoutine = null;
+            }
+
+            EnterInteraction();
+        }
+
+        private IEnumerator PlayInteractionStartCueThenBeginRoutine()
+        {
+            yield return PlaySunSlideCueRoutine();
+            interactionStartCueRoutine = null;
+
+            if (currentPhase == Mission2Phase.Interaction)
+            {
+                BeginSunInteraction();
+            }
+        }
+
+        private void BeginSunInteraction()
+        {
             if (sunHandSystem != null)
             {
                 sunHandSystem.BeginInteraction();
@@ -187,6 +246,7 @@ namespace ShadowPrototype
 
         public void EnterOutro()
         {
+            StopInteractionStartCue();
             currentPhase = Mission2Phase.Outro;
             SetInteractionInstructionVisible(false);
             SetInteractionSystemsEnabled(false);
@@ -236,6 +296,495 @@ namespace ShadowPrototype
                 mediaPipeLauncher.enabled = true;
                 mediaPipeLauncher.Launch();
             }
+        }
+
+        private IEnumerator PlaySunSlideCueRoutine()
+        {
+            Transform sunTransform = ResolveIntroSunTransform();
+            if (sunTransform == null)
+            {
+                yield break;
+            }
+
+            Vector3 restPosition = sunTransform.position;
+            Transform cueShadowTransform = animateShadowStarScaleWithSunSlideCue ? ResolveShadowStarTransform() : null;
+            Vector3 cueShadowRestScale = cueShadowTransform != null ? cueShadowTransform.localScale : Vector3.one;
+            sunSlideCueInterruptedByHand = false;
+            int repeatCount = Mathf.Max(MinimumSunSlideCueRepeatCount, sunSlideCueRepeatCount);
+            float slideDistance = Mathf.Max(0.0f, sunSlideCueDistanceX);
+            float slideDuration = Mathf.Max(0.01f, sunSlideCueSlideSeconds);
+            float returnDuration = Mathf.Max(0.0f, sunSlideCueReturnSeconds);
+            float pauseDuration = Mathf.Max(0.0f, sunSlideCuePauseSeconds);
+
+            for (int repeatIndex = 0; repeatIndex < repeatCount; repeatIndex++)
+            {
+                if (currentPhase != Mission2Phase.Interaction)
+                {
+                    RestoreSunSlideCueShadowScale(cueShadowTransform, cueShadowRestScale);
+                    yield break;
+                }
+
+                sunTransform.position = restPosition;
+                Vector3 targetPosition = restPosition + (Vector3.left * slideDistance);
+                if (TryInterruptSunSlideCueForHand(cueShadowTransform, cueShadowRestScale))
+                {
+                    yield break;
+                }
+
+                yield return SlideSunWithGhostsRoutine(
+                    sunTransform,
+                    restPosition,
+                    targetPosition,
+                    slideDuration,
+                    cueShadowTransform,
+                    cueShadowRestScale);
+                if (sunSlideCueInterruptedByHand)
+                {
+                    yield break;
+                }
+
+                if (pauseDuration > 0.0f)
+                {
+                    yield return WaitSunSlideCuePauseRoutine(pauseDuration, cueShadowTransform, cueShadowRestScale);
+                    if (sunSlideCueInterruptedByHand)
+                    {
+                        yield break;
+                    }
+                }
+
+                yield return MoveSunRoutine(
+                    sunTransform,
+                    targetPosition,
+                    restPosition,
+                    returnDuration,
+                    cueShadowTransform,
+                    cueShadowRestScale,
+                    1.0f,
+                    0.0f);
+                if (sunSlideCueInterruptedByHand)
+                {
+                    yield break;
+                }
+
+                if (pauseDuration > 0.0f && repeatIndex < repeatCount - 1)
+                {
+                    yield return WaitSunSlideCuePauseRoutine(pauseDuration, cueShadowTransform, cueShadowRestScale);
+                    if (sunSlideCueInterruptedByHand)
+                    {
+                        yield break;
+                    }
+                }
+            }
+
+            sunTransform.position = restPosition;
+            RestoreSunSlideCueShadowScale(cueShadowTransform, cueShadowRestScale);
+            if (pauseDuration > 0.0f)
+            {
+                yield return WaitSunSlideCuePauseRoutine(pauseDuration, cueShadowTransform, cueShadowRestScale);
+            }
+        }
+
+        private IEnumerator SlideSunWithGhostsRoutine(
+            Transform sunTransform,
+            Vector3 startPosition,
+            Vector3 targetPosition,
+            float durationSeconds,
+            Transform cueShadowTransform,
+            Vector3 cueShadowRestScale)
+        {
+            int ghostCount = Mathf.Max(0, sunSlideCueGhostCount);
+            float nextGhostTime = ghostCount > 0 ? durationSeconds / (ghostCount + 1) : float.PositiveInfinity;
+            int spawnedGhostCount = 0;
+            float elapsed = 0.0f;
+
+            SpawnSunSlideGhost(sunTransform);
+            while (elapsed < durationSeconds)
+            {
+                if (TryInterruptSunSlideCueForHand(cueShadowTransform, cueShadowRestScale))
+                {
+                    yield break;
+                }
+
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / durationSeconds);
+                float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
+                sunTransform.position = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
+                ApplySunSlideCueShadowScale(cueShadowTransform, cueShadowRestScale, eased);
+
+                if (spawnedGhostCount < ghostCount && elapsed >= nextGhostTime)
+                {
+                    SpawnSunSlideGhost(sunTransform);
+                    spawnedGhostCount++;
+                    nextGhostTime = durationSeconds * (spawnedGhostCount + 1) / (ghostCount + 1);
+                }
+
+                yield return null;
+            }
+
+            sunTransform.position = targetPosition;
+            ApplySunSlideCueShadowScale(cueShadowTransform, cueShadowRestScale, 1.0f);
+        }
+
+        private IEnumerator MoveSunRoutine(
+            Transform sunTransform,
+            Vector3 startPosition,
+            Vector3 targetPosition,
+            float durationSeconds,
+            Transform cueShadowTransform,
+            Vector3 cueShadowRestScale,
+            float shadowStartAmount,
+            float shadowTargetAmount)
+        {
+            if (sunTransform == null)
+            {
+                yield break;
+            }
+
+            if (durationSeconds <= 0.0f)
+            {
+                sunTransform.position = targetPosition;
+                ApplySunSlideCueShadowScale(cueShadowTransform, cueShadowRestScale, shadowTargetAmount);
+                yield break;
+            }
+
+            float elapsed = 0.0f;
+            while (elapsed < durationSeconds)
+            {
+                if (TryInterruptSunSlideCueForHand(cueShadowTransform, cueShadowRestScale))
+                {
+                    yield break;
+                }
+
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / durationSeconds);
+                float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
+                sunTransform.position = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
+                float shadowAmount = Mathf.LerpUnclamped(shadowStartAmount, shadowTargetAmount, eased);
+                ApplySunSlideCueShadowScale(cueShadowTransform, cueShadowRestScale, shadowAmount);
+                yield return null;
+            }
+
+            sunTransform.position = targetPosition;
+            ApplySunSlideCueShadowScale(cueShadowTransform, cueShadowRestScale, shadowTargetAmount);
+        }
+
+        private IEnumerator WaitSunSlideCuePauseRoutine(
+            float durationSeconds,
+            Transform cueShadowTransform,
+            Vector3 cueShadowRestScale)
+        {
+            float elapsed = 0.0f;
+            while (elapsed < durationSeconds)
+            {
+                if (TryInterruptSunSlideCueForHand(cueShadowTransform, cueShadowRestScale))
+                {
+                    yield break;
+                }
+
+                elapsed += Time.unscaledDeltaTime;
+                yield return null;
+            }
+        }
+
+        private bool TryInterruptSunSlideCueForHand(Transform cueShadowTransform, Vector3 cueShadowRestScale)
+        {
+            if (!handDetectionCancelsSunSlideCue || !IsInteractionHandVisible())
+            {
+                return false;
+            }
+
+            sunSlideCueInterruptedByHand = true;
+            ClearSunSlideGhosts();
+            RestoreSunSlideCueShadowScale(cueShadowTransform, cueShadowRestScale);
+            return true;
+        }
+
+        private bool IsInteractionHandVisible()
+        {
+            ResolveInteractionSystems();
+            return mediaPipeReceiver != null &&
+                   mediaPipeReceiver.enabled &&
+                   mediaPipeReceiver.HasRecentData;
+        }
+
+        private void ApplySunSlideCueShadowScale(
+            Transform cueShadowTransform,
+            Vector3 cueShadowRestScale,
+            float slideAmount)
+        {
+            if (cueShadowTransform == null || !animateShadowStarScaleWithSunSlideCue)
+            {
+                return;
+            }
+
+            float easedAmount = Mathf.SmoothStep(0.0f, 1.0f, Mathf.Clamp01(slideAmount));
+            float scaleMultiplier = Mathf.LerpUnclamped(
+                1.0f,
+                Mathf.Max(1.0f, sunSlideCueShadowStarScaleMultiplier),
+                easedAmount);
+            ApplyScaleWithBottomAnchor(cueShadowTransform, cueShadowRestScale * scaleMultiplier);
+        }
+
+        private void RestoreSunSlideCueShadowScale(Transform cueShadowTransform, Vector3 cueShadowRestScale)
+        {
+            if (cueShadowTransform == null)
+            {
+                return;
+            }
+
+            ApplyScaleWithBottomAnchor(cueShadowTransform, cueShadowRestScale);
+        }
+
+        private static void ApplyScaleWithBottomAnchor(Transform rootTransform, Vector3 targetScale)
+        {
+            if (rootTransform == null)
+            {
+                return;
+            }
+
+            Vector3 bottomAnchorBefore = GetShadowBottomAnchor(rootTransform);
+            rootTransform.localScale = targetScale;
+            Vector3 bottomAnchorAfter = GetShadowBottomAnchor(rootTransform);
+            Vector3 correction = bottomAnchorBefore - bottomAnchorAfter;
+            correction.z = 0.0f;
+            rootTransform.position += correction;
+        }
+
+        private static Vector3 GetShadowBottomAnchor(Transform rootTransform)
+        {
+            Renderer renderer = rootTransform != null ? rootTransform.GetComponentInChildren<Renderer>() : null;
+            if (renderer != null && renderer.bounds.size.sqrMagnitude > 0.0001f)
+            {
+                Bounds bounds = renderer.bounds;
+                return new Vector3(bounds.center.x, bounds.min.y, rootTransform.position.z);
+            }
+
+            return rootTransform != null ? rootTransform.position : Vector3.zero;
+        }
+
+        private void SpawnSunSlideGhost(Transform sourceTransform)
+        {
+            if (sourceTransform == null || sunSlideCueGhostAlpha <= 0.0f)
+            {
+                return;
+            }
+
+            MeshFilter sourceMeshFilter = sourceTransform.GetComponent<MeshFilter>();
+            MeshRenderer sourceRenderer = sourceTransform.GetComponent<MeshRenderer>();
+            if (sourceMeshFilter == null || sourceRenderer == null || sourceMeshFilter.sharedMesh == null)
+            {
+                return;
+            }
+
+            Material ghostMaterial = CreateSunSlideGhostMaterial(sourceRenderer, sunSlideCueGhostAlpha);
+            if (ghostMaterial == null)
+            {
+                return;
+            }
+
+            GameObject ghostObject = new GameObject("SunSlideGhost");
+            ghostObject.hideFlags = HideFlags.DontSave;
+            ghostObject.transform.SetPositionAndRotation(sourceTransform.position, sourceTransform.rotation);
+            ghostObject.transform.localScale = sourceTransform.lossyScale;
+
+            MeshFilter ghostMeshFilter = ghostObject.AddComponent<MeshFilter>();
+            ghostMeshFilter.sharedMesh = sourceMeshFilter.sharedMesh;
+
+            MeshRenderer ghostRenderer = ghostObject.AddComponent<MeshRenderer>();
+            ghostRenderer.sharedMaterial = ghostMaterial;
+            ghostRenderer.sortingLayerID = sourceRenderer.sortingLayerID;
+            ghostRenderer.sortingOrder = sourceRenderer.sortingOrder - 1;
+            ghostRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            ghostRenderer.receiveShadows = false;
+
+            sunSlideGhostObjects.Add(ghostObject);
+            StartCoroutine(FadeAndDestroySunSlideGhostRoutine(
+                ghostObject,
+                ghostRenderer,
+                ghostMaterial,
+                sunSlideCueGhostAlpha,
+                sunSlideCueGhostLifetimeSeconds));
+        }
+
+        private IEnumerator FadeAndDestroySunSlideGhostRoutine(
+            GameObject ghostObject,
+            Renderer ghostRenderer,
+            Material ghostMaterial,
+            float startAlpha,
+            float lifetimeSeconds)
+        {
+            float duration = Mathf.Max(0.01f, lifetimeSeconds);
+            float elapsed = 0.0f;
+            while (elapsed < duration && ghostObject != null)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float alpha = Mathf.Lerp(startAlpha, 0.0f, t);
+                SetMaterialAlpha(ghostMaterial, alpha);
+                yield return null;
+            }
+
+            sunSlideGhostObjects.Remove(ghostObject);
+            DestroyRuntimeObject(ghostMaterial);
+            if (ghostObject != null)
+            {
+                Destroy(ghostObject);
+            }
+        }
+
+        private static Material CreateSunSlideGhostMaterial(Renderer sourceRenderer, float alpha)
+        {
+            Shader shader = null;
+            Material sourceMaterial = sourceRenderer != null ? sourceRenderer.sharedMaterial : null;
+            if (sourceMaterial != null)
+            {
+                shader = sourceMaterial.shader;
+            }
+
+            if (shader == null)
+            {
+                shader = Shader.Find("Universal Render Pipeline/Unlit");
+            }
+
+            if (shader == null)
+            {
+                shader = Shader.Find("Unlit/Color");
+            }
+
+            if (shader == null)
+            {
+                return null;
+            }
+
+            Material material = new Material(shader)
+            {
+                name = "Mission2SunSlideGhost_Runtime",
+                hideFlags = HideFlags.DontSave
+            };
+            Color color = ResolveRendererColor(sourceMaterial);
+            color.a = Mathf.Clamp01(alpha);
+            SetMaterialColor(material, color);
+            ConfigureTransparentMaterial(material);
+            return material;
+        }
+
+        private static Color ResolveRendererColor(Material material)
+        {
+            if (material != null)
+            {
+                if (material.HasProperty(BaseColorId))
+                {
+                    return material.GetColor(BaseColorId);
+                }
+
+                if (material.HasProperty(ColorId))
+                {
+                    return material.GetColor(ColorId);
+                }
+            }
+
+            return new Color(0.105f, 0.07f, 0.045f, 1.0f);
+        }
+
+        private static void ConfigureTransparentMaterial(Material material)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            if (material.HasProperty("_Surface"))
+            {
+                material.SetFloat("_Surface", 1.0f);
+            }
+
+            if (material.HasProperty("_Blend"))
+            {
+                material.SetFloat("_Blend", 0.0f);
+            }
+
+            if (material.HasProperty("_SrcBlend"))
+            {
+                material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            }
+
+            if (material.HasProperty("_DstBlend"))
+            {
+                material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            }
+
+            if (material.HasProperty("_ZWrite"))
+            {
+                material.SetFloat("_ZWrite", 0.0f);
+            }
+
+            if (material.HasProperty("_Cull"))
+            {
+                material.SetFloat("_Cull", 0.0f);
+            }
+
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+        }
+
+        private static void SetMaterialAlpha(Material material, float alpha)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            Color color = ResolveRendererColor(material);
+            color.a = Mathf.Clamp01(alpha);
+            SetMaterialColor(material, color);
+        }
+
+        private static void SetMaterialColor(Material material, Color color)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            if (material.HasProperty(BaseColorId))
+            {
+                material.SetColor(BaseColorId, color);
+            }
+
+            if (material.HasProperty(ColorId))
+            {
+                material.SetColor(ColorId, color);
+            }
+        }
+
+        private void StopInteractionStartCue()
+        {
+            if (interactionStartCueRoutine != null)
+            {
+                StopCoroutine(interactionStartCueRoutine);
+                interactionStartCueRoutine = null;
+            }
+
+            ClearSunSlideGhosts();
+        }
+
+        private void ClearSunSlideGhosts()
+        {
+            for (int i = sunSlideGhostObjects.Count - 1; i >= 0; i--)
+            {
+                GameObject ghostObject = sunSlideGhostObjects[i];
+                if (ghostObject == null)
+                {
+                    continue;
+                }
+
+                Renderer renderer = ghostObject.GetComponent<Renderer>();
+                Material material = renderer != null ? renderer.sharedMaterial : null;
+                DestroyRuntimeObject(material);
+                DestroyRuntimeObject(ghostObject);
+            }
+
+            sunSlideGhostObjects.Clear();
         }
 
         private void SetInteractionInstructionVisible(bool isVisible)
@@ -536,10 +1085,11 @@ namespace ShadowPrototype
             }
 
             Vector3 startPosition = targetTransform.position;
+            Quaternion startRotation = targetTransform.localRotation;
             float duration = Mathf.Max(0.0f, durationSeconds);
             if (duration <= 0.0f)
             {
-                targetTransform.position = targetPosition;
+                StarWalkMotion.FinishWorld(targetTransform, targetPosition, startRotation);
                 yield break;
             }
 
@@ -548,12 +1098,19 @@ namespace ShadowPrototype
             {
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
-                float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
-                targetTransform.position = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
+                float eased = SmootherStep(t);
+                Vector3 framePosition = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
+                StarWalkMotion.ApplyWorld(
+                    targetTransform,
+                    framePosition,
+                    startPosition,
+                    targetPosition,
+                    eased,
+                    startRotation);
                 yield return null;
             }
 
-            targetTransform.position = targetPosition;
+            StarWalkMotion.FinishWorld(targetTransform, targetPosition, startRotation);
         }
 
         private Vector3 ResolveShadowStarLeftOffscreenPosition(Transform shadowStar)
@@ -626,7 +1183,7 @@ namespace ShadowPrototype
             {
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
-                float eased = easeIn ? t * t : Mathf.SmoothStep(0.0f, 1.0f, t);
+                float eased = easeIn ? EaseInOutWithSoftLanding(t) : SmootherStep(t);
                 resolvedShadowStar.position = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
                 yield return null;
             }
@@ -643,13 +1200,14 @@ namespace ShadowPrototype
             }
 
             Vector3 startPosition = resolvedShadowStar.position;
+            Quaternion startRotation = resolvedShadowStar.localRotation;
             Vector3 targetPosition = startPosition;
             targetPosition.x = targetX;
 
             float duration = Mathf.Max(0.0f, durationSeconds);
             if (duration <= 0.0f)
             {
-                resolvedShadowStar.position = targetPosition;
+                StarWalkMotion.FinishWorld(resolvedShadowStar, targetPosition, startRotation);
                 yield break;
             }
 
@@ -658,17 +1216,38 @@ namespace ShadowPrototype
             {
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
-                float eased = easeIn ? t * t : Mathf.SmoothStep(0.0f, 1.0f, t);
-                resolvedShadowStar.position = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
+                float eased = easeIn ? EaseInOutWithSoftLanding(t) : SmootherStep(t);
+                Vector3 framePosition = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
+                StarWalkMotion.ApplyWorld(
+                    resolvedShadowStar,
+                    framePosition,
+                    startPosition,
+                    targetPosition,
+                    eased,
+                    startRotation);
                 yield return null;
             }
 
-            resolvedShadowStar.position = targetPosition;
+            StarWalkMotion.FinishWorld(resolvedShadowStar, targetPosition, startRotation);
         }
 
         private float DarkStartAlpha01 => Mathf.Clamp(darkStartAlpha, 0, 255) / 255.0f;
 
         private float IntroBackgroundStartAlpha01 => Mathf.Clamp(introBackgroundStartAlpha, 0, 255) / 255.0f;
+
+        private static float SmootherStep(float t)
+        {
+            t = Mathf.Clamp01(t);
+            return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
+        }
+
+        private static float EaseInOutWithSoftLanding(float t)
+        {
+            t = Mathf.Clamp01(t);
+            float easeIn = t * t;
+            float smoothLanding = SmootherStep(t);
+            return Mathf.LerpUnclamped(easeIn, smoothLanding, t);
+        }
 
         private Renderer ResolveDarkRenderer()
         {
@@ -830,10 +1409,29 @@ namespace ShadowPrototype
 
         private void OnDestroy()
         {
+            StopInteractionStartCue();
+
             if (createdInteractionInstructionObject && interactionInstructionObject != null)
             {
                 Destroy(interactionInstructionObject);
                 interactionInstructionObject = null;
+            }
+        }
+
+        private static void DestroyRuntimeObject(Object runtimeObject)
+        {
+            if (runtimeObject == null)
+            {
+                return;
+            }
+
+            if (Application.isPlaying)
+            {
+                Destroy(runtimeObject);
+            }
+            else
+            {
+                DestroyImmediate(runtimeObject);
             }
         }
     }

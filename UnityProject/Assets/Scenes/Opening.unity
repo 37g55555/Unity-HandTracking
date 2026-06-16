@@ -425,7 +425,7 @@ MonoBehaviour:
   qwenServerArguments: -m uvicorn app:app --host 127.0.0.1 --port 8000
   captureWorkingDirectory: C:\capstone\Shadow-to-3D-Generator
   captureScriptName: python\ShadowMesh.py
-  captureArguments: --mode file
+  captureArguments: --mode live --camera 0 --camera-width 640 --camera-height 360 --camera-fps 30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --no-frame-enhance --no-control-window
   qwenClient: {fileID: 775207387}
   stateManager: {fileID: 775207380}
   meshFileLoader: {fileID: 2145170302}

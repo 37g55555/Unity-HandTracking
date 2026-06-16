@@ -1,6 +1,7 @@
 import sys
 
-TARGET_MONITOR_INDEX = 1
+TARGET_DISPLAY_NUMBER = 2
+TARGET_MONITOR_INDEX = max(0, TARGET_DISPLAY_NUMBER - 1)
 WINDOWED_PREVIEW_WIDTH = 1280
 WINDOWED_PREVIEW_HEIGHT = 720
 WINDOWED_PREVIEW_OFFSET_X = 40
@@ -48,12 +49,29 @@ def get_display_bounds():
         ctypes.c_void_p,
     )
 
+    def parse_display_number(device_name):
+        if not device_name:
+            return None
+
+        digits = []
+        for character in reversed(device_name):
+            if not character.isdigit():
+                break
+
+            digits.append(character)
+
+        if not digits:
+            return None
+
+        return int("".join(reversed(digits)))
+
     def callback(hmonitor, _hdc, _rect, _data):
         info = MonitorInfo()
         info.cbSize = ctypes.sizeof(MonitorInfo)
         if user32.GetMonitorInfoW(hmonitor, ctypes.byref(info)):
             rect = info.rcMonitor
             monitors.append({
+                "display_number": parse_display_number(info.szDevice),
                 "bounds": (rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top),
             })
         return True
@@ -61,6 +79,10 @@ def get_display_bounds():
     user32.EnumDisplayMonitors(0, 0, monitor_enum_proc(callback), 0)
     if not monitors:
         return None
+
+    for monitor in monitors:
+        if monitor["display_number"] == TARGET_DISPLAY_NUMBER:
+            return monitor["bounds"]
 
     monitors.sort(key=lambda monitor: (monitor["bounds"][0], monitor["bounds"][1]))
 
@@ -120,17 +142,35 @@ def keep_preview_window_no_activate(window_name, restore_window=None):
     restore_foreground_window(restore_window)
 
 
-def configure_preview_window(cv2_module, window_name, restore_focus_window=None):
+def configure_preview_window(
+    cv2_module,
+    window_name,
+    restore_focus_window=None,
+    window_width=None,
+    window_height=None,
+    offset_x=WINDOWED_PREVIEW_OFFSET_X,
+    offset_y=WINDOWED_PREVIEW_OFFSET_Y,
+):
     bounds = get_display_bounds()
     if bounds is None:
         keep_preview_window_no_activate(window_name, restore_focus_window)
         return
 
     x, y, display_width, display_height = bounds
-    window_width = min(WINDOWED_PREVIEW_WIDTH, max(320, display_width - (WINDOWED_PREVIEW_OFFSET_X * 2)))
-    window_height = min(WINDOWED_PREVIEW_HEIGHT, max(240, display_height - (WINDOWED_PREVIEW_OFFSET_Y * 2)))
-    window_x = x + min(WINDOWED_PREVIEW_OFFSET_X, max(0, display_width - window_width))
-    window_y = y + min(WINDOWED_PREVIEW_OFFSET_Y, max(0, display_height - window_height))
+    target_width = WINDOWED_PREVIEW_WIDTH if window_width is None else int(window_width)
+    target_height = WINDOWED_PREVIEW_HEIGHT if window_height is None else int(window_height)
+    safe_offset_x = max(0, int(offset_x))
+    safe_offset_y = max(0, int(offset_y))
+    window_width = min(
+        target_width,
+        max(320, display_width - safe_offset_x - WINDOWED_PREVIEW_OFFSET_X),
+    )
+    window_height = min(
+        target_height,
+        max(240, display_height - safe_offset_y - WINDOWED_PREVIEW_OFFSET_Y),
+    )
+    window_x = x + min(safe_offset_x, max(0, display_width - window_width))
+    window_y = y + min(safe_offset_y, max(0, display_height - window_height))
 
     cv2_module.setWindowProperty(
         window_name,

@@ -176,6 +176,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d486c1df48105934caa60da79d197a84, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  frontCamera: {fileID: 910000003}
+  leftCamera: {fileID: 910000006}
+  rightCamera: {fileID: 910000009}
+  frontRenderTexture: {fileID: 8400000, guid: a3f1111111114f1f9f11111111111111, type: 2}
+  leftRenderTexture: {fileID: 8400000, guid: b4f2222222224f2f9f22222222222222, type: 2}
+  rightRenderTexture: {fileID: 8400000, guid: c5f3333333334f3f9f33333333333333, type: 2}
 --- !u!114 &202780832
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -206,7 +212,7 @@ MonoBehaviour:
   pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
   workingDirectory: C:\capstone\Shadow-to-3D-Generator
   scriptName: python\MediaPipeTracking.py
-  scriptArguments: --camera 0
+  scriptArguments: --camera 2 --directshow-device '@device_pnp_\\?\usb#vid_1bcf&pid_0951&mi_00#6&3704e2b1&0&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\global' --width 640 --height 480 --fps 30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --frame-gain 2.0 --frame-brightness-offset 12 --preview
 --- !u!114 &202780834
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -235,6 +241,19 @@ MonoBehaviour:
   singleSwipeSpinDurationSeconds: 0.7
   maximumSpinRotations: 5
   minimumReturnToZeroSpeedDegreesPerSecond: 180
+  showSpinProgressGauge: 1
+  spinProgressGaugePanelName: Front
+  spinProgressGaugeRoot: {fileID: 0}
+  spinProgressGaugeFill: {fileID: 0}
+  spinProgressGaugeAnchoredPosition: {x: 0, y: 190}
+  spinProgressGaugeSize: {x: 300, y: 18}
+  spinProgressGaugePadding: 3
+  spinProgressGaugeTickCount: 5
+  spinProgressTrackColor: {r: 0.04, g: 0.04, b: 0.04, a: 0.72}
+  spinProgressFrameColor: {r: 1, g: 1, b: 1, a: 0.85}
+  spinProgressFillColor: {r: 1, g: 0.78, b: 0.16, a: 1}
+  spinProgressGlowColor: {r: 1, g: 0.74, b: 0.18, a: 0.24}
+  spinProgressTickColor: {r: 1, g: 1, b: 1, a: 0.62}
   rotationAudioSource: {fileID: 202780836}
   rotationDingVolume: 0.85
   playPostSpinVideoBeforeFlyAway: 1
@@ -719,7 +738,7 @@ Camera:
     serializedVersion: 2
     m_Bits: 4294967295
   m_RenderingPath: -1
-  m_TargetTexture: {fileID: 8400000, guid: a3f1111111114f1f9f11111111111111, type: 2}
+  m_TargetTexture: {fileID: 0}
   m_TargetDisplay: 1
   m_TargetEye: 3
   m_HDR: 1
@@ -803,7 +822,7 @@ Camera:
     serializedVersion: 2
     m_Bits: 4294967295
   m_RenderingPath: -1
-  m_TargetTexture: {fileID: 8400000, guid: b4f2222222224f2f9f22222222222222, type: 2}
+  m_TargetTexture: {fileID: 0}
   m_TargetDisplay: 1
   m_TargetEye: 3
   m_HDR: 1
@@ -887,7 +906,7 @@ Camera:
     serializedVersion: 2
     m_Bits: 4294967295
   m_RenderingPath: -1
-  m_TargetTexture: {fileID: 8400000, guid: c5f3333333334f3f9f33333333333333, type: 2}
+  m_TargetTexture: {fileID: 0}
   m_TargetDisplay: 1
   m_TargetEye: 3
   m_HDR: 1

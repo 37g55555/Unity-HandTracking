@@ -94,6 +94,18 @@ namespace ShadowPrototype
             StopPlayback();
         }
 
+        public void SkipPlayback()
+        {
+            playbackCompleted = true;
+            if (videoPlayer != null)
+            {
+                videoPlayer.loopPointReached -= HandleLoopPointReached;
+                videoPlayer.Stop();
+            }
+
+            SetVisible(false);
+        }
+
         private bool TryConfigurePlayback()
         {
             if (!EnsureOverlay())

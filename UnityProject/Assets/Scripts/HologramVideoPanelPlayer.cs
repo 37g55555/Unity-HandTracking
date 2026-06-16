@@ -88,6 +88,21 @@ namespace ShadowPrototype
             videoPlayer.Play();
         }
 
+        public void SkipPlaybackAndEnableInteraction()
+        {
+            ResolveReferences();
+            StopEnableInteractionRoutine();
+            if (videoPlayer != null)
+            {
+                videoPlayer.loopPointReached -= HandleVideoLoopPointReached;
+                videoPlayer.Stop();
+                videoPlayer.loopPointReached += HandleVideoLoopPointReached;
+            }
+
+            HideOutputPanels();
+            SetInteractionBehavioursEnabled(true);
+        }
+
         private void ResolveReferences()
         {
             if (videoPlayer == null)

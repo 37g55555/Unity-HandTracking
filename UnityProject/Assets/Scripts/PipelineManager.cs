@@ -14,7 +14,7 @@ namespace ShadowPrototype
 {
     public class PipelineManager : MonoBehaviour
     {
-        private const string DefaultCaptureCameraArguments = "--mode file";
+        private const string DefaultCaptureCameraArguments = "--mode live --camera 0 --camera-width 640 --camera-height 360 --camera-fps 30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --no-frame-enhance --no-control-window";
         private const string DefaultQwenServerArguments = "-m uvicorn app:app --host 127.0.0.1 --port 8000";
         private const string ShadowCaptureProcessLabel = "ShadowCapture";
         private const string QwenServerProcessLabel = "Qwen";
@@ -127,6 +127,23 @@ namespace ShadowPrototype
             pendingKeywordUntilOpeningVideoComplete = null;
 
             StartCoroutine(StartPipelineRoutine());
+        }
+
+        public void SkipOpeningVideo()
+        {
+            if (openingVideoPlayer == null)
+            {
+                openingVideoPlayer = GetComponent<OpeningVideoPlayer>();
+            }
+
+            if (openingVideoPlayer == null)
+            {
+                openingVideoPlayer = FindObjectOfType<OpeningVideoPlayer>();
+            }
+
+            openingVideoPlayer?.SkipPlayback();
+            openingVideoCompleted = true;
+            ApplyPendingKeywordAfterOpeningVideo();
         }
 
         private void ConfigureCaptureAcceptance(bool useExistingShadowMesh)
@@ -840,6 +857,8 @@ namespace ShadowPrototype
                 return;
             }
 
+            CameraPythonProcessCleanup.KillStaleCameraProcesses(processLabel, workingDirectory);
+
             LaunchProcessInWindowsTerminal(processLabel, workingDirectory, pythonPath, scriptPath, scriptArguments);
         }
 
@@ -889,7 +908,7 @@ namespace ShadowPrototype
                 command += $" {scriptArguments}";
             }
 
-            string powershellArguments = $"-NoExit -NoProfile -ExecutionPolicy Bypass -Command {EscapeWindowsArgument(command)}";
+            string powershellArguments = $"-NoProfile -ExecutionPolicy Bypass -Command {EscapeWindowsArgument(command)}";
             int launchIndex = terminalLaunchCount++;
 
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
@@ -1222,8 +1241,8 @@ namespace ShadowPrototype
 
         private bool TryGetTerminalTargetWorkArea(out RectInt bounds, out string description)
         {
-            return WindowsDisplayUtility.TryGetMonitorBoundsByPositionIndex(
-                DisplayRoutingSettings.TerminalMonitorPositionIndex,
+            return WindowsDisplayUtility.TryGetMonitorBoundsByDisplayNumber(
+                DisplayRoutingSettings.TerminalWindowsDisplayNumber,
                 useWorkArea: true,
                 out bounds,
                 out description);

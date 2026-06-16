@@ -9,21 +9,78 @@ public class HologramSceneManager : MonoBehaviour
     private const string HologramCanvasName = "HologramCanvas";
     private static readonly Vector3 SceneWorldOffset = new Vector3(50f, 0f, 0f);
 
+    [SerializeField] private Camera frontCamera;
+    [SerializeField] private Camera leftCamera;
+    [SerializeField] private Camera rightCamera;
+    [SerializeField] private RenderTexture frontRenderTexture;
+    [SerializeField] private RenderTexture leftRenderTexture;
+    [SerializeField] private RenderTexture rightRenderTexture;
+
     private int activeTargetDisplay;
     private Vector2Int lastLayoutSize;
 
     private void Start()
     {
+        ResolveCameraReferences();
+        AssignCameraRenderTextures();
         ApplySceneWorldOffset(gameObject.scene, SceneWorldOffset);
 
+        DisplayRoutingSettings.ActivateConfiguredUnityDisplays();
         activeTargetDisplay = ResolveTargetDisplayIndex();
-        if (activeTargetDisplay > 0)
-        {
-            Display.displays[activeTargetDisplay].Activate();
-        }
+        DisplayRoutingSettings.ActivateUnityDisplay(activeTargetDisplay);
 
         ApplyTargetDisplay(gameObject.scene, activeTargetDisplay);
         ApplyHologramCanvasLayoutIfNeeded(force: true);
+    }
+
+    private void ResolveCameraReferences()
+    {
+        if (frontCamera == null)
+        {
+            frontCamera = FindCamera("Cam_Front");
+        }
+
+        if (leftCamera == null)
+        {
+            leftCamera = FindCamera("Cam_Left");
+        }
+
+        if (rightCamera == null)
+        {
+            rightCamera = FindCamera("Cam_Right");
+        }
+    }
+
+    private Camera FindCamera(string cameraName)
+    {
+        foreach (GameObject rootObject in gameObject.scene.GetRootGameObjects())
+        {
+            Camera[] cameras = rootObject.GetComponentsInChildren<Camera>(true);
+            foreach (Camera sceneCamera in cameras)
+            {
+                if (sceneCamera != null && sceneCamera.name == cameraName)
+                {
+                    return sceneCamera;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private void AssignCameraRenderTextures()
+    {
+        AssignCameraRenderTexture(frontCamera, frontRenderTexture);
+        AssignCameraRenderTexture(leftCamera, leftRenderTexture);
+        AssignCameraRenderTexture(rightCamera, rightRenderTexture);
+    }
+
+    private static void AssignCameraRenderTexture(Camera targetCamera, RenderTexture renderTexture)
+    {
+        if (targetCamera != null)
+        {
+            targetCamera.targetTexture = renderTexture;
+        }
     }
 
     private static void ApplySceneWorldOffset(Scene scene, Vector3 offset)
@@ -78,13 +135,7 @@ public class HologramSceneManager : MonoBehaviour
 
     private int ResolveTargetDisplayIndex()
     {
-        int displayCount = Display.displays.Length;
-        if (displayCount <= 1)
-        {
-            return 0;
-        }
-
-        return Mathf.Clamp(TargetDisplayIndex, 0, displayCount - 1);
+        return DisplayRoutingSettings.ResolveUnityDisplayIndex(TargetDisplayIndex);
     }
 
     private void ApplyHologramCanvasLayout(Scene scene, Vector2Int displaySize)

@@ -36,6 +36,21 @@ namespace ShadowPrototype
         [SerializeField, Min(0.0f)] private float maximumSpinRotations = 5.0f;
         [SerializeField, Min(0.0f)] private float minimumReturnToZeroSpeedDegreesPerSecond = 180.0f;
 
+        [Header("Spin Progress Gauge")]
+        [SerializeField] private bool showSpinProgressGauge = true;
+        [SerializeField] private string spinProgressGaugePanelName = "Front";
+        [SerializeField] private RectTransform spinProgressGaugeRoot;
+        [SerializeField] private RectTransform spinProgressGaugeFill;
+        [SerializeField] private Vector2 spinProgressGaugeAnchoredPosition = new Vector2(0.0f, 190.0f);
+        [SerializeField] private Vector2 spinProgressGaugeSize = new Vector2(300.0f, 18.0f);
+        [SerializeField, Min(0.0f)] private float spinProgressGaugePadding = 3.0f;
+        [SerializeField, Min(1)] private int spinProgressGaugeTickCount = 5;
+        [SerializeField] private Color spinProgressTrackColor = new Color(0.04f, 0.04f, 0.04f, 0.72f);
+        [SerializeField] private Color spinProgressFrameColor = new Color(1.0f, 1.0f, 1.0f, 0.85f);
+        [SerializeField] private Color spinProgressFillColor = new Color(1.0f, 0.78f, 0.16f, 1.0f);
+        [SerializeField] private Color spinProgressGlowColor = new Color(1.0f, 0.74f, 0.18f, 0.24f);
+        [SerializeField] private Color spinProgressTickColor = new Color(1.0f, 1.0f, 1.0f, 0.62f);
+
         [Header("Rotation Feedback")]
         [SerializeField] private AudioSource rotationAudioSource;
         [SerializeField, Range(0.0f, 1.0f)] private float rotationDingVolume = 0.85f;
@@ -86,11 +101,22 @@ namespace ShadowPrototype
         private bool waitingForPostSpinVideo;
         private bool postSpinTargetReplaced;
         private AudioClip rotationDingClip;
+        private RectTransform spinProgressGaugeGlow;
+        private RectTransform spinProgressGaugeTrack;
+        private RectTransform spinProgressGaugeShine;
+        private RectTransform[] spinProgressGaugeTicks;
+        private Image spinProgressGaugeGlowImage;
+        private Image spinProgressGaugeTrackImage;
+        private Image spinProgressGaugeFillImage;
+        private Image spinProgressGaugeShineImage;
+        private Outline spinProgressGaugeTrackOutline;
+        private bool createdSpinProgressGaugeAtRuntime;
 
         private void Awake()
         {
             ResolveReferences();
             SetFlyAwayInstructionVisible(false);
+            SetSpinProgressGaugeVisible(false);
         }
 
         private void OnEnable()
@@ -104,10 +130,12 @@ namespace ShadowPrototype
                 ResetSwipeTracking();
                 ResetPalmTracking();
                 SetFlyAwayInstructionVisible(true);
+                SetSpinProgressGaugeVisible(false);
             }
             else
             {
                 SetFlyAwayInstructionVisible(false);
+                SetSpinProgressGaugeVisible(true);
             }
         }
 
@@ -115,6 +143,11 @@ namespace ShadowPrototype
         {
             ResolveReferences();
             mediaPipeReceiver?.StartReceiver();
+        }
+
+        private void OnDisable()
+        {
+            SetSpinProgressGaugeVisible(false);
         }
 
         private void Update()
@@ -481,6 +514,7 @@ namespace ShadowPrototype
                 float frameDegrees = currentDegrees - previousDegrees;
                 rotationTarget.localRotation *= Quaternion.AngleAxis(frameDegrees, normalizedAxis);
                 previousDegrees = currentDegrees;
+                SetSpinProgressGaugeValue(accumulatedSpinDegrees + currentDegrees);
                 yield return null;
             }
 
@@ -490,6 +524,7 @@ namespace ShadowPrototype
             }
 
             accumulatedSpinDegrees += spinDegrees;
+            SetSpinProgressGaugeValue(accumulatedSpinDegrees);
             PlayRotationDing();
             isSpinning = false;
             spinRoutine = null;
@@ -637,6 +672,7 @@ namespace ShadowPrototype
             canAcceptFlyAwayGesture = false;
             ResetSwipeTracking();
             ResetPalmTracking();
+            SetSpinProgressGaugeVisible(false);
             ReplaceTargetBeforePostSpinVideo();
             postSpinVideoPlayer.Play(postSpinVideoRelativePath);
             return true;
@@ -760,6 +796,7 @@ namespace ShadowPrototype
             isFlyingAway = true;
             spinLocked = true;
             SetFlyAwayInstructionVisible(false);
+            SetSpinProgressGaugeVisible(false);
             if (spinRoutine != null)
             {
                 StopCoroutine(spinRoutine);
@@ -861,21 +898,322 @@ namespace ShadowPrototype
             return null;
         }
 
-        private void OnDestroy()
+        private void EnsureSpinProgressGauge()
         {
-            if (rotationDingClip == null)
+            if (!showSpinProgressGauge)
+            {
+                return;
+            }
+
+            if (spinProgressGaugeRoot == null)
+            {
+                Transform panelTransform = FindTransformRecursive(transform, spinProgressGaugePanelName);
+                if (panelTransform == null)
+                {
+                    return;
+                }
+
+                GameObject rootObject = new GameObject("SpinProgressGauge", typeof(RectTransform));
+                rootObject.layer = panelTransform.gameObject.layer;
+                rootObject.transform.SetParent(panelTransform, false);
+                spinProgressGaugeRoot = rootObject.GetComponent<RectTransform>();
+                createdSpinProgressGaugeAtRuntime = true;
+            }
+
+            if (spinProgressGaugeGlow == null)
+            {
+                spinProgressGaugeGlow = CreateGaugeImage("Glow", spinProgressGaugeRoot, out spinProgressGaugeGlowImage);
+            }
+
+            if (spinProgressGaugeTrack == null)
+            {
+                spinProgressGaugeTrack = CreateGaugeImage("Track", spinProgressGaugeRoot, out spinProgressGaugeTrackImage);
+                spinProgressGaugeTrackOutline = spinProgressGaugeTrack.gameObject.AddComponent<Outline>();
+            }
+
+            if (spinProgressGaugeTrackImage == null && spinProgressGaugeTrack != null)
+            {
+                spinProgressGaugeTrackImage = spinProgressGaugeTrack.GetComponent<Image>();
+            }
+
+            if (spinProgressGaugeTrackOutline == null && spinProgressGaugeTrack != null)
+            {
+                spinProgressGaugeTrackOutline = spinProgressGaugeTrack.GetComponent<Outline>();
+            }
+
+            if (spinProgressGaugeFill == null)
+            {
+                spinProgressGaugeFill = CreateGaugeImage("Fill", spinProgressGaugeRoot, out spinProgressGaugeFillImage);
+            }
+
+            if (spinProgressGaugeFillImage == null && spinProgressGaugeFill != null)
+            {
+                spinProgressGaugeFillImage = spinProgressGaugeFill.GetComponent<Image>();
+            }
+
+            if (spinProgressGaugeShine == null)
+            {
+                spinProgressGaugeShine = CreateGaugeImage("Shine", spinProgressGaugeRoot, out spinProgressGaugeShineImage);
+            }
+
+            if (spinProgressGaugeShineImage == null && spinProgressGaugeShine != null)
+            {
+                spinProgressGaugeShineImage = spinProgressGaugeShine.GetComponent<Image>();
+            }
+
+            EnsureSpinProgressGaugeTicks();
+            ApplySpinProgressGaugeLayout();
+        }
+
+        private void ApplySpinProgressGaugeLayout()
+        {
+            float width = Mathf.Max(0.001f, spinProgressGaugeSize.x);
+            float height = Mathf.Max(0.001f, spinProgressGaugeSize.y);
+            float padding = Mathf.Min(spinProgressGaugePadding, height * 0.45f, width * 0.45f);
+            float innerWidth = Mathf.Max(0.001f, width - (padding * 2.0f));
+            float innerHeight = Mathf.Max(0.001f, height - (padding * 2.0f));
+
+            if (spinProgressGaugeRoot != null)
+            {
+                spinProgressGaugeRoot.anchorMin = new Vector2(0.5f, 0.5f);
+                spinProgressGaugeRoot.anchorMax = new Vector2(0.5f, 0.5f);
+                spinProgressGaugeRoot.pivot = new Vector2(0.5f, 0.5f);
+                spinProgressGaugeRoot.anchoredPosition = spinProgressGaugeAnchoredPosition;
+                spinProgressGaugeRoot.sizeDelta = new Vector2(width, height);
+            }
+
+            LayoutCenteredGaugePart(spinProgressGaugeGlow, new Vector2(width + 34.0f, height + 18.0f), Vector2.zero);
+            LayoutCenteredGaugePart(spinProgressGaugeTrack, new Vector2(width, height), Vector2.zero);
+
+            if (spinProgressGaugeGlowImage != null)
+            {
+                spinProgressGaugeGlowImage.color = spinProgressGlowColor;
+                spinProgressGaugeGlowImage.raycastTarget = false;
+            }
+
+            if (spinProgressGaugeTrackImage != null)
+            {
+                spinProgressGaugeTrackImage.color = spinProgressTrackColor;
+                spinProgressGaugeTrackImage.raycastTarget = false;
+            }
+
+            if (spinProgressGaugeTrackOutline != null)
+            {
+                spinProgressGaugeTrackOutline.effectColor = spinProgressFrameColor;
+                spinProgressGaugeTrackOutline.effectDistance = new Vector2(1.2f, 1.2f);
+                spinProgressGaugeTrackOutline.useGraphicAlpha = false;
+            }
+
+            if (spinProgressGaugeFill != null)
+            {
+                spinProgressGaugeFill.anchorMin = new Vector2(0.5f, 0.5f);
+                spinProgressGaugeFill.anchorMax = new Vector2(0.5f, 0.5f);
+                spinProgressGaugeFill.pivot = new Vector2(0.0f, 0.5f);
+                spinProgressGaugeFill.anchoredPosition = new Vector2(-innerWidth * 0.5f, 0.0f);
+
+                if (spinProgressGaugeFillImage != null)
+                {
+                    spinProgressGaugeFillImage.color = spinProgressFillColor;
+                    spinProgressGaugeFillImage.raycastTarget = false;
+                }
+            }
+
+            if (spinProgressGaugeShine != null)
+            {
+                spinProgressGaugeShine.anchorMin = new Vector2(0.5f, 0.5f);
+                spinProgressGaugeShine.anchorMax = new Vector2(0.5f, 0.5f);
+                spinProgressGaugeShine.pivot = new Vector2(0.0f, 0.5f);
+                spinProgressGaugeShine.anchoredPosition = new Vector2(-innerWidth * 0.5f, innerHeight * 0.24f);
+
+                if (spinProgressGaugeShineImage != null)
+                {
+                    Color shineColor = Color.white;
+                    shineColor.a = 0.28f;
+                    spinProgressGaugeShineImage.color = shineColor;
+                    spinProgressGaugeShineImage.raycastTarget = false;
+                }
+            }
+
+            LayoutSpinProgressGaugeTicks(innerWidth, innerHeight);
+        }
+
+        private void SetSpinProgressGaugeVisible(bool isVisible)
+        {
+            if (!showSpinProgressGauge)
+            {
+                if (spinProgressGaugeRoot != null)
+                {
+                    spinProgressGaugeRoot.gameObject.SetActive(false);
+                }
+
+                return;
+            }
+
+            EnsureSpinProgressGauge();
+            if (spinProgressGaugeRoot == null)
+            {
+                return;
+            }
+
+            spinProgressGaugeRoot.gameObject.SetActive(isVisible);
+            if (isVisible)
+            {
+                SetSpinProgressGaugeValue(accumulatedSpinDegrees);
+            }
+        }
+
+        private void SetSpinProgressGaugeValue(float spinDegrees)
+        {
+            if (!showSpinProgressGauge || spinProgressGaugeFill == null)
+            {
+                return;
+            }
+
+            float progress = GetSpinProgress01(spinDegrees);
+            float width = Mathf.Max(0.001f, spinProgressGaugeSize.x);
+            float height = Mathf.Max(0.001f, spinProgressGaugeSize.y);
+            float padding = Mathf.Min(spinProgressGaugePadding, height * 0.45f, width * 0.45f);
+            float innerWidth = Mathf.Max(0.001f, width - (padding * 2.0f));
+            float innerHeight = Mathf.Max(0.001f, height - (padding * 2.0f));
+            float fillWidth = innerWidth * progress;
+
+            spinProgressGaugeFill.sizeDelta = new Vector2(fillWidth, innerHeight);
+
+            if (spinProgressGaugeShine != null)
+            {
+                spinProgressGaugeShine.sizeDelta = new Vector2(fillWidth, innerHeight * 0.32f);
+            }
+        }
+
+        private float GetSpinProgress01(float spinDegrees)
+        {
+            if (maximumSpinRotations <= 0.0f)
+            {
+                return 0.0f;
+            }
+
+            float maxSpinDegrees = maximumSpinRotations * 360.0f;
+            if (maxSpinDegrees <= 0.0f)
+            {
+                return 0.0f;
+            }
+
+            return Mathf.Clamp01(spinDegrees / maxSpinDegrees);
+        }
+
+        private void EnsureSpinProgressGaugeTicks()
+        {
+            int tickCount = Mathf.Max(1, spinProgressGaugeTickCount);
+            int dividerCount = Mathf.Max(0, tickCount - 1);
+            if (spinProgressGaugeTicks != null && spinProgressGaugeTicks.Length == dividerCount)
+            {
+                return;
+            }
+
+            if (spinProgressGaugeTicks != null)
+            {
+                for (int i = 0; i < spinProgressGaugeTicks.Length; i++)
+                {
+                    if (spinProgressGaugeTicks[i] != null)
+                    {
+                        DestroyUnityObject(spinProgressGaugeTicks[i].gameObject);
+                    }
+                }
+            }
+
+            spinProgressGaugeTicks = new RectTransform[dividerCount];
+            for (int i = 0; i < dividerCount; i++)
+            {
+                RectTransform tick = CreateGaugeImage($"Tick_{i + 1}", spinProgressGaugeRoot, out Image tickImage);
+                tickImage.color = spinProgressTickColor;
+                tickImage.raycastTarget = false;
+                spinProgressGaugeTicks[i] = tick;
+            }
+        }
+
+        private void LayoutSpinProgressGaugeTicks(float innerWidth, float innerHeight)
+        {
+            if (spinProgressGaugeTicks == null || spinProgressGaugeTicks.Length == 0)
+            {
+                return;
+            }
+
+            int tickCount = spinProgressGaugeTicks.Length + 1;
+            for (int i = 0; i < spinProgressGaugeTicks.Length; i++)
+            {
+                RectTransform tick = spinProgressGaugeTicks[i];
+                if (tick == null)
+                {
+                    continue;
+                }
+
+                float x = (-innerWidth * 0.5f) + (innerWidth * (i + 1) / tickCount);
+                LayoutCenteredGaugePart(tick, new Vector2(2.0f, innerHeight), new Vector2(x, 0.0f));
+
+                Image tickImage = tick.GetComponent<Image>();
+                if (tickImage != null)
+                {
+                    tickImage.color = spinProgressTickColor;
+                    tickImage.raycastTarget = false;
+                }
+            }
+        }
+
+        private static RectTransform CreateGaugeImage(string name, RectTransform parent, out Image image)
+        {
+            GameObject imageObject = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            imageObject.layer = parent.gameObject.layer;
+            imageObject.transform.SetParent(parent, false);
+            RectTransform rectTransform = imageObject.GetComponent<RectTransform>();
+            image = imageObject.GetComponent<Image>();
+            image.raycastTarget = false;
+            return rectTransform;
+        }
+
+        private static void LayoutCenteredGaugePart(RectTransform rectTransform, Vector2 size, Vector2 anchoredPosition)
+        {
+            if (rectTransform == null)
+            {
+                return;
+            }
+
+            rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            rectTransform.anchoredPosition = anchoredPosition;
+            rectTransform.sizeDelta = size;
+        }
+
+        private static void DestroyUnityObject(Object unityObject)
+        {
+            if (unityObject == null)
             {
                 return;
             }
 
             if (Application.isPlaying)
             {
-                Destroy(rotationDingClip);
+                Destroy(unityObject);
             }
             else
             {
-                DestroyImmediate(rotationDingClip);
+                DestroyImmediate(unityObject);
             }
+        }
+
+        private void OnDestroy()
+        {
+            if (createdSpinProgressGaugeAtRuntime && spinProgressGaugeRoot != null)
+            {
+                DestroyUnityObject(spinProgressGaugeRoot.gameObject);
+            }
+
+            if (rotationDingClip == null)
+            {
+                return;
+            }
+
+            DestroyUnityObject(rotationDingClip);
         }
     }
 }

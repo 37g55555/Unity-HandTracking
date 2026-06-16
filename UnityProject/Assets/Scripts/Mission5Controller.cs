@@ -92,11 +92,23 @@ namespace ShadowPrototype
             SetInteractionSystemEnabled(true);
         }
 
+        public void SkipToInteraction()
+        {
+            if (introRoutine != null)
+            {
+                StopCoroutine(introRoutine);
+                introRoutine = null;
+            }
+
+            EnterInteraction();
+        }
+
         private IEnumerator PlayIntroRoutine()
         {
             ResolveReferences();
             Transform star = shadowStarTransform;
             Vector3 starStartPosition = star != null ? star.position : Vector3.zero;
+            Quaternion starStartRotation = star != null ? star.localRotation : Quaternion.identity;
             Vector3 starTargetPosition = starStartPosition;
             starTargetPosition.y = introShadowStarTargetY;
 
@@ -109,7 +121,7 @@ namespace ShadowPrototype
                 SetFadeAlpha(0.0f);
                 if (star != null)
                 {
-                    star.position = starTargetPosition;
+                    StarWalkMotion.FinishWorld(star, starTargetPosition, starStartRotation);
                 }
 
                 yield return PlayIntroNarrationRoutine();
@@ -145,7 +157,14 @@ namespace ShadowPrototype
                     {
                         float moveT = Mathf.Clamp01(elapsed / moveDuration);
                         float moveEased = Mathf.SmoothStep(0.0f, 1.0f, moveT);
-                        star.position = Vector3.LerpUnclamped(starStartPosition, starTargetPosition, moveEased);
+                        Vector3 framePosition = Vector3.LerpUnclamped(starStartPosition, starTargetPosition, moveEased);
+                        StarWalkMotion.ApplyWorld(
+                            star,
+                            framePosition,
+                            starStartPosition,
+                            starTargetPosition,
+                            moveEased,
+                            starStartRotation);
                     }
                 }
 
@@ -155,7 +174,7 @@ namespace ShadowPrototype
             SetFadeAlpha(0.0f);
             if (star != null)
             {
-                star.position = starTargetPosition;
+                StarWalkMotion.FinishWorld(star, starTargetPosition, starStartRotation);
             }
 
             yield return PlayIntroNarrationRoutine();

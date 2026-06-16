@@ -4,8 +4,45 @@ namespace ShadowPrototype
 {
     internal static class DisplayRoutingSettings
     {
+        public const int MainWindowsDisplayNumber = 3;
+        public const int HologramWindowsDisplayNumber = 1;
+        public const int MainUnityDisplayIndex = 0;
         public const int HologramUnityDisplayIndex = 1;
-        public const int TerminalMonitorPositionIndex = 1;
+        public const int TerminalWindowsDisplayNumber = 2;
+        public const int TerminalMonitorPositionIndex = TerminalWindowsDisplayNumber - 1;
+        public const bool ActivateHologramDisplayOnStartup = true;
+
+        public static void ActivateConfiguredUnityDisplays()
+        {
+            ActivateUnityDisplay(MainUnityDisplayIndex);
+
+            if (ActivateHologramDisplayOnStartup)
+            {
+                ActivateUnityDisplay(HologramUnityDisplayIndex);
+            }
+        }
+
+        public static int ResolveUnityDisplayIndex(int requestedDisplayIndex)
+        {
+            if (Display.displays == null || Display.displays.Length == 0)
+            {
+                return 0;
+            }
+
+            return Mathf.Clamp(requestedDisplayIndex, 0, Display.displays.Length - 1);
+        }
+
+        public static void ActivateUnityDisplay(int displayIndex)
+        {
+            if (Display.displays == null ||
+                displayIndex <= 0 ||
+                displayIndex >= Display.displays.Length)
+            {
+                return;
+            }
+
+            Display.displays[displayIndex].Activate();
+        }
     }
 
     internal static class HologramPanelLayout

@@ -324,9 +324,9 @@ MonoBehaviour:
   introNarrationStepCount: 6
   shadowStarTransform: {fileID: 600001}
   shadowStarDropTargetY: -3.5
-  shadowStarDropSeconds: 0.18
+  shadowStarDropSeconds: 0.32
   shadowStarAfterNarrationTargetX: -4
-  shadowStarAfterNarrationMoveSeconds: 7
+  shadowStarAfterNarrationMoveSeconds: 3.5
   targetCamera: {fileID: 200002}
   outroNarrationStartStepIndex: 6
   outroNarrationStepCount: 2
@@ -345,6 +345,18 @@ MonoBehaviour:
   interactionInstructionWidthRatio: 0.9
   interactionInstructionObject: {fileID: 0}
   interactionInstructionTextComponent: {fileID: 0}
+  playSunSlideCueOnInteractionStart: 1
+  sunSlideCueRepeatCount: 3
+  sunSlideCueDistanceX: 3.3
+  sunSlideCueSlideSeconds: 0.84
+  sunSlideCueReturnSeconds: 0.36
+  sunSlideCuePauseSeconds: 0.28
+  sunSlideCueGhostAlpha: 0.28
+  sunSlideCueGhostCount: 5
+  sunSlideCueGhostLifetimeSeconds: 0.55
+  animateShadowStarScaleWithSunSlideCue: 1
+  sunSlideCueShadowStarScaleMultiplier: 1.25
+  handDetectionCancelsSunSlideCue: 1
 --- !u!82 &400003
 AudioSource:
   m_ObjectHideFlags: 0
@@ -678,7 +690,10 @@ MonoBehaviour:
   pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
   workingDirectory: C:\capstone\Shadow-to-3D-Generator
   scriptName: python\MediaPipeTracking.py
-  scriptArguments: --camera 0
+  scriptArguments: --camera 1 --fallback-cameras 0 --width 640 --height 360 --fps
+    30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --camera-brightness
+    180 --camera-gain 80 --camera-contrast 110 --allow-black-frames --frame-gain
+    2 --frame-brightness-offset 45 --preview
 --- !u!1 &600000
 GameObject:
   m_ObjectHideFlags: 0
@@ -900,7 +915,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 19ed1895c6044f2087368f442d079c8b, type: 2}
+  - {fileID: 2100000, guid: 909af5dc62dd4863a77deab282a9c5ea, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -939,8 +954,8 @@ Transform:
   m_GameObject: {fileID: 229137311}
   serializedVersion: 2
   m_LocalRotation: {x: -0.7071068, y: 0, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: -10.42593, y: 0, z: 5}
-  m_LocalScale: {x: 3.862963, y: 1, z: 1}
+  m_LocalPosition: {x: 8.9, y: -3.75, z: 5}
+  m_LocalScale: {x: 3.555556, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}

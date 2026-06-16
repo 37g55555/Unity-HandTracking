@@ -105,6 +105,17 @@ namespace ShadowPrototype
             SetInteractionInstructionVisible(true);
         }
 
+        public void SkipToInteraction()
+        {
+            if (introRoutine != null)
+            {
+                StopCoroutine(introRoutine);
+                introRoutine = null;
+            }
+
+            EnterInteraction();
+        }
+
         public void HandleDoorReached()
         {
             if (completionStarted)
