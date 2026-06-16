@@ -524,6 +524,14 @@ namespace ShadowPrototype
             float scrollDuration = narrationPlayer.CalculateDurationThroughStep(IntroBackgroundScrollStepCount - 1);
             int introStepCount = Mathf.Clamp(introNarrationStepCount, 0, narrationPlayer.StepCount);
             float scrollElapsed = 0.0f;
+            Transform shadowRoot = ResolveIntroShadowRoot();
+            Vector3 shadowWalkBasePosition = shadowRoot != null ? shadowRoot.position : Vector3.zero;
+            Quaternion shadowWalkBaseRotation = shadowRoot != null ? shadowRoot.localRotation : Quaternion.identity;
+            float shadowWalkElapsed = 0.0f;
+            bool backgroundScrolls = scrollDuration > 0.0f &&
+                                     backgroundTransform != null &&
+                                     !Mathf.Approximately(startPosition.x, targetPosition.x);
+            float shadowWalkDirection = backgroundScrolls ? -Mathf.Sign(targetPosition.x - startPosition.x) : 1.0f;
             bool darkFadeReset = false;
             bool starRevealStarted = false;
 
@@ -540,6 +548,16 @@ namespace ShadowPrototype
                         deltaTime,
                         elapsed => scrollElapsed = elapsed,
                         () => scrollElapsed);
+                    if (backgroundScrolls && shadowRoot != null && shadowWalkElapsed < scrollDuration)
+                    {
+                        shadowWalkElapsed = Mathf.Min(scrollDuration, shadowWalkElapsed + Mathf.Max(0.0f, deltaTime));
+                        StarWalkMotion.ApplyWorldInPlace(
+                            shadowRoot,
+                            shadowWalkBasePosition,
+                            shadowWalkElapsed,
+                            shadowWalkDirection,
+                            shadowWalkBaseRotation);
+                    }
 
                     if (stepIndex == IntroDarkFadeStepIndex)
                     {
@@ -575,6 +593,16 @@ namespace ShadowPrototype
                         deltaTime,
                         elapsed => scrollElapsed = elapsed,
                         () => scrollElapsed);
+                    if (backgroundScrolls && shadowRoot != null && shadowWalkElapsed < scrollDuration)
+                    {
+                        shadowWalkElapsed = Mathf.Min(scrollDuration, shadowWalkElapsed + Mathf.Max(0.0f, deltaTime));
+                        StarWalkMotion.ApplyWorldInPlace(
+                            shadowRoot,
+                            shadowWalkBasePosition,
+                            shadowWalkElapsed,
+                            shadowWalkDirection,
+                            shadowWalkBaseRotation);
+                    }
                 });
 
             if (darkFadeReset)
@@ -590,6 +618,11 @@ namespace ShadowPrototype
             if (scrollDuration > 0.0f && backgroundTransform != null)
             {
                 backgroundTransform.localPosition = targetPosition;
+            }
+
+            if (backgroundScrolls && shadowRoot != null)
+            {
+                StarWalkMotion.FinishWorld(shadowRoot, shadowWalkBasePosition, shadowWalkBaseRotation);
             }
         }
 
