@@ -203,8 +203,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   launchOnStart: 1
   stopProcessOnDisable: 1
-  pythonExecutablePath: D:\anaconda3\envs\artifact\python.exe
-  workingDirectory: D:\Unity-HandTracking
+  pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
+  workingDirectory: C:\capstone\Shadow-to-3D-Generator
   scriptName: python\MediaPipeTracking.py
   scriptArguments: --camera 0
 --- !u!114 &202780834

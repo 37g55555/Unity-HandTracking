@@ -173,8 +173,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   launchOnStart: 1
   stopProcessOnDisable: 1
-  pythonExecutablePath: D:\anaconda3\envs\artifact\python.exe
-  workingDirectory: D:\Unity-HandTracking
+  pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
+  workingDirectory: C:\capstone\Shadow-to-3D-Generator
   scriptName: python\Mission5ShadowAreaTracking.py
   cameraDeviceIndex: 0
   udpPort: 5055

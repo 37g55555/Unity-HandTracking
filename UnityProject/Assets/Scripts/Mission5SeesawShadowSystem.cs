@@ -19,8 +19,8 @@ namespace ShadowPrototype
         [Header("Camera Process")]
         [SerializeField] private bool launchOnStart = true;
         [SerializeField] private bool stopProcessOnDisable = true;
-        [SerializeField] private string pythonExecutablePath = @"D:\anaconda3\envs\artifact\python.exe";
-        [SerializeField] private string workingDirectory = @"D:\Unity-HandTracking";
+        [SerializeField] private string pythonExecutablePath = @"C:\Users\creal\miniconda3\envs\artifact\python.exe";
+        [SerializeField] private string workingDirectory = @"C:\capstone\Shadow-to-3D-Generator";
         [SerializeField] private string scriptName = @"python\Mission5ShadowAreaTracking.py";
         [SerializeField, Min(0)] private int cameraDeviceIndex;
         [SerializeField, Min(1)] private int udpPort = 5055;

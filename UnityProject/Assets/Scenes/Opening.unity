@@ -420,10 +420,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4932527c3299eeb4292b9a73ba6f7ea6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  pythonExecutablePath: D:\anaconda3\envs\artifact\python.exe
-  qwenWorkingDirectory: D:\Unity-HandTracking\qwen
+  pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
+  qwenWorkingDirectory: C:\capstone\Shadow-to-3D-Generator\qwen
   qwenServerArguments: -m uvicorn app:app --host 127.0.0.1 --port 8000
-  captureWorkingDirectory: D:\Unity-HandTracking
+  captureWorkingDirectory: C:\capstone\Shadow-to-3D-Generator
   captureScriptName: python\ShadowMesh.py
   captureArguments: --mode file
   qwenClient: {fileID: 775207387}
@@ -835,7 +835,7 @@ MonoBehaviour:
   relativeWatchDirectory: ..\output\shadowmesh
   meshFileName: shadow_mesh.obj
   metadataFileName: shadow_metadata.json
-  absoluteWatchDirectoryOverride: D:\Unity-HandTracking\output\shadowmesh
+  absoluteWatchDirectoryOverride: C:\capstone\Shadow-to-3D-Generator\output\shadowmesh
   shadowMeshDeformer: {fileID: 1061289396}
   stateManager: {fileID: 775207380}
   shadowMeshRoot: {fileID: 2145170301}

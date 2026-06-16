@@ -30,10 +30,10 @@ namespace ShadowPrototype
         private static readonly Vector2Int TerminalWindowCascadeOffset = new Vector2Int(32, 32);
 
         [Header("Paths")]
-        [SerializeField] private string pythonExecutablePath = @"D:\anaconda3\envs\artifact\python.exe";
-        [SerializeField] private string qwenWorkingDirectory = @"D:\Unity-HandTracking\qwen";
+        [SerializeField] private string pythonExecutablePath = @"C:\Users\creal\miniconda3\envs\artifact\python.exe";
+        [SerializeField] private string qwenWorkingDirectory = @"C:\capstone\Shadow-to-3D-Generator\qwen";
         [SerializeField] private string qwenServerArguments = DefaultQwenServerArguments;
-        [SerializeField] private string captureWorkingDirectory = @"D:\Unity-HandTracking";
+        [SerializeField] private string captureWorkingDirectory = @"C:\capstone\Shadow-to-3D-Generator";
         [SerializeField] private string captureScriptName = @"python\ShadowMesh.py";
         [SerializeField] private string captureArguments = DefaultCaptureCameraArguments;
 
