@@ -90,13 +90,14 @@ namespace ShadowPrototype
         [SerializeField, Min(0.0f)] private float completionEffectSeconds = 2.0f;
         [SerializeField, Min(0.0f)] private float starMorphSeconds = 2.0f;
         [SerializeField] private bool replaceMeshWithStarOnComplete = true;
+        [SerializeField] private GameObject shadowStarObject;
         [SerializeField, Range(0.0f, 1.0f)] private float completionDingVolume = 0.85f;
         [SerializeField, Min(0.05f)] private float particleBurstSeconds = 2.0f;
 
         [Header("Outro")]
         [SerializeField, Min(0.0f)] private float outroReturnSeconds = 2.0f;
-        [SerializeField] private Vector2 outroShadowStarTargetPosition = new Vector2(1.0f, -2.8f);
-        [SerializeField, Min(0.01f)] private float outroShadowStarTargetScale = 0.6f;
+        [SerializeField] private Vector2 outroShadowStarTargetPosition = new Vector2(0.95f, -2.8f);
+        [SerializeField, Min(0.01f)] private float outroShadowStarTargetScale = 0.8f;
 
         [Header("Scene Transition")]
         [SerializeField, Min(0.0f)] private float mission2SceneTransitionDelaySeconds = 1.0f;
@@ -137,7 +138,6 @@ namespace ShadowPrototype
         private GameObject recreatedIntroStarObject;
         private Mesh recreatedIntroStarMesh;
         private Material recreatedIntroStarMaterial;
-        private bool createdInteractionInstructionObject;
 
         public Mission1Phase CurrentPhase => currentPhase;
         public float LastMatchScore { get; private set; }
@@ -146,10 +146,8 @@ namespace ShadowPrototype
         {
             currentPhase = initialPhase;
             ResolveRuntimeReferences();
-            ResolveInteractionComponents();
             RebuildGuidePolygonIfNeeded(force: true);
 
-            BindSceneMatchUiReferences();
             ResetInteractionProgress();
             SetInteractionSystemsEnabled(false);
             SetMatchProgressBarVisible(false);
@@ -157,6 +155,7 @@ namespace ShadowPrototype
             SetIntroBackgroundAlpha(currentPhase == Mission1Phase.Intro ? 0.0f : IntroBackgroundFinalAlpha01);
             SetIntroDarkAlpha(0.0f);
             SetIntroStarAlpha(currentPhase == Mission1Phase.Intro ? 0.0f : IntroStarFinalAlpha01);
+            SetShadowStarVisible(false);
             SetInteractionInstructionVisible(currentPhase == Mission1Phase.Interaction);
         }
 
@@ -269,7 +268,6 @@ namespace ShadowPrototype
             StopIntroReveal();
 
             ResolveRuntimeReferences();
-            ResolveInteractionComponents();
             RebuildGuidePolygonIfNeeded(force: true);
             ResetInteractionProgress();
             SetInteractionSystemsEnabled(true);
@@ -324,37 +322,10 @@ namespace ShadowPrototype
 
             if (targetCamera == null || !targetCamera.isActiveAndEnabled)
             {
-                targetCamera = Camera.main;
-                if (targetCamera == null)
-                {
-                    targetCamera = FindObjectOfType<Camera>();
-                }
+                return false;
             }
 
             return targetMeshDeformer != null && targetCamera != null;
-        }
-
-        private void ResolveInteractionComponents()
-        {
-            if (mediaPipeReceiver == null)
-            {
-                mediaPipeReceiver = FindObjectOfType<MediaPipeUdpReceiver>();
-            }
-
-            if (deformationInput == null)
-            {
-                deformationInput = FindObjectOfType<MediaPipeMeshDeformationInput>();
-            }
-
-            if (interactionVisualizer == null)
-            {
-                interactionVisualizer = FindObjectOfType<MediaPipeInteractionVisualizer>();
-            }
-
-            if (mediaPipeLauncher == null)
-            {
-                mediaPipeLauncher = FindObjectOfType<MediaPipeTrackingProcessLauncher>();
-            }
         }
 
         private Transform ResolveIntroShadowRoot()
@@ -418,8 +389,6 @@ namespace ShadowPrototype
 
         private void StartMediaPipeTracking()
         {
-            ResolveInteractionComponents();
-
             if (mediaPipeReceiver != null)
             {
                 mediaPipeReceiver.enabled = true;
@@ -651,42 +620,11 @@ namespace ShadowPrototype
 
         private Transform ResolveIntroBackgroundTransform()
         {
-            if (introBackgroundTransform != null)
-            {
-                return introBackgroundTransform;
-            }
-
-            for (int i = 0; introObjects != null && i < introObjects.Length; i++)
-            {
-                if (introObjects[i] != null && introObjects[i].name == "Mission1Background")
-                {
-                    introBackgroundTransform = introObjects[i].transform;
-                    return introBackgroundTransform;
-                }
-            }
-
-            GameObject backgroundObject = GameObject.Find("Mission1Background");
-            if (backgroundObject != null)
-            {
-                introBackgroundTransform = backgroundObject.transform;
-            }
-
             return introBackgroundTransform;
         }
 
         private Renderer ResolveIntroDarkRenderer()
         {
-            if (introDarkRenderer != null)
-            {
-                return introDarkRenderer;
-            }
-
-            GameObject darkObject = GameObject.Find("dark");
-            if (darkObject != null)
-            {
-                introDarkRenderer = darkObject.GetComponent<Renderer>();
-            }
-
             return introDarkRenderer;
         }
 
@@ -698,11 +636,6 @@ namespace ShadowPrototype
             }
 
             introNarrationPlayer = GetComponent<NarrationSubtitleSequencePlayer>();
-            if (introNarrationPlayer == null)
-            {
-                introNarrationPlayer = FindObjectOfType<NarrationSubtitleSequencePlayer>();
-            }
-
             return introNarrationPlayer;
         }
 
@@ -843,15 +776,14 @@ namespace ShadowPrototype
                 return renderers[0].transform;
             }
 
-            GameObject starObject = GameObject.Find("Star");
-            return starObject != null ? starObject.transform : null;
+            return null;
         }
 
-        private Vector3 ResolveCenteredShadowRootLocalPosition(Transform shadowRoot, Vector3 targetScale, Vector3 fallbackPosition)
+        private Vector3 ResolveCenteredShadowRootLocalPosition(Transform shadowRoot, Vector3 targetScale, Vector3 defaultPosition)
         {
             if (shadowRoot == null || targetMeshDeformer == null || targetCamera == null)
             {
-                return fallbackPosition;
+                return defaultPosition;
             }
 
             ShadowMeshRootController rootController = shadowRoot.GetComponent<ShadowMeshRootController>();
@@ -862,7 +794,7 @@ namespace ShadowPrototype
 
             if (rootController == null)
             {
-                return fallbackPosition;
+                return defaultPosition;
             }
 
             Vector3 originalPosition = shadowRoot.localPosition;
@@ -875,11 +807,11 @@ namespace ShadowPrototype
             return centeredPosition;
         }
 
-        private Vector3 ResolveCameraCenterLocalPosition(Transform targetTransform, Vector3 fallbackPosition)
+        private Vector3 ResolveCameraCenterLocalPosition(Transform targetTransform, Vector3 defaultPosition)
         {
             if (targetTransform == null || targetCamera == null)
             {
-                return fallbackPosition;
+                return defaultPosition;
             }
 
             float planeDistance = Mathf.Abs(Vector3.Dot(
@@ -891,7 +823,7 @@ namespace ShadowPrototype
                 ? worldCenter
                 : targetTransform.parent.InverseTransformPoint(worldCenter);
 
-            return new Vector3(localCenter.x, localCenter.y, fallbackPosition.z);
+            return new Vector3(localCenter.x, localCenter.y, defaultPosition.z);
         }
 
         private static void UpdateIntroBackgroundScroll(
@@ -950,17 +882,6 @@ namespace ShadowPrototype
 
         private Renderer[] ResolveIntroStarRenderers()
         {
-            if (introStarRenderers != null && introStarRenderers.Length > 0)
-            {
-                return introStarRenderers;
-            }
-
-            GameObject starObject = GameObject.Find("Star");
-            if (starObject != null)
-            {
-                introStarRenderers = starObject.GetComponentsInChildren<Renderer>(true);
-            }
-
             return introStarRenderers ?? Array.Empty<Renderer>();
         }
 
@@ -1096,7 +1017,7 @@ namespace ShadowPrototype
             if (replaceMeshWithStarOnComplete)
             {
                 yield return MorphCurrentMeshToGuideStarRoutine();
-                ReplaceCurrentMeshWithGuideStar();
+                ReplaceShadowRootWithShadowStar();
             }
 
             PlayCompletionSparkle();
@@ -1116,7 +1037,6 @@ namespace ShadowPrototype
                 yield return new WaitForSecondsRealtime(sceneDelay);
             }
 
-            DestroyMission1ShadowMeshRoot();
             PreserveIntroBackgroundThroughNextSceneFirstFrame();
             PreserveIntroStarThroughNextSceneFirstFrame(hideGuide: true);
             stateManager?.SetState(GameStateManager.PipelineState.Mission2);
@@ -1125,8 +1045,8 @@ namespace ShadowPrototype
 
         private IEnumerator PlayOutroReturnRoutine()
         {
-            ResolveRuntimeReferences();
-            Transform shadowRoot = ResolveIntroShadowRoot();
+            GameObject shadowStar = ResolveShadowStarObject();
+            Transform shadowStarTransform = shadowStar != null ? shadowStar.transform : null;
             CreateRecreatedIntroStarObject();
 
             SetIntroObjectsVisible(true);
@@ -1134,18 +1054,18 @@ namespace ShadowPrototype
             SetIntroDarkAlpha(0.0f);
             SetIntroStarAlpha(0.0f);
 
-            Vector3 shadowStartPosition = shadowRoot != null ? shadowRoot.localPosition : Vector3.zero;
-            Vector3 shadowStartScale = shadowRoot != null ? shadowRoot.localScale : Vector3.one;
-            Vector3 shadowTargetPosition = new Vector3(
+            Vector3 shadowStarStartPosition = shadowStarTransform != null ? shadowStarTransform.localPosition : Vector3.zero;
+            Vector3 shadowStarStartScale = shadowStarTransform != null ? shadowStarTransform.localScale : Vector3.one;
+            Vector3 shadowStarTargetPosition = new Vector3(
                 outroShadowStarTargetPosition.x,
                 outroShadowStarTargetPosition.y,
-                shadowStartPosition.z);
-            Vector3 shadowTargetScale = Vector3.one * Mathf.Max(0.01f, outroShadowStarTargetScale);
+                shadowStarStartPosition.z);
+            Vector3 shadowStarTargetScale = Vector3.one * Mathf.Max(0.01f, outroShadowStarTargetScale);
             float duration = Mathf.Max(0.0f, outroReturnSeconds);
 
             if (duration <= 0.0f)
             {
-                ApplyOutroReturnFrame(shadowRoot, shadowTargetPosition, shadowTargetScale, 1.0f);
+                ApplyOutroReturnFrame(shadowStarTransform, shadowStarTargetPosition, shadowStarTargetScale, 1.0f);
                 yield break;
             }
 
@@ -1157,19 +1077,19 @@ namespace ShadowPrototype
                 float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
 
                 ApplyOutroReturnFrame(
-                    shadowRoot,
-                    Vector3.LerpUnclamped(shadowStartPosition, shadowTargetPosition, eased),
-                    Vector3.LerpUnclamped(shadowStartScale, shadowTargetScale, eased),
+                    shadowStarTransform,
+                    Vector3.LerpUnclamped(shadowStarStartPosition, shadowStarTargetPosition, eased),
+                    Vector3.LerpUnclamped(shadowStarStartScale, shadowStarTargetScale, eased),
                     eased);
 
                 yield return null;
             }
 
-            ApplyOutroReturnFrame(shadowRoot, shadowTargetPosition, shadowTargetScale, 1.0f);
+            ApplyOutroReturnFrame(shadowStarTransform, shadowStarTargetPosition, shadowStarTargetScale, 1.0f);
         }
 
         private void ApplyOutroReturnFrame(
-            Transform shadowRoot,
+            Transform shadowStarTransform,
             Vector3 shadowPosition,
             Vector3 shadowScale,
             float visibility)
@@ -1179,10 +1099,10 @@ namespace ShadowPrototype
             SetIntroDarkAlpha(0.0f);
             SetIntroStarAlpha(alpha * IntroStarFinalAlpha01);
 
-            if (shadowRoot != null)
+            if (shadowStarTransform != null)
             {
-                shadowRoot.localPosition = shadowPosition;
-                shadowRoot.localScale = shadowScale;
+                shadowStarTransform.localPosition = shadowPosition;
+                shadowStarTransform.localScale = shadowScale;
             }
 
             if (recreatedIntroStarObject != null)
@@ -1294,12 +1214,6 @@ namespace ShadowPrototype
                 barRoot = matchThresholdMarker.parent as RectTransform;
             }
 
-            if (barRoot == null)
-            {
-                GameObject barObject = GameObject.Find("Mission1MatchBar");
-                barRoot = barObject != null ? barObject.GetComponent<RectTransform>() : null;
-            }
-
             if (barRoot != null)
             {
                 barRoot.gameObject.SetActive(isVisible);
@@ -1312,56 +1226,52 @@ namespace ShadowPrototype
 
         private void SetInteractionInstructionVisible(bool isVisible)
         {
+            ResolveInteractionInstructionReferences();
+
             if (isVisible)
             {
-                EnsureInteractionInstructionUi();
+                ApplyInteractionInstructionSettings();
             }
 
             if (interactionInstructionObject != null)
             {
                 interactionInstructionObject.SetActive(isVisible);
             }
+            else if (interactionInstructionTextComponent != null)
+            {
+                interactionInstructionTextComponent.gameObject.SetActive(isVisible);
+            }
         }
 
-        private void EnsureInteractionInstructionUi()
+        private void ResolveInteractionInstructionReferences()
         {
-            if (interactionInstructionObject == null)
+            if (interactionInstructionTextComponent == null && interactionInstructionObject != null)
             {
-                GameObject foundObject = GameObject.Find("Mission1InteractionInstructionText");
-                interactionInstructionObject = foundObject;
-                if (foundObject != null && interactionInstructionTextComponent == null)
-                {
-                    interactionInstructionTextComponent = foundObject.GetComponent<Text>();
-                }
+                interactionInstructionTextComponent = interactionInstructionObject.GetComponentInChildren<Text>(true);
             }
 
-            if (interactionInstructionObject == null)
+            if (interactionInstructionObject == null && interactionInstructionTextComponent != null)
             {
-                Transform parentTransform = ResolveInstructionCanvasTransform();
-                interactionInstructionObject = new GameObject("Mission1InteractionInstructionText", typeof(RectTransform));
-                interactionInstructionObject.transform.SetParent(parentTransform, false);
-                createdInteractionInstructionObject = true;
+                interactionInstructionObject = interactionInstructionTextComponent.gameObject;
             }
+        }
 
-            RectTransform rectTransform = interactionInstructionObject.GetComponent<RectTransform>();
-            if (rectTransform == null)
-            {
-                rectTransform = interactionInstructionObject.AddComponent<RectTransform>();
-            }
-
-            rectTransform.anchorMin = new Vector2(0.5f, 1.0f);
-            rectTransform.anchorMax = new Vector2(0.5f, 1.0f);
-            rectTransform.pivot = new Vector2(0.5f, 1.0f);
-            rectTransform.anchoredPosition = new Vector2(0.0f, -Mathf.Max(0.0f, interactionInstructionTopMargin));
-            rectTransform.sizeDelta = new Vector2(1920.0f * Mathf.Clamp01(interactionInstructionWidthRatio), 80.0f);
-
+        private void ApplyInteractionInstructionSettings()
+        {
             if (interactionInstructionTextComponent == null)
             {
-                interactionInstructionTextComponent = interactionInstructionObject.GetComponent<Text>();
-                if (interactionInstructionTextComponent == null)
-                {
-                    interactionInstructionTextComponent = interactionInstructionObject.AddComponent<Text>();
-                }
+                return;
+            }
+
+            RectTransform rectTransform = interactionInstructionTextComponent.GetComponent<RectTransform>();
+
+            if (rectTransform != null)
+            {
+                rectTransform.anchorMin = new Vector2(0.5f, 1.0f);
+                rectTransform.anchorMax = new Vector2(0.5f, 1.0f);
+                rectTransform.pivot = new Vector2(0.5f, 1.0f);
+                rectTransform.anchoredPosition = new Vector2(0.0f, -Mathf.Max(0.0f, interactionInstructionTopMargin));
+                rectTransform.sizeDelta = new Vector2(1920.0f * Mathf.Clamp01(interactionInstructionWidthRatio), 80.0f);
             }
 
             interactionInstructionTextComponent.text = interactionInstructionText;
@@ -1373,29 +1283,6 @@ namespace ShadowPrototype
             interactionInstructionTextComponent.raycastTarget = false;
             interactionInstructionTextComponent.supportRichText = false;
             interactionInstructionTextComponent.font = ResolveInteractionInstructionFont();
-        }
-
-        private Transform ResolveInstructionCanvasTransform()
-        {
-            GameObject matchCanvas = GameObject.Find("Mission1MatchCanvas");
-            if (matchCanvas != null)
-            {
-                return matchCanvas.transform;
-            }
-
-            GameObject canvasObject = new GameObject("Mission1InteractionInstructionCanvas", typeof(RectTransform));
-            Canvas canvas = canvasObject.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 5100;
-
-            CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920.0f, 1080.0f);
-            scaler.matchWidthOrHeight = 0.5f;
-
-            GraphicRaycaster raycaster = canvasObject.AddComponent<GraphicRaycaster>();
-            raycaster.enabled = false;
-            return canvasObject.transform;
         }
 
         private static Font ResolveInteractionInstructionFont()
@@ -1417,6 +1304,34 @@ namespace ShadowPrototype
             {
                 guideLineObject.SetActive(isVisible);
             }
+        }
+
+        private void ReplaceShadowRootWithShadowStar()
+        {
+            DestroyMission1ShadowMeshRoot();
+            SetShadowStarVisible(true);
+        }
+
+        private void SetShadowStarVisible(bool isVisible)
+        {
+            GameObject resolvedShadowStar = ResolveShadowStarObject();
+            if (resolvedShadowStar != null)
+            {
+                resolvedShadowStar.SetActive(isVisible);
+                Renderer[] renderers = resolvedShadowStar.GetComponentsInChildren<Renderer>(true);
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    if (renderers[i] != null)
+                    {
+                        renderers[i].enabled = isVisible;
+                    }
+                }
+            }
+        }
+
+        private GameObject ResolveShadowStarObject()
+        {
+            return shadowStarObject;
         }
 
         private void DestroyMission1ShadowMeshRoot()
@@ -1447,6 +1362,9 @@ namespace ShadowPrototype
                     Destroy(root);
                 }
             }
+
+            targetMeshDeformer = null;
+            introShadowRoot = null;
         }
 
         private void DestroyIntroStarObject(bool hideGuide)
@@ -1542,60 +1460,6 @@ namespace ShadowPrototype
             {
                 launchers[i].enabled = false;
             }
-        }
-
-        private void ReplaceCurrentMeshWithGuideStar()
-        {
-            if (targetMeshDeformer == null || targetCamera == null || guidePolygon.Length != StarPointCount)
-            {
-                return;
-            }
-
-            Mesh starMesh = BuildGuideStarMesh();
-            int[] boundaryIndices = new int[StarPointCount];
-            for (int i = 0; i < boundaryIndices.Length; i++)
-            {
-                boundaryIndices[i] = i + 1;
-            }
-
-            targetMeshDeformer.ReplaceMesh(starMesh, boundaryIndices);
-        }
-
-        private Mesh BuildGuideStarMesh()
-        {
-            float meshPlaneDistance = ResolveMeshPlaneDistance();
-            Vector3[] vertices = new Vector3[StarPointCount + 1];
-            Vector2[] uvs = new Vector2[vertices.Length];
-            int[] triangles = new int[StarPointCount * 3];
-
-            Vector3 guideCenterWorld = targetCamera.ViewportToWorldPoint(new Vector3(0.5f, 0.5f, meshPlaneDistance));
-            vertices[0] = targetMeshDeformer.transform.InverseTransformPoint(guideCenterWorld);
-            uvs[0] = new Vector2(0.5f, 0.5f);
-
-            for (int i = 0; i < StarPointCount; i++)
-            {
-                Vector2 viewportPoint = guidePolygon[i];
-                Vector3 worldPoint = targetCamera.ViewportToWorldPoint(
-                    new Vector3(viewportPoint.x, viewportPoint.y, meshPlaneDistance));
-                vertices[i + 1] = targetMeshDeformer.transform.InverseTransformPoint(worldPoint);
-                uvs[i + 1] = viewportPoint;
-
-                int triangleIndex = i * 3;
-                triangles[triangleIndex] = 0;
-                triangles[triangleIndex + 1] = i + 1;
-                triangles[triangleIndex + 2] = ((i + 1) % StarPointCount) + 1;
-            }
-
-            var mesh = new Mesh
-            {
-                name = "Mission1CompletedStar"
-            };
-            mesh.vertices = vertices;
-            mesh.triangles = triangles;
-            mesh.uv = uvs;
-            mesh.RecalculateNormals();
-            mesh.RecalculateBounds();
-            return mesh;
         }
 
         private static Mesh BuildStandaloneStarMesh(float outerRadius, float innerRadius)
@@ -1732,10 +1596,10 @@ namespace ShadowPrototype
                 Vector2 source = new Vector2(sourceVertices[i].x, sourceVertices[i].y);
                 Vector2 fromCenter = source - sourceCenter;
                 float sourceRadius = fromCenter.magnitude;
-                float fallbackAngle = i * 2.399963f;
+                float defaultAngle = i * 2.399963f;
                 Vector2 direction = sourceRadius > 0.0001f
                     ? fromCenter / sourceRadius
-                    : new Vector2(Mathf.Cos(fallbackAngle), Mathf.Sin(fallbackAngle));
+                    : new Vector2(Mathf.Cos(defaultAngle), Mathf.Sin(defaultAngle));
 
                 Vector2 starBoundary = ResolveStarBoundaryPoint(starCenterLocal, starPointsLocal, direction);
                 float sourceBoundaryRadius = EstimateSourceBoundaryRadius(sourceVertices, sourceCenter, direction);
@@ -2003,14 +1867,12 @@ namespace ShadowPrototype
 
         private void PlayCompletionSparkle()
         {
-            if (targetMeshDeformer == null || targetCamera == null)
+            if (targetCamera == null)
             {
                 return;
             }
 
-            Bounds bounds = targetMeshDeformer.HasMesh
-                ? targetMeshDeformer.GetWorldBounds()
-                : new Bounds(targetMeshDeformer.transform.position, Vector3.one);
+            Bounds bounds = ResolveCompletionEffectBounds();
             GameObject sparkleObject = new GameObject("Mission1CompletionSparkle");
             sparkleObject.transform.position = bounds.center - (targetCamera.transform.forward * 0.08f);
             sparkleObject.transform.rotation = targetCamera.transform.rotation;
@@ -2046,6 +1908,45 @@ namespace ShadowPrototype
 
             particles.Play();
             Destroy(sparkleObject, Mathf.Max(burstSeconds + 0.4f, completionEffectSeconds + 0.8f));
+        }
+
+        private Bounds ResolveCompletionEffectBounds()
+        {
+            if (targetMeshDeformer != null && targetMeshDeformer.HasMesh)
+            {
+                return targetMeshDeformer.GetWorldBounds();
+            }
+
+            GameObject resolvedShadowStar = ResolveShadowStarObject();
+            if (resolvedShadowStar != null)
+            {
+                Renderer[] renderers = resolvedShadowStar.GetComponentsInChildren<Renderer>(true);
+                bool hasBounds = false;
+                Bounds combinedBounds = new Bounds(resolvedShadowStar.transform.position, Vector3.one);
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    if (renderers[i] == null)
+                    {
+                        continue;
+                    }
+
+                    if (!hasBounds)
+                    {
+                        combinedBounds = renderers[i].bounds;
+                        hasBounds = true;
+                    }
+                    else
+                    {
+                        combinedBounds.Encapsulate(renderers[i].bounds);
+                    }
+                }
+
+                return hasBounds
+                    ? combinedBounds
+                    : new Bounds(resolvedShadowStar.transform.position, Vector3.one);
+            }
+
+            return new Bounds(Vector3.zero, Vector3.one);
         }
 
         private Material GetOrCreateSparkleMaterial()
@@ -2439,21 +2340,6 @@ namespace ShadowPrototype
             return Mathf.Max(targetCamera.nearClipPlane, meshDistance - guideDepthOffsetInFrontOfMesh);
         }
 
-        private void BindSceneMatchUiReferences()
-        {
-            if (matchProgressFillRect == null)
-            {
-                GameObject fillObject = GameObject.Find("Mission1MatchBarFill");
-                matchProgressFillRect = fillObject != null ? fillObject.GetComponent<RectTransform>() : null;
-            }
-
-            if (matchThresholdMarker == null)
-            {
-                GameObject markerObject = GameObject.Find("Mission1MatchThreshold");
-                matchThresholdMarker = markerObject != null ? markerObject.GetComponent<RectTransform>() : null;
-            }
-        }
-
         private void UpdateMatchProgressBar(float matchScore)
         {
             float normalizedScore = Mathf.Clamp01(matchScore);
@@ -2607,12 +2493,6 @@ namespace ShadowPrototype
 
         private void OnDestroy()
         {
-            if (createdInteractionInstructionObject && interactionInstructionObject != null)
-            {
-                Destroy(interactionInstructionObject);
-                interactionInstructionObject = null;
-            }
-
             DestroyRecreatedIntroStarObject();
             DestroyRuntimeObject(guideLineMaterial);
             DestroyRuntimeObject(sparkleMaterial);

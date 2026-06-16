@@ -9,7 +9,8 @@ namespace ShadowPrototype
         public enum Mission5Phase
         {
             Intro,
-            Interaction
+            Interaction,
+            Outro
         }
 
         [Header("Phase")]
@@ -28,12 +29,28 @@ namespace ShadowPrototype
         [SerializeField, Min(0.0f)] private float introNarrationStartDelaySeconds = 1.0f;
         [SerializeField, Min(0)] private int introNarrationStartStepIndex;
         [SerializeField, Min(0)] private int introNarrationStepCount = 3;
+        [SerializeField] private Transform wallRoot;
+        [SerializeField, Min(0.0f)] private float wallFadeOutSeconds = 2.0f;
+        [SerializeField] private Vector3 interactionShadowStarPosition = new Vector3(-4.5f, -3.35f, 0.02f);
+        [SerializeField, Min(0.0f)] private float interactionShadowStarJumpSeconds = 0.6f;
+        [SerializeField, Min(0.0f)] private float interactionShadowStarJumpHeight = 0.6f;
+
+        [Header("Outro")]
+        [SerializeField, Min(0.0f)] private float outroDuration = 2.0f;
+        [SerializeField, Range(0.0f, 1.0f)] private float outroWallTargetAlpha = 210.0f / 255.0f;
+        [SerializeField, Min(0.0f)] private float outroJumpDelaySeconds = 1.0f;
+        [SerializeField] private Vector3 outroShadowStarPosition = new Vector3(-4.0f, 1.3f, 0.02f);
+        [SerializeField, Min(0.0f)] private float outroShadowStarJumpSeconds = 1.0f;
+        [SerializeField, Min(0.0f)] private float outroShadowStarScale = 0.5f;
+        [SerializeField, Min(0.0f)] private float outroShadowStarJumpHeight = 1.6f;
 
         [Header("Interaction")]
         [SerializeField] private Mission5SeesawShadowSystem shadowAreaSystem;
 
         private Mission5Phase currentPhase;
         private Coroutine introRoutine;
+        private SpriteRenderer[] wallRenderers;
+        private Color[] wallInitialColors;
 
         public Mission5Phase CurrentPhase => currentPhase;
 
@@ -41,6 +58,7 @@ namespace ShadowPrototype
         {
             currentPhase = initialPhase;
             ResolveReferences();
+            CacheWallInitialColors();
             SetFadeAlpha(currentPhase == Mission5Phase.Intro ? 1.0f : 0.0f);
             SetInteractionSystemEnabled(currentPhase == Mission5Phase.Interaction);
         }
@@ -55,6 +73,12 @@ namespace ShadowPrototype
             if (currentPhase == Mission5Phase.Interaction)
             {
                 EnterInteraction();
+                return;
+            }
+
+            if (currentPhase == Mission5Phase.Outro)
+            {
+                EnterOutro();
                 return;
             }
 
@@ -80,6 +104,7 @@ namespace ShadowPrototype
         {
             currentPhase = Mission5Phase.Intro;
             ResolveReferences();
+            RestoreWallInitialColors();
             SetInteractionSystemEnabled(false);
             SetFadeAlpha(1.0f);
         }
@@ -90,6 +115,79 @@ namespace ShadowPrototype
             ResolveReferences();
             SetFadeAlpha(0.0f);
             SetInteractionSystemEnabled(true);
+        }
+
+        public void EnterOutro()
+        {
+            currentPhase = Mission5Phase.Outro;
+            ResolveReferences();
+            SetFadeAlpha(0.0f);
+        }
+
+        public IEnumerator PlayOutroRoutine()
+        {
+            EnterOutro();
+            CacheWallInitialColors();
+
+            Transform star = shadowStarTransform;
+            float duration = Mathf.Max(0.0f, outroDuration);
+
+            if (duration <= 0.0f)
+            {
+                SetWallAbsoluteAlpha(outroWallTargetAlpha);
+            }
+            else
+            {
+                float wallElapsed = 0.0f;
+                while (wallElapsed < duration)
+                {
+                    wallElapsed += Time.unscaledDeltaTime;
+                    float t = Mathf.Clamp01(wallElapsed / duration);
+                    float easedT = Mathf.SmoothStep(0.0f, 1.0f, t);
+                    SetWallAbsoluteAlpha(Mathf.Lerp(0.0f, outroWallTargetAlpha, easedT));
+                    yield return null;
+                }
+
+                SetWallAbsoluteAlpha(outroWallTargetAlpha);
+            }
+
+            if (outroJumpDelaySeconds > 0.0f)
+            {
+                yield return new WaitForSeconds(outroJumpDelaySeconds);
+            }
+
+            if (star == null)
+            {
+                yield break;
+            }
+
+            Vector3 starStartPosition = star.position;
+            Vector3 starStartScale = star.localScale;
+            Vector3 starTargetScale = Vector3.one * outroShadowStarScale;
+            float jumpDuration = Mathf.Max(0.0f, outroShadowStarJumpSeconds);
+
+            if (jumpDuration <= 0.0f)
+            {
+                star.position = outroShadowStarPosition;
+                star.localScale = starTargetScale;
+                yield break;
+            }
+
+            float jumpElapsed = 0.0f;
+            while (jumpElapsed < jumpDuration)
+            {
+                jumpElapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(jumpElapsed / jumpDuration);
+                float easedT = Mathf.SmoothStep(0.0f, 1.0f, t);
+                Vector3 position = Vector3.LerpUnclamped(starStartPosition, outroShadowStarPosition, easedT);
+                position.y += Mathf.Sin(t * Mathf.PI) * outroShadowStarJumpHeight;
+                star.position = position;
+                star.localScale = Vector3.LerpUnclamped(starStartScale, starTargetScale, easedT);
+                yield return null;
+            }
+
+            star.position = outroShadowStarPosition;
+            star.localScale = starTargetScale;
         }
 
         private IEnumerator PlayIntroRoutine()
@@ -113,6 +211,8 @@ namespace ShadowPrototype
                 }
 
                 yield return PlayIntroNarrationRoutine();
+                yield return FadeWallOutRoutine();
+                yield return JumpShadowStarToInteractionPositionRoutine();
                 EnterInteractionIfNeeded();
 
                 introRoutine = null;
@@ -159,6 +259,8 @@ namespace ShadowPrototype
             }
 
             yield return PlayIntroNarrationRoutine();
+            yield return FadeWallOutRoutine();
+            yield return JumpShadowStarToInteractionPositionRoutine();
             EnterInteractionIfNeeded();
 
             introRoutine = null;
@@ -225,30 +327,174 @@ namespace ShadowPrototype
             fadeOverlayImage.gameObject.SetActive(color.a > 0.001f);
         }
 
+        private IEnumerator FadeWallOutRoutine()
+        {
+            CacheWallInitialColors();
+            if (wallRenderers == null || wallRenderers.Length == 0)
+            {
+                yield break;
+            }
+
+            Color[] startColors = new Color[wallRenderers.Length];
+            for (int i = 0; i < wallRenderers.Length; i++)
+            {
+                startColors[i] = wallRenderers[i] != null ? wallRenderers[i].color : Color.white;
+            }
+
+            float duration = Mathf.Max(0.0f, wallFadeOutSeconds);
+            if (duration <= 0.0f)
+            {
+                SetWallAlpha(startColors, 0.0f);
+                yield break;
+            }
+
+            float elapsed = 0.0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                SetWallAlpha(startColors, 1.0f - t);
+                yield return null;
+            }
+
+            SetWallAlpha(startColors, 0.0f);
+        }
+
+        private void SetWallAlpha(Color[] startColors, float alphaScale)
+        {
+            if (wallRenderers == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < wallRenderers.Length; i++)
+            {
+                SpriteRenderer renderer = wallRenderers[i];
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                Color color = startColors != null && i < startColors.Length ? startColors[i] : renderer.color;
+                color.a *= Mathf.Clamp01(alphaScale);
+                renderer.color = color;
+            }
+        }
+
+        private void SetWallAbsoluteAlpha(float alpha)
+        {
+            if (wallRenderers == null || wallInitialColors == null)
+            {
+                CacheWallInitialColors();
+            }
+
+            if (wallRenderers == null || wallInitialColors == null)
+            {
+                return;
+            }
+
+            float clampedAlpha = Mathf.Clamp01(alpha);
+            int count = Mathf.Min(wallRenderers.Length, wallInitialColors.Length);
+            for (int i = 0; i < count; i++)
+            {
+                SpriteRenderer renderer = wallRenderers[i];
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                Color color = wallInitialColors[i];
+                color.a = clampedAlpha;
+                renderer.color = color;
+            }
+        }
+
+        private void RestoreWallInitialColors()
+        {
+            CacheWallInitialColors();
+            if (wallRenderers == null || wallInitialColors == null)
+            {
+                return;
+            }
+
+            int count = Mathf.Min(wallRenderers.Length, wallInitialColors.Length);
+            for (int i = 0; i < count; i++)
+            {
+                if (wallRenderers[i] != null)
+                {
+                    wallRenderers[i].color = wallInitialColors[i];
+                }
+            }
+        }
+
+        private IEnumerator JumpShadowStarToInteractionPositionRoutine()
+        {
+            ResolveReferences();
+            Transform star = shadowStarTransform;
+            if (star == null)
+            {
+                yield break;
+            }
+
+            Vector3 startPosition = star.position;
+            Vector3 targetPosition = interactionShadowStarPosition;
+            float duration = Mathf.Max(0.0f, interactionShadowStarJumpSeconds);
+            if (duration <= 0.0f)
+            {
+                star.position = targetPosition;
+                yield break;
+            }
+
+            float elapsed = 0.0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float easedT = Mathf.SmoothStep(0.0f, 1.0f, t);
+                Vector3 position = Vector3.LerpUnclamped(startPosition, targetPosition, easedT);
+                position.y += Mathf.Sin(t * Mathf.PI) * interactionShadowStarJumpHeight;
+                star.position = position;
+                yield return null;
+            }
+
+            star.position = targetPosition;
+        }
+
         private void ResolveReferences()
         {
             if (shadowAreaSystem == null)
             {
                 shadowAreaSystem = GetComponent<Mission5SeesawShadowSystem>();
-                if (shadowAreaSystem == null)
-                {
-                    shadowAreaSystem = FindObjectOfType<Mission5SeesawShadowSystem>(true);
-                }
-            }
-
-            if (shadowStarTransform == null)
-            {
-                GameObject shadowStarObject = GameObject.Find("ShadowStar");
-                shadowStarTransform = shadowStarObject != null ? shadowStarObject.transform : null;
-            }
-
-            if (fadeOverlayImage == null)
-            {
-                GameObject fadeObject = GameObject.Find("Mission5IntroFadeImage");
-                fadeOverlayImage = fadeObject != null ? fadeObject.GetComponent<Image>() : null;
             }
 
             ResolveIntroNarrationPlayer();
+        }
+
+        private void CacheWallInitialColors()
+        {
+            ResolveReferences();
+            if (wallRoot == null)
+            {
+                return;
+            }
+
+            if (wallRenderers == null || wallRenderers.Length == 0)
+            {
+                wallRenderers = wallRoot.GetComponentsInChildren<SpriteRenderer>(true);
+            }
+
+            if (wallRenderers == null ||
+                wallRenderers.Length == 0 ||
+                (wallInitialColors != null && wallInitialColors.Length == wallRenderers.Length))
+            {
+                return;
+            }
+
+            wallInitialColors = new Color[wallRenderers.Length];
+            for (int i = 0; i < wallRenderers.Length; i++)
+            {
+                wallInitialColors[i] = wallRenderers[i] != null ? wallRenderers[i].color : Color.white;
+            }
         }
 
         private NarrationSubtitleSequencePlayer ResolveIntroNarrationPlayer()
@@ -256,11 +502,6 @@ namespace ShadowPrototype
             if (introNarrationPlayer == null)
             {
                 introNarrationPlayer = GetComponent<NarrationSubtitleSequencePlayer>();
-            }
-
-            if (introNarrationPlayer == null)
-            {
-                introNarrationPlayer = FindObjectOfType<NarrationSubtitleSequencePlayer>();
             }
 
             return introNarrationPlayer;

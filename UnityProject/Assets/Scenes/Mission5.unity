@@ -173,8 +173,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   launchOnStart: 1
   stopProcessOnDisable: 1
-  pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
-  workingDirectory: C:\capstone\Shadow-to-3D-Generator
+  pythonExecutablePath: D:\anaconda3\envs\artifact\python.exe
+  workingDirectory: D:\Unity-HandTracking
   scriptName: python\Mission5ShadowAreaTracking.py
   cameraDeviceIndex: 0
   udpPort: 5055
@@ -225,6 +225,18 @@ MonoBehaviour:
   introNarrationStartDelaySeconds: 1
   introNarrationStartStepIndex: 0
   introNarrationStepCount: 3
+  wallRoot: {fileID: 1996102890}
+  wallFadeOutSeconds: 2
+  interactionShadowStarPosition: {x: -4.5, y: -3.35, z: 0.02}
+  interactionShadowStarJumpSeconds: 0.6
+  interactionShadowStarJumpHeight: 0.6
+  outroDuration: 2
+  outroWallTargetAlpha: 0.8235294
+  outroJumpDelaySeconds: 1
+  outroShadowStarPosition: {x: -4, y: 1.3, z: 0.02}
+  outroShadowStarJumpSeconds: 1
+  outroShadowStarScale: 0.5
+  outroShadowStarJumpHeight: 1.6
   shadowAreaSystem: {fileID: 100002}
 --- !u!82 &100004
 AudioSource:
@@ -1087,7 +1099,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: 5ce2991e9bca6a941bd6a8479cec12de, type: 3}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 0.8235294}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -1171,7 +1183,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: 5ce2991e9bca6a941bd6a8479cec12de, type: 3}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 0.8235294}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -1392,7 +1404,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: 5ce2991e9bca6a941bd6a8479cec12de, type: 3}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 0.8235294}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -1527,7 +1539,7 @@ Transform:
   m_GameObject: {fileID: 1996102889}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 10.37, y: -1, z: 0}
+  m_LocalPosition: {x: 10.37, y: -1, z: 0.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:

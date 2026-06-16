@@ -57,7 +57,6 @@ namespace ShadowPrototype
         [SerializeField, Min(0)] private int outroNarrationStepCount = 2;
         [SerializeField, Min(0.0f)] private float outroShadowStarExitSeconds = 3.0f;
         [SerializeField, Min(0.0f)] private float outroShadowStarExitPaddingWorld = 1.0f;
-        [SerializeField, Min(0.0f)] private float outroShadowStarFallbackExitDistance = 12.0f;
         [SerializeField, Range(0, 255)] private int outroSceneFadeOutAlpha = 255;
         [SerializeField, Min(0.0f)] private float outroSceneFadeOutSeconds = 2.0f;
 
@@ -79,14 +78,12 @@ namespace ShadowPrototype
         private Mission2Phase currentPhase;
         private MaterialPropertyBlock darkPropertyBlock;
         private MaterialPropertyBlock backgroundPropertyBlock;
-        private bool createdInteractionInstructionObject;
 
         public Mission2Phase CurrentPhase => currentPhase;
 
         private void Awake()
         {
             currentPhase = initialPhase;
-            ResolveInteractionSystems();
             ResolveDarkRenderer();
             ResolveIntroBackgroundRenderer();
             ResolveIntroSunTransform();
@@ -168,7 +165,6 @@ namespace ShadowPrototype
         public void EnterInteraction()
         {
             currentPhase = Mission2Phase.Interaction;
-            ResolveInteractionSystems();
             SetDarkAlpha(0.0f);
             SetIntroBackgroundAlpha(0.0f);
             SetInteractionInstructionVisible(true);
@@ -203,8 +199,6 @@ namespace ShadowPrototype
 
         private void SetInteractionSystemsEnabled(bool isEnabled)
         {
-            ResolveInteractionSystems();
-
             if (sunHandSystem != null)
             {
                 sunHandSystem.enabled = isEnabled;
@@ -223,8 +217,6 @@ namespace ShadowPrototype
 
         private void StartMediaPipeTracking()
         {
-            ResolveInteractionSystems();
-
             if (mediaPipeReceiver != null)
             {
                 mediaPipeReceiver.enabled = true;
@@ -240,56 +232,52 @@ namespace ShadowPrototype
 
         private void SetInteractionInstructionVisible(bool isVisible)
         {
+            ResolveInteractionInstructionReferences();
+
             if (isVisible)
             {
-                EnsureInteractionInstructionUi();
+                ApplyInteractionInstructionSettings();
             }
 
             if (interactionInstructionObject != null)
             {
                 interactionInstructionObject.SetActive(isVisible);
             }
+            else if (interactionInstructionTextComponent != null)
+            {
+                interactionInstructionTextComponent.gameObject.SetActive(isVisible);
+            }
         }
 
-        private void EnsureInteractionInstructionUi()
+        private void ResolveInteractionInstructionReferences()
         {
-            if (interactionInstructionObject == null)
+            if (interactionInstructionTextComponent == null && interactionInstructionObject != null)
             {
-                GameObject foundObject = GameObject.Find("Mission2InteractionInstructionText");
-                interactionInstructionObject = foundObject;
-                if (foundObject != null && interactionInstructionTextComponent == null)
-                {
-                    interactionInstructionTextComponent = foundObject.GetComponent<Text>();
-                }
+                interactionInstructionTextComponent = interactionInstructionObject.GetComponentInChildren<Text>(true);
             }
 
-            if (interactionInstructionObject == null)
+            if (interactionInstructionObject == null && interactionInstructionTextComponent != null)
             {
-                Transform parentTransform = ResolveInstructionCanvasTransform();
-                interactionInstructionObject = new GameObject("Mission2InteractionInstructionText", typeof(RectTransform));
-                interactionInstructionObject.transform.SetParent(parentTransform, false);
-                createdInteractionInstructionObject = true;
+                interactionInstructionObject = interactionInstructionTextComponent.gameObject;
             }
+        }
 
-            RectTransform rectTransform = interactionInstructionObject.GetComponent<RectTransform>();
-            if (rectTransform == null)
-            {
-                rectTransform = interactionInstructionObject.AddComponent<RectTransform>();
-            }
-
-            rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-            rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-            rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            rectTransform.anchoredPosition = Vector2.zero;
-            rectTransform.sizeDelta = new Vector2(1920.0f * Mathf.Clamp01(interactionInstructionWidthRatio), 80.0f);
-
+        private void ApplyInteractionInstructionSettings()
+        {
             if (interactionInstructionTextComponent == null)
             {
-                interactionInstructionTextComponent = interactionInstructionObject.GetComponent<Text>();
-                if (interactionInstructionTextComponent == null)
-                {
-                    interactionInstructionTextComponent = interactionInstructionObject.AddComponent<Text>();
-                }
+                return;
+            }
+
+            RectTransform rectTransform = interactionInstructionTextComponent.GetComponent<RectTransform>();
+
+            if (rectTransform != null)
+            {
+                rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+                rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+                rectTransform.pivot = new Vector2(0.5f, 0.5f);
+                rectTransform.anchoredPosition = Vector2.zero;
+                rectTransform.sizeDelta = new Vector2(1920.0f * Mathf.Clamp01(interactionInstructionWidthRatio), 80.0f);
             }
 
             interactionInstructionTextComponent.text = interactionInstructionText;
@@ -303,29 +291,6 @@ namespace ShadowPrototype
             interactionInstructionTextComponent.font = ResolveInteractionInstructionFont();
         }
 
-        private Transform ResolveInstructionCanvasTransform()
-        {
-            GameObject canvasObject = GameObject.Find("Mission2InteractionInstructionCanvas");
-            if (canvasObject != null)
-            {
-                return canvasObject.transform;
-            }
-
-            canvasObject = new GameObject("Mission2InteractionInstructionCanvas", typeof(RectTransform));
-            Canvas canvas = canvasObject.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 5100;
-
-            CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920.0f, 1080.0f);
-            scaler.matchWidthOrHeight = 0.5f;
-
-            GraphicRaycaster raycaster = canvasObject.AddComponent<GraphicRaycaster>();
-            raycaster.enabled = false;
-            return canvasObject.transform;
-        }
-
         private static Font ResolveInteractionInstructionFont()
         {
             Font resourceFont = Resources.Load<Font>("Fonts/KoPubWorld Batang Medium");
@@ -337,24 +302,6 @@ namespace ShadowPrototype
             return Font.CreateDynamicFontFromOSFont(
                 new[] { "KoPubWorld Batang Medium", "Malgun Gothic", "Arial" },
                 42);
-        }
-
-        private void ResolveInteractionSystems()
-        {
-            if (sunHandSystem == null)
-            {
-                sunHandSystem = FindObjectOfType<Mission2SunHandSystem>();
-            }
-
-            if (mediaPipeReceiver == null)
-            {
-                mediaPipeReceiver = FindObjectOfType<MediaPipeUdpReceiver>();
-            }
-
-            if (mediaPipeLauncher == null)
-            {
-                mediaPipeLauncher = FindObjectOfType<MediaPipeTrackingProcessLauncher>();
-            }
         }
 
         private IEnumerator FadeDarkRoutine()
@@ -562,7 +509,6 @@ namespace ShadowPrototype
             Camera camera = ResolveTargetCamera();
             if (camera == null)
             {
-                position.x -= Mathf.Max(0.0f, outroShadowStarFallbackExitDistance);
                 return position;
             }
 
@@ -672,87 +618,26 @@ namespace ShadowPrototype
 
         private Renderer ResolveDarkRenderer()
         {
-            if (darkRenderer != null)
-            {
-                return darkRenderer;
-            }
-
-            GameObject darkObject = GameObject.Find("dark");
-            if (darkObject != null)
-            {
-                darkRenderer = darkObject.GetComponent<Renderer>();
-            }
-
             return darkRenderer;
         }
 
         private Renderer ResolveIntroBackgroundRenderer()
         {
-            if (introBackgroundRenderer != null)
-            {
-                return introBackgroundRenderer;
-            }
-
-            GameObject backgroundObject = GameObject.Find("Background");
-            if (backgroundObject != null)
-            {
-                introBackgroundRenderer = backgroundObject.GetComponent<Renderer>();
-            }
-
             return introBackgroundRenderer;
         }
 
         private Transform ResolveIntroSunTransform()
         {
-            if (introSunTransform != null)
-            {
-                return introSunTransform;
-            }
-
-            if (sunHandSystem != null)
-            {
-                introSunTransform = sunHandSystem.transform;
-                return introSunTransform;
-            }
-
-            GameObject sunObject = GameObject.Find("Sun");
-            if (sunObject != null)
-            {
-                introSunTransform = sunObject.transform;
-            }
-
             return introSunTransform;
         }
 
         private Camera ResolveTargetCamera()
         {
-            if (targetCamera != null && targetCamera.isActiveAndEnabled)
-            {
-                return targetCamera;
-            }
-
-            targetCamera = Camera.main;
-            if (targetCamera == null)
-            {
-                targetCamera = FindObjectOfType<Camera>();
-            }
-
             return targetCamera;
         }
 
         private NarrationSubtitleSequencePlayer ResolveNarrationPlayer()
         {
-            if (introNarrationPlayer != null)
-            {
-                return introNarrationPlayer;
-            }
-
-            introNarrationPlayer = GetComponent<NarrationSubtitleSequencePlayer>();
-            if (introNarrationPlayer == null)
-            {
-                introNarrationPlayer = FindObjectOfType<NarrationSubtitleSequencePlayer>();
-            }
-
             return introNarrationPlayer;
         }
 
@@ -800,41 +685,7 @@ namespace ShadowPrototype
 
         private Transform ResolveShadowStarTransform()
         {
-            if (shadowStarTransform != null)
-            {
-                return shadowStarTransform;
-            }
-
-            GameObject shadowStar = GameObject.Find("ShadowStar");
-            if (shadowStar != null)
-            {
-                shadowStarTransform = shadowStar.transform;
-                return shadowStarTransform;
-            }
-
-            GameObject mission2Star = GameObject.Find("Mission2Star");
-            if (mission2Star != null)
-            {
-                shadowStarTransform = mission2Star.transform;
-                return shadowStarTransform;
-            }
-
-            Mission2StarShape mission2StarShape = FindObjectOfType<Mission2StarShape>();
-            if (mission2StarShape != null)
-            {
-                shadowStarTransform = mission2StarShape.transform;
-            }
-
             return shadowStarTransform;
-        }
-
-        private void OnDestroy()
-        {
-            if (createdInteractionInstructionObject && interactionInstructionObject != null)
-            {
-                Destroy(interactionInstructionObject);
-                interactionInstructionObject = null;
-            }
         }
     }
 }

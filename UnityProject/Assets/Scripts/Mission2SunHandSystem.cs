@@ -47,13 +47,12 @@ namespace ShadowPrototype
 
         private void Awake()
         {
-            if (sunTransform == null)
+            if (sunTransform != null)
             {
-                sunTransform = transform;
+                lockedSunY = sunTransform.position.y;
+                lockedSunZ = sunTransform.position.z;
             }
 
-            lockedSunY = sunTransform.position.y;
-            lockedSunZ = sunTransform.position.z;
             activationTime = Time.unscaledTime + startDelaySeconds;
         }
 
@@ -65,13 +64,12 @@ namespace ShadowPrototype
 
         public void BeginInteraction()
         {
-            if (sunTransform == null)
+            if (sunTransform != null)
             {
-                sunTransform = transform;
+                lockedSunY = sunTransform.position.y;
+                lockedSunZ = sunTransform.position.z;
             }
 
-            lockedSunY = sunTransform.position.y;
-            lockedSunZ = sunTransform.position.z;
             activationTime = Time.unscaledTime + startDelaySeconds;
             hasInitialAttachStart = false;
             isInitialAttachActive = false;
@@ -86,8 +84,6 @@ namespace ShadowPrototype
                 return;
             }
 
-            ResolveReferences();
-
             if (Time.unscaledTime < activationTime)
             {
                 return;
@@ -95,53 +91,6 @@ namespace ShadowPrototype
 
             UpdateSunXFromHand();
             UpdateShadowScaleFromSunDistance();
-        }
-
-        private void ResolveReferences()
-        {
-            if (sunTransform == null)
-            {
-                sunTransform = transform;
-            }
-
-            if (mediaPipeReceiver == null)
-            {
-                mediaPipeReceiver = GetComponent<MediaPipeUdpReceiver>();
-                if (mediaPipeReceiver == null)
-                {
-                    mediaPipeReceiver = FindObjectOfType<MediaPipeUdpReceiver>();
-                }
-            }
-
-            if (targetCamera == null || !targetCamera.isActiveAndEnabled)
-            {
-                targetCamera = Camera.main;
-            }
-
-            if (targetShadowTransform == null)
-            {
-                GameObject shadowStar = GameObject.Find("ShadowStar");
-                if (shadowStar != null)
-                {
-                    targetShadowTransform = shadowStar.transform;
-                    return;
-                }
-
-                GameObject mission2Star = GameObject.Find("Mission2Star");
-                if (mission2Star != null)
-                {
-                    targetShadowTransform = mission2Star.transform;
-                    return;
-                }
-
-                Mission2StarShape mission2StarShape = FindObjectOfType<Mission2StarShape>();
-                if (mission2StarShape != null)
-                {
-                    targetShadowTransform = mission2StarShape.transform;
-                }
-            }
-
-            ResolveMission2Controller();
         }
 
         private void UpdateSunXFromHand()
@@ -408,11 +357,6 @@ namespace ShadowPrototype
 
         private Mission2StarMeshIntroAnimator ResolveMission2Controller()
         {
-            if (mission2Controller == null)
-            {
-                mission2Controller = FindObjectOfType<Mission2StarMeshIntroAnimator>();
-            }
-
             return mission2Controller;
         }
 

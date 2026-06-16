@@ -203,8 +203,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   launchOnStart: 1
   stopProcessOnDisable: 1
-  pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
-  workingDirectory: C:\capstone\Shadow-to-3D-Generator
+  pythonExecutablePath: D:\anaconda3\envs\artifact\python.exe
+  workingDirectory: D:\Unity-HandTracking
   scriptName: python\MediaPipeTracking.py
   scriptArguments: --camera 0
 --- !u!114 &202780834
@@ -222,7 +222,6 @@ MonoBehaviour:
   rotationTarget: {fileID: 1681491024}
   mediaPipeReceiver: {fileID: 202780832}
   postSpinVideoPlayer: {fileID: 202780835}
-  fallbackTargetName: StarCharacter
   mirrorHorizontal: 0
   fingertipLandmarkIndex: 8
   swipeThresholdPixels: 180

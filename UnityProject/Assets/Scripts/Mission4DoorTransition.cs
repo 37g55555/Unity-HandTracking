@@ -10,7 +10,6 @@ namespace ShadowPrototype
         [SerializeField] private Transform door;
         [SerializeField] private SpriteRenderer doorSpriteRenderer;
         [SerializeField] private Mission4Controller mission4Controller;
-        [SerializeField] private string fallbackDoorName = "Door";
 
         [Header("Transition")]
         [SerializeField, Min(0.0f)] private float contactPadding;
@@ -57,12 +56,6 @@ namespace ShadowPrototype
 
         private void ResolveReferences()
         {
-            if (door == null && !string.IsNullOrWhiteSpace(fallbackDoorName))
-            {
-                GameObject doorObject = GameObject.Find(fallbackDoorName);
-                door = doorObject != null ? doorObject.transform : null;
-            }
-
             if (shadowStar != null && !HasEnabledRenderer(shadowRenderers))
             {
                 shadowRenderers = shadowStar.GetComponentsInChildren<Renderer>(true);

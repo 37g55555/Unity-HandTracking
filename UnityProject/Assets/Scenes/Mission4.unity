@@ -172,8 +172,8 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   launchOnStart: 1
   stopProcessOnDisable: 1
-  pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
-  workingDirectory: C:\capstone\Shadow-to-3D-Generator
+  pythonExecutablePath: D:\anaconda3\envs\artifact\python.exe
+  workingDirectory: D:\Unity-HandTracking
   scriptName: python\ArucoTracking.py
   cameraDeviceIndex: 0
   dictionaryName: DICT_4X4_50
@@ -859,7 +859,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   lightTransform: {fileID: 410000001}
   lightMarkerFollower: {fileID: 410000004}
-  fallbackLightName: SoftWhiteCircleMarkerObject
   waitForFirstMarkerPose: 1
   followSmoothing: 4.5
   worldOffset: {x: 0, y: 0, z: 0}
@@ -881,7 +880,6 @@ MonoBehaviour:
   door: {fileID: 252613597}
   doorSpriteRenderer: {fileID: 252613599}
   mission4Controller: {fileID: 100006}
-  fallbackDoorName: Door
   contactPadding: 0
   alphaThreshold: 8
   doorPixelSampleStep: 1

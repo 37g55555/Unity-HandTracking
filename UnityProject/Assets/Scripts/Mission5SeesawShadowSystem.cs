@@ -19,8 +19,8 @@ namespace ShadowPrototype
         [Header("Camera Process")]
         [SerializeField] private bool launchOnStart = true;
         [SerializeField] private bool stopProcessOnDisable = true;
-        [SerializeField] private string pythonExecutablePath = @"C:\Users\creal\miniconda3\envs\artifact\python.exe";
-        [SerializeField] private string workingDirectory = @"C:\capstone\Shadow-to-3D-Generator";
+        [SerializeField] private string pythonExecutablePath = @"D:\anaconda3\envs\artifact\python.exe";
+        [SerializeField] private string workingDirectory = @"D:\Unity-HandTracking";
         [SerializeField] private string scriptName = @"python\Mission5ShadowAreaTracking.py";
         [SerializeField, Min(0)] private int cameraDeviceIndex;
         [SerializeField, Min(1)] private int udpPort = 5055;
@@ -71,6 +71,7 @@ namespace ShadowPrototype
         private Quaternion initialFulcrumWorldRotation;
         private AudioClip completionDingClip;
         private bool completionTriggered;
+        private bool releaseShadowStarForOutro;
         private bool missingReferencesWarned;
         private string pendingError;
 
@@ -353,7 +354,7 @@ namespace ShadowPrototype
             UpdateSeatPose(leftSeat, leftPoint);
             UpdateSeatPose(rightSeat, rightPoint);
 
-            if (shadowStar != null)
+            if (shadowStar != null && !releaseShadowStarForOutro)
             {
                 shadowStar.position = leftPoint + shadowStarSeatOffset;
                 shadowStar.rotation = Quaternion.identity;
@@ -362,66 +363,6 @@ namespace ShadowPrototype
 
         private void ResolveReferences()
         {
-            if (shadowStar == null)
-            {
-                GameObject shadowStarObject = GameObject.Find("ShadowStar");
-                shadowStar = shadowStarObject != null ? shadowStarObject.transform : null;
-            }
-
-            if (seesawPivot == null)
-            {
-                Transform found = transform.Find("SeesawPivot");
-                if (found == null)
-                {
-                    found = transform.Find("Seesaw");
-                }
-
-                seesawPivot = found;
-            }
-
-            if (seesawBeam == null && seesawPivot != null)
-            {
-                Transform found = seesawPivot.Find("Beam");
-                seesawBeam = found;
-            }
-
-            if (leftSeatAnchor == null && seesawBeam != null)
-            {
-                leftSeatAnchor = seesawBeam.Find("LeftSeatAnchor");
-            }
-
-            if (rightSeatAnchor == null && seesawBeam != null)
-            {
-                rightSeatAnchor = seesawBeam.Find("RightSeatAnchor");
-            }
-
-            if (fulcrum == null && seesawPivot != null)
-            {
-                fulcrum = seesawPivot.Find("Fulcrum");
-            }
-
-            if (leftSeat == null)
-            {
-                Transform found = transform.Find("LeftSeat");
-                if (found == null && seesawPivot != null)
-                {
-                    found = seesawPivot.Find("LeftSeat");
-                }
-
-                leftSeat = found;
-            }
-
-            if (rightSeat == null)
-            {
-                Transform found = transform.Find("RightSeat");
-                if (found == null && seesawPivot != null)
-                {
-                    found = seesawPivot.Find("RightSeat");
-                }
-
-                rightSeat = found;
-            }
-
             if (!missingReferencesWarned &&
                 (seesawPivot == null ||
                  seesawBeam == null ||
@@ -429,10 +370,11 @@ namespace ShadowPrototype
                  rightSeat == null ||
                  leftSeatAnchor == null ||
                  rightSeatAnchor == null ||
+                 shadowStar == null ||
                  fulcrum == null))
             {
                 missingReferencesWarned = true;
-                Debug.LogWarning("Mission5SeesawShadowSystem: assign Mission5 scene objects instead of creating runtime visuals.");
+                Debug.LogWarning("Mission5SeesawShadowSystem: assign all Mission5 scene references in the inspector.");
             }
         }
 
@@ -531,6 +473,13 @@ namespace ShadowPrototype
             if (endingTransitionDelay > 0.0f)
             {
                 yield return new WaitForSeconds(endingTransitionDelay);
+            }
+
+            releaseShadowStarForOutro = true;
+            Mission5Controller mission5Controller = FindObjectOfType<Mission5Controller>();
+            if (mission5Controller != null)
+            {
+                yield return mission5Controller.PlayOutroRoutine();
             }
 
             FindObjectOfType<GameStateManager>()?.OnEndingStarted();

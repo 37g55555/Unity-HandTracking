@@ -18,7 +18,6 @@ namespace ShadowPrototype
         [SerializeField] private Transform rotationTarget;
         [SerializeField] private MediaPipeUdpReceiver mediaPipeReceiver;
         [SerializeField] private HologramVideoPanelPlayer postSpinVideoPlayer;
-        [SerializeField] private string fallbackTargetName = "StarCharacter";
 
         [Header("Fingertip Swipe")]
         [SerializeField] private bool mirrorHorizontal;
@@ -171,36 +170,6 @@ namespace ShadowPrototype
 
         private void ResolveReferences()
         {
-            if (rotationTarget == null)
-            {
-                Transform target = FindTransformRecursive(transform, fallbackTargetName);
-                if (target == null)
-                {
-                    GameObject targetObject = GameObject.Find(fallbackTargetName);
-                    target = targetObject != null ? targetObject.transform : null;
-                }
-
-                rotationTarget = target;
-            }
-
-            if (mediaPipeReceiver == null)
-            {
-                mediaPipeReceiver = GetComponent<MediaPipeUdpReceiver>();
-                if (mediaPipeReceiver == null)
-                {
-                    mediaPipeReceiver = FindObjectOfType<MediaPipeUdpReceiver>();
-                }
-            }
-
-            if (postSpinVideoPlayer == null)
-            {
-                postSpinVideoPlayer = GetComponent<HologramVideoPanelPlayer>();
-                if (postSpinVideoPlayer == null)
-                {
-                    postSpinVideoPlayer = FindObjectOfType<HologramVideoPanelPlayer>();
-                }
-            }
-
             if (rotationAudioSource == null)
             {
                 rotationAudioSource = GetComponent<AudioSource>();
@@ -665,7 +634,7 @@ namespace ShadowPrototype
             Vector3 localScale = previousTarget != null ? previousTarget.localScale : Vector3.one;
             string targetName = previousTarget != null && !string.IsNullOrWhiteSpace(previousTarget.name)
                 ? previousTarget.name
-                : fallbackTargetName;
+                : "StarCharacter";
 
             GameObject replacement = Instantiate(replacementPrefab, parent);
             replacement.name = string.IsNullOrWhiteSpace(targetName) ? "StarCharacter" : targetName;
@@ -835,30 +804,6 @@ namespace ShadowPrototype
         private void ResetPalmTracking()
         {
             hasSmoothedPalm = false;
-        }
-
-        private static Transform FindTransformRecursive(Transform root, string targetName)
-        {
-            if (root == null || string.IsNullOrWhiteSpace(targetName))
-            {
-                return null;
-            }
-
-            if (root.name == targetName)
-            {
-                return root;
-            }
-
-            for (int i = 0; i < root.childCount; i++)
-            {
-                Transform found = FindTransformRecursive(root.GetChild(i), targetName);
-                if (found != null)
-                {
-                    return found;
-                }
-            }
-
-            return null;
         }
 
         private void OnDestroy()

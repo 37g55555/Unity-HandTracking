@@ -101,12 +101,6 @@ namespace ShadowPrototype
 
         private Camera ResolveTargetCamera()
         {
-            if (targetCamera != null && targetCamera.isActiveAndEnabled)
-            {
-                return targetCamera;
-            }
-
-            targetCamera = Camera.main;
             return targetCamera;
         }
 

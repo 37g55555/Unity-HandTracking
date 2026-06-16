@@ -75,22 +75,11 @@ namespace ShadowPrototype
 
         private Camera ResolveTargetCamera()
         {
-            if (targetCamera != null && targetCamera.isActiveAndEnabled)
-            {
-                return targetCamera;
-            }
-
-            targetCamera = Camera.main;
             return targetCamera;
         }
 
         private void ResolveRuntimeReferences()
         {
-            if (deformationInput == null)
-            {
-                deformationInput = FindObjectOfType<MediaPipeMeshDeformationInput>();
-            }
-
             if (targetMeshDeformer == null)
             {
                 targetMeshDeformer = FindObjectOfType<ShadowMeshDeformer>();

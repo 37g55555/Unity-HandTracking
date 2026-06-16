@@ -39,7 +39,6 @@ namespace ShadowPrototype
         private void Awake()
         {
             cachedRenderers = GetComponentsInChildren<Renderer>(true);
-            ResolveCamera();
             SetVisible(!startHiddenUntilFirstMarker && !hideWhenMarkerLost);
         }
 
@@ -107,7 +106,6 @@ namespace ShadowPrototype
                 return;
             }
 
-            ResolveCamera();
             if (targetCamera == null)
             {
                 return;
@@ -159,14 +157,6 @@ namespace ShadowPrototype
             if (followRotation)
             {
                 transform.rotation = worldRotation;
-            }
-        }
-
-        private void ResolveCamera()
-        {
-            if (targetCamera == null || !targetCamera.isActiveAndEnabled)
-            {
-                targetCamera = Camera.main;
             }
         }
 

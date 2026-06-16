@@ -39,7 +39,6 @@ namespace ShadowPrototype
         [SerializeField, Min(0.0f)] private float introFadeOutSeconds = 2.0f;
         [SerializeField, Min(0.0f)] private float postFadeNarrationDelaySeconds = 1.0f;
         [SerializeField, Min(0.0f)] private float shadowStarOffscreenPaddingWorld = 1.0f;
-        [SerializeField, Min(0.0f)] private float shadowStarOffscreenFallbackDistance = 8.0f;
         [SerializeField] private Transform backgroundTransform;
         [SerializeField] private float introBackgroundScrollTargetX = -8.888889f;
         [SerializeField] private NarrationSubtitleSequencePlayer introNarrationPlayer;
@@ -492,65 +491,21 @@ namespace ShadowPrototype
 
         private Renderer ResolveDarkRenderer()
         {
-            if (darkRenderer != null)
-            {
-                return darkRenderer;
-            }
-
-            GameObject darkObject = GameObject.Find("dark");
-            if (darkObject != null)
-            {
-                darkRenderer = darkObject.GetComponent<Renderer>();
-            }
-
             return darkRenderer;
         }
 
         private Transform ResolveShadowStarTransform()
         {
-            if (shadowStarTransform != null)
-            {
-                return shadowStarTransform;
-            }
-
-            GameObject shadowStarObject = GameObject.Find("ShadowStar");
-            if (shadowStarObject != null)
-            {
-                shadowStarTransform = shadowStarObject.transform;
-            }
-
             return shadowStarTransform;
         }
 
         private Transform ResolveBackgroundTransform()
         {
-            if (backgroundTransform != null)
-            {
-                return backgroundTransform;
-            }
-
-            GameObject backgroundObject = GameObject.Find("Background");
-            if (backgroundObject != null)
-            {
-                backgroundTransform = backgroundObject.transform;
-            }
-
             return backgroundTransform;
         }
 
         private Camera ResolveTargetCamera()
         {
-            if (targetCamera != null && targetCamera.isActiveAndEnabled)
-            {
-                return targetCamera;
-            }
-
-            targetCamera = Camera.main;
-            if (targetCamera == null)
-            {
-                targetCamera = FindObjectOfType<Camera>();
-            }
-
             return targetCamera;
         }
 
@@ -560,7 +515,6 @@ namespace ShadowPrototype
             Camera camera = ResolveTargetCamera();
             if (camera == null)
             {
-                position.y -= Mathf.Max(0.0f, shadowStarOffscreenFallbackDistance);
                 return position;
             }
 
@@ -579,17 +533,6 @@ namespace ShadowPrototype
 
         private NarrationSubtitleSequencePlayer ResolveIntroNarrationPlayer()
         {
-            if (introNarrationPlayer != null)
-            {
-                return introNarrationPlayer;
-            }
-
-            introNarrationPlayer = GetComponent<NarrationSubtitleSequencePlayer>();
-            if (introNarrationPlayer == null)
-            {
-                introNarrationPlayer = FindObjectOfType<NarrationSubtitleSequencePlayer>();
-            }
-
             return introNarrationPlayer;
         }
 

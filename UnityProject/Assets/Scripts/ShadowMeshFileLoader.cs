@@ -16,7 +16,7 @@ namespace ShadowPrototype
         [SerializeField] private string relativeWatchDirectory = @"..\output\shadowmesh";
         [SerializeField] private string meshFileName = "shadow_mesh.obj";
         [SerializeField] private string metadataFileName = "shadow_metadata.json";
-        [SerializeField] private string absoluteWatchDirectoryOverride = @"C:\capstone\Shadow-to-3D-Generator\output\shadowmesh";
+        [SerializeField] private string absoluteWatchDirectoryOverride = @"D:\Unity-HandTracking\output\shadowmesh";
 
         [SerializeField] private ShadowMeshDeformer shadowMeshDeformer;
         [SerializeField] private GameStateManager stateManager;
@@ -456,12 +456,6 @@ namespace ShadowPrototype
 
         private Camera ResolveTargetCamera()
         {
-            if (targetCamera != null)
-            {
-                return targetCamera;
-            }
-
-            targetCamera = Camera.main;
             return targetCamera;
         }
 

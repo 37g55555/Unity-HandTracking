@@ -188,7 +188,6 @@ MonoBehaviour:
   introFadeOutSeconds: 2
   postFadeNarrationDelaySeconds: 1
   shadowStarOffscreenPaddingWorld: 1
-  shadowStarOffscreenFallbackDistance: 8
   backgroundTransform: {fileID: 300001}
   introBackgroundScrollTargetX: -8.888889
   introNarrationPlayer: {fileID: 100005}
