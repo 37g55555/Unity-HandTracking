@@ -303,6 +303,23 @@ namespace ShadowPrototype
             StopIntroNarrationPlayback();
         }
 
+        public void DebugAdvance()
+        {
+            if (currentPhase == Mission1Phase.Intro)
+            {
+                EnterInteraction();
+                return;
+            }
+
+            if (currentPhase == Mission1Phase.Interaction)
+            {
+                CompleteMission();
+                return;
+            }
+
+            LoadNextScene();
+        }
+
         private bool ResolveRuntimeReferences()
         {
             if (targetMeshDeformer == null)

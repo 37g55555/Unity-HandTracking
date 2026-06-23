@@ -246,6 +246,26 @@ namespace ShadowPrototype
             yield return FadeSceneToBlackRoutine();
         }
 
+        public void DebugAdvance()
+        {
+            if (currentPhase == Mission2Phase.Intro)
+            {
+                if (animationRoutine != null)
+                {
+                    StopCoroutine(animationRoutine);
+                    animationRoutine = null;
+                }
+
+                EnterInteraction();
+                return;
+            }
+
+            Mission2SunHandSystem handSystem = sunHandSystem != null
+                ? sunHandSystem
+                : FindObjectOfType<Mission2SunHandSystem>();
+            handSystem?.DebugCompleteMission();
+        }
+
         private void SetInteractionSystemsEnabled(bool isEnabled)
         {
             if (sunHandSystem != null)

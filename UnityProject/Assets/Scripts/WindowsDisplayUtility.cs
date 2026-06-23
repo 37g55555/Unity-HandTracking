@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
@@ -59,6 +60,30 @@ namespace ShadowPrototype
         [DllImport("user32.dll")]
         private static extern bool MoveWindow(IntPtr hWnd, int x, int y, int nWidth, int nHeight, bool repaint);
 
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        private delegate bool WindowEnumProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(WindowEnumProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        private const int ShowWindowRestore = 9;
+        private const uint SetWindowPosNoZOrder = 0x0004;
+        private const uint SetWindowPosShowWindow = 0x0040;
+
         public static IntPtr FindWindowByTitle(string title)
         {
             return string.IsNullOrWhiteSpace(title) ? IntPtr.Zero : FindWindow(null, title);
@@ -71,7 +96,62 @@ namespace ShadowPrototype
                 return false;
             }
 
+            ShowWindow(windowHandle, ShowWindowRestore);
+            if (SetWindowPos(
+                    windowHandle,
+                    IntPtr.Zero,
+                    bounds.x,
+                    bounds.y,
+                    bounds.width,
+                    bounds.height,
+                    SetWindowPosNoZOrder | SetWindowPosShowWindow))
+            {
+                return true;
+            }
+
             return MoveWindow(windowHandle, bounds.x, bounds.y, bounds.width, bounds.height, repaint);
+        }
+
+        public static bool TryGetLargestVisibleWindowForCurrentProcess(out IntPtr windowHandle)
+        {
+            int currentProcessId = Process.GetCurrentProcess().Id;
+            IntPtr bestWindowHandle = IntPtr.Zero;
+            int bestWindowArea = 0;
+
+            EnumWindows(
+                (candidateHandle, _) =>
+                {
+                    if (!IsWindowVisible(candidateHandle))
+                    {
+                        return true;
+                    }
+
+                    GetWindowThreadProcessId(candidateHandle, out uint processId);
+                    if (processId != currentProcessId)
+                    {
+                        return true;
+                    }
+
+                    if (!GetWindowRect(candidateHandle, out NativeRect rect))
+                    {
+                        return true;
+                    }
+
+                    int width = rect.right - rect.left;
+                    int height = rect.bottom - rect.top;
+                    int area = width * height;
+                    if (width >= 320 && height >= 240 && area > bestWindowArea)
+                    {
+                        bestWindowHandle = candidateHandle;
+                        bestWindowArea = area;
+                    }
+
+                    return true;
+                },
+                IntPtr.Zero);
+
+            windowHandle = bestWindowHandle;
+            return windowHandle != IntPtr.Zero;
         }
 
         public static bool TryGetMonitorBoundsByPositionIndex(
@@ -94,6 +174,31 @@ namespace ShadowPrototype
             bounds = useWorkArea ? display.WorkArea : display.Bounds;
             description = $"{display.Description}, position {safeIndex + 1}";
             return true;
+        }
+
+        public static bool TryGetMonitorBoundsByWindowsDisplayNumber(
+            int displayNumber,
+            bool useWorkArea,
+            out RectInt bounds,
+            out string description)
+        {
+            List<WindowsDisplayArea> displays = GetDisplayAreas();
+            for (int index = 0; index < displays.Count; index++)
+            {
+                WindowsDisplayArea display = displays[index];
+                if (display.DisplayNumber != displayNumber)
+                {
+                    continue;
+                }
+
+                bounds = useWorkArea ? display.WorkArea : display.Bounds;
+                description = display.Description;
+                return true;
+            }
+
+            bounds = default;
+            description = $"Windows display {displayNumber}";
+            return false;
         }
 
         private static List<WindowsDisplayArea> GetDisplayAreas()

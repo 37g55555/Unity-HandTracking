@@ -14,7 +14,7 @@ namespace ShadowPrototype
 {
     public class PipelineManager : MonoBehaviour
     {
-        private const string DefaultCaptureCameraArguments = "--mode file";
+        private const string DefaultCaptureCameraArguments = "--mode live --bg --camera 0 --camera-width 640 --camera-height 360 --camera-fps 30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --no-frame-enhance --no-control-window";
         private const string DefaultQwenServerArguments = "-m uvicorn app:app --host 127.0.0.1 --port 8000";
         private const string ShadowCaptureProcessLabel = "ShadowCapture";
         private const string QwenServerProcessLabel = "Qwen";
@@ -127,6 +127,19 @@ namespace ShadowPrototype
             pendingKeywordUntilOpeningVideoComplete = null;
 
             StartCoroutine(StartPipelineRoutine());
+        }
+
+        public void DebugAdvanceToMission1()
+        {
+            StopAllCoroutines();
+            keywordClassificationRoutine = null;
+            lock (pendingContourLock)
+            {
+                pendingContourPath = null;
+            }
+
+            stateManager?.OnMediaPipeTrackingStarted();
+            LoadMission1Scene();
         }
 
         private void ConfigureCaptureAcceptance(bool useExistingShadowMesh)
@@ -1222,8 +1235,8 @@ namespace ShadowPrototype
 
         private bool TryGetTerminalTargetWorkArea(out RectInt bounds, out string description)
         {
-            return WindowsDisplayUtility.TryGetMonitorBoundsByPositionIndex(
-                DisplayRoutingSettings.TerminalMonitorPositionIndex,
+            return WindowsDisplayUtility.TryGetMonitorBoundsByWindowsDisplayNumber(
+                DisplayRoutingSettings.TerminalWindowsDisplayNumber,
                 useWorkArea: true,
                 out bounds,
                 out description);

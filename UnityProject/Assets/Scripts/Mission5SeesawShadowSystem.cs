@@ -51,6 +51,7 @@ namespace ShadowPrototype
         [SerializeField, Range(0.0f, 1.0f)] private float completionShadowAreaRatio = 0.50f;
         [SerializeField] private string nextSceneName = "Ending";
         [SerializeField, Min(0.0f)] private float endingTransitionDelay = 0.6f;
+        [SerializeField, Min(0.0f)] private float postOutroSceneTransitionDelay = 1.0f;
         [SerializeField, Range(0.0f, 1.0f)] private float completionDingVolume = 0.9f;
 
         private readonly object packetLock = new object();
@@ -164,6 +165,8 @@ namespace ShadowPrototype
                 $"Set-Location -LiteralPath {QuotePowerShellArgument(workingDirectory)}; " +
                 $"& {QuotePowerShellArgument(pythonExecutablePath)} {QuotePowerShellArgument(scriptPath)} " +
                 $"--camera {cameraDeviceIndex} " +
+                "--width 640 --height 360 --fps 30 --camera-buffer-size 1 " +
+                "--camera-auto-exposure 0.75 --preview " +
                 $"--udp-port {udpPort}";
 
             var startInfo = new ProcessStartInfo
@@ -180,12 +183,21 @@ namespace ShadowPrototype
             try
             {
                 launchedProcess.Start();
+                StartCoroutine(TerminalWindowRouter.MoveToConfiguredDisplayRoutine(launchedProcess, ProcessLabel));
             }
             catch (Exception exception)
             {
                 Debug.LogWarning($"{ProcessLabel}: terminal launch failed: {exception.Message}");
                 launchedProcess.Dispose();
                 launchedProcess = null;
+            }
+        }
+
+        public void DebugTriggerCompletion()
+        {
+            if (!completionTriggered)
+            {
+                TriggerCompletion();
             }
         }
 
@@ -465,6 +477,7 @@ namespace ShadowPrototype
             smoothedWeight = 1.0f;
             UpdateSeesawPose();
             PlayCompletionDing();
+            FindObjectOfType<Mission5Controller>()?.HideInteractionInstruction();
             StartCoroutine(LoadEndingAfterDelay());
         }
 
@@ -480,6 +493,11 @@ namespace ShadowPrototype
             if (mission5Controller != null)
             {
                 yield return mission5Controller.PlayOutroRoutine();
+            }
+
+            if (postOutroSceneTransitionDelay > 0.0f)
+            {
+                yield return new WaitForSeconds(postOutroSceneTransitionDelay);
             }
 
             FindObjectOfType<GameStateManager>()?.OnEndingStarted();

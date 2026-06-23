@@ -77,6 +77,11 @@ namespace ShadowPrototype
             enabled = true;
         }
 
+        public void DebugCompleteMission()
+        {
+            CompleteMission();
+        }
+
         private void LateUpdate()
         {
             if (missionCompleted)

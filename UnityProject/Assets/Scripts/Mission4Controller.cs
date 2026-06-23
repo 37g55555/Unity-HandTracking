@@ -120,6 +120,23 @@ namespace ShadowPrototype
             completionRoutine = StartCoroutine(CompleteMissionRoutine());
         }
 
+        public void DebugAdvance()
+        {
+            if (currentPhase == Mission4Phase.Intro)
+            {
+                if (introRoutine != null)
+                {
+                    StopCoroutine(introRoutine);
+                    introRoutine = null;
+                }
+
+                EnterInteraction();
+                return;
+            }
+
+            HandleDoorReached();
+        }
+
         private IEnumerator PlayIntroRoutine()
         {
             NarrationSubtitleSequencePlayer narrationPlayer = ResolveNarrationPlayer();

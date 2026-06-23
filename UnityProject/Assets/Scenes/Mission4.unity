@@ -175,7 +175,7 @@ MonoBehaviour:
   pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
   workingDirectory: C:\capstone\Shadow-to-3D-Generator
   scriptName: python\ArucoTracking.py
-  cameraDeviceIndex: 0
+  cameraDeviceIndex: 1
   dictionaryName: DICT_4X4_50
   markerId: 0
   udpPort: 5054

@@ -1,6 +1,7 @@
 import sys
 
-TARGET_MONITOR_INDEX = 1
+TARGET_MONITOR_NUMBER = 2
+FALLBACK_TARGET_MONITOR_INDEX = 0
 WINDOWED_PREVIEW_WIDTH = 1280
 WINDOWED_PREVIEW_HEIGHT = 720
 WINDOWED_PREVIEW_OFFSET_X = 40
@@ -53,7 +54,18 @@ def get_display_bounds():
         info.cbSize = ctypes.sizeof(MonitorInfo)
         if user32.GetMonitorInfoW(hmonitor, ctypes.byref(info)):
             rect = info.rcMonitor
+            device_name = info.szDevice or ""
+            display_number = -1
+            digits = ""
+            for character in reversed(device_name):
+                if not character.isdigit():
+                    break
+                digits = character + digits
+            if digits:
+                display_number = int(digits)
+
             monitors.append({
+                "display_number": display_number,
                 "bounds": (rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top),
             })
         return True
@@ -64,8 +76,12 @@ def get_display_bounds():
 
     monitors.sort(key=lambda monitor: (monitor["bounds"][0], monitor["bounds"][1]))
 
-    if len(monitors) > TARGET_MONITOR_INDEX:
-        return monitors[TARGET_MONITOR_INDEX]["bounds"]
+    for monitor in monitors:
+        if monitor["display_number"] == TARGET_MONITOR_NUMBER:
+            return monitor["bounds"]
+
+    if len(monitors) > FALLBACK_TARGET_MONITOR_INDEX:
+        return monitors[FALLBACK_TARGET_MONITOR_INDEX]["bounds"]
 
     return None
 

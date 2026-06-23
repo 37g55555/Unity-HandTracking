@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 import argparse
 import socket
 import time
@@ -13,7 +13,7 @@ from preview_window_utils import (
     get_foreground_window,
     keep_preview_window_no_activate,
 )
-from camera_utils import open_camera
+from camera_utils import add_camera_arguments, open_latest_frame_camera, parse_fallback_cameras
 
 PACKET_WIDTH = 1920
 PACKET_HEIGHT = 1080
@@ -72,27 +72,76 @@ def draw_hand_landmarks(display, result):
             cv2.circle(display, point, 4, (0, 255, 0), -1)
 
 
-def run_tracking(camera_id):
+def adjust_frame_brightness(frame, gain, offset):
+    gain = max(0.0, float(gain))
+    offset = float(offset)
+    if gain == 1.0 and offset == 0.0:
+        return frame
+
+    return cv2.convertScaleAbs(frame, alpha=gain, beta=offset)
+
+
+def run_tracking(
+    camera_id,
+    fallback_camera_ids,
+    width,
+    height,
+    fps,
+    camera_buffer_size,
+    camera_auto_exposure,
+    camera_exposure,
+    camera_autofocus,
+    camera_brightness,
+    camera_gain,
+    camera_contrast,
+    directshow_device,
+    directshow_pixel_format,
+    directshow_video_codec,
+    frame_gain,
+    frame_brightness_offset,
+    allow_black_frames,
+    preview,
+):
     ensure_model_exists()
 
-    cap = open_camera(camera_id, log=log)
+    cap = open_latest_frame_camera(
+        camera_id,
+        fallback_camera_ids=fallback_camera_ids,
+        width=width,
+        height=height,
+        fps=fps,
+        buffer_size=camera_buffer_size,
+        auto_exposure=camera_auto_exposure,
+        exposure=camera_exposure,
+        autofocus=camera_autofocus,
+        brightness=camera_brightness,
+        gain=camera_gain,
+        contrast=camera_contrast,
+        directshow_device=directshow_device,
+        directshow_pixel_format=directshow_pixel_format,
+        directshow_video_codec=directshow_video_codec,
+        allow_black_frames=allow_black_frames,
+        log=log,
+    )
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     landmarker = create_landmarker()
     udp_target = (UDP_HOST, UDP_PORT)
     last_timestamp_ms = 0
-    restore_focus_window = get_foreground_window()
+    restore_focus_window = get_foreground_window() if preview else None
     preview_focus_restored = False
 
     log(f"[OK] Sending landmarks to Unity UDP {UDP_HOST}:{UDP_PORT}.")
-    cv2.namedWindow(PREVIEW_WINDOW_NAME, cv2.WINDOW_NORMAL)
-    configure_preview_window(cv2, PREVIEW_WINDOW_NAME, restore_focus_window)
+    if preview:
+        cv2.namedWindow(PREVIEW_WINDOW_NAME, cv2.WINDOW_NORMAL)
+        configure_preview_window(cv2, PREVIEW_WINDOW_NAME, restore_focus_window)
 
     try:
         while True:
-            success, frame = cap.read()
+            success, frame = cap.read(copy_frame=preview)
             if not success or frame is None:
                 continue
 
+            frame = adjust_frame_brightness(frame, frame_gain, frame_brightness_offset)
             frame = cv2.flip(frame, 1)
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
@@ -108,27 +157,51 @@ def run_tracking(camera_id):
                 payload = build_udp_payload(result)
                 sock.sendto(str(payload).encode("utf-8"), udp_target)
 
-            draw_hand_landmarks(frame, result)
-            cv2.imshow(PREVIEW_WINDOW_NAME, frame)
-            if not preview_focus_restored:
-                keep_preview_window_no_activate(PREVIEW_WINDOW_NAME, restore_focus_window)
-                preview_focus_restored = True
+            if preview:
+                draw_hand_landmarks(frame, result)
+                cv2.imshow(PREVIEW_WINDOW_NAME, frame)
+                if not preview_focus_restored:
+                    keep_preview_window_no_activate(PREVIEW_WINDOW_NAME, restore_focus_window)
+                    preview_focus_restored = True
 
-            if cv2.waitKey(1) & 0xFF == QUIT_KEY:
-                break
+                if cv2.waitKey(1) & 0xFF == QUIT_KEY:
+                    break
     finally:
         landmarker.close()
         sock.close()
         cap.release()
-        cv2.destroyWindow(PREVIEW_WINDOW_NAME)
+        if preview:
+            cv2.destroyWindow(PREVIEW_WINDOW_NAME)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Send MediaPipe hand landmarks to Unity.")
-    parser.add_argument("--camera", type=int, default=1)
+    add_camera_arguments(parser, default_camera=1, preview_default=False)
+    parser.add_argument("--frame-gain", type=float, default=1.0)
+    parser.add_argument("--frame-brightness-offset", type=float, default=0.0)
     args = parser.parse_args()
 
-    run_tracking(args.camera)
+    run_tracking(
+        args.camera,
+        parse_fallback_cameras(args.fallback_cameras),
+        args.width,
+        args.height,
+        args.fps,
+        args.camera_buffer_size,
+        args.camera_auto_exposure,
+        args.camera_exposure,
+        args.camera_autofocus,
+        args.camera_brightness,
+        args.camera_gain,
+        args.camera_contrast,
+        args.directshow_device,
+        args.directshow_pixel_format,
+        args.directshow_video_codec,
+        args.frame_gain,
+        args.frame_brightness_offset,
+        args.allow_black_frames,
+        args.preview,
+    )
 
 
 if __name__ == "__main__":

@@ -47,6 +47,10 @@ namespace ShadowPrototype
         [Header("Interaction")]
         [SerializeField] private Mission5SeesawShadowSystem shadowAreaSystem;
 
+        [Header("Interaction UI")]
+        [SerializeField] private GameObject interactionInstructionObject;
+        [SerializeField] private Text interactionInstructionTextComponent;
+
         private Mission5Phase currentPhase;
         private Coroutine introRoutine;
         private SpriteRenderer[] wallRenderers;
@@ -61,6 +65,7 @@ namespace ShadowPrototype
             CacheWallInitialColors();
             SetFadeAlpha(currentPhase == Mission5Phase.Intro ? 1.0f : 0.0f);
             SetInteractionSystemEnabled(currentPhase == Mission5Phase.Interaction);
+            SetInteractionInstructionVisible(currentPhase == Mission5Phase.Interaction);
         }
 
         private void Start()
@@ -106,6 +111,7 @@ namespace ShadowPrototype
             ResolveReferences();
             RestoreWallInitialColors();
             SetInteractionSystemEnabled(false);
+            SetInteractionInstructionVisible(false);
             SetFadeAlpha(1.0f);
         }
 
@@ -115,6 +121,7 @@ namespace ShadowPrototype
             ResolveReferences();
             SetFadeAlpha(0.0f);
             SetInteractionSystemEnabled(true);
+            SetInteractionInstructionVisible(true);
         }
 
         public void EnterOutro()
@@ -122,6 +129,12 @@ namespace ShadowPrototype
             currentPhase = Mission5Phase.Outro;
             ResolveReferences();
             SetFadeAlpha(0.0f);
+            SetInteractionInstructionVisible(false);
+        }
+
+        public void HideInteractionInstruction()
+        {
+            SetInteractionInstructionVisible(false);
         }
 
         public IEnumerator PlayOutroRoutine()
@@ -188,6 +201,24 @@ namespace ShadowPrototype
 
             star.position = outroShadowStarPosition;
             star.localScale = starTargetScale;
+        }
+
+        public void DebugAdvance()
+        {
+            if (currentPhase == Mission5Phase.Intro)
+            {
+                if (introRoutine != null)
+                {
+                    StopCoroutine(introRoutine);
+                    introRoutine = null;
+                }
+
+                EnterInteraction();
+                return;
+            }
+
+            ResolveReferences();
+            shadowAreaSystem?.DebugTriggerCompletion();
         }
 
         private IEnumerator PlayIntroRoutine()
@@ -301,6 +332,33 @@ namespace ShadowPrototype
             if (shadowAreaSystem != null)
             {
                 shadowAreaSystem.enabled = isEnabled;
+            }
+        }
+
+        private void SetInteractionInstructionVisible(bool isVisible)
+        {
+            ResolveInteractionInstructionReferences();
+
+            if (interactionInstructionObject != null)
+            {
+                interactionInstructionObject.SetActive(isVisible);
+            }
+            else if (interactionInstructionTextComponent != null)
+            {
+                interactionInstructionTextComponent.gameObject.SetActive(isVisible);
+            }
+        }
+
+        private void ResolveInteractionInstructionReferences()
+        {
+            if (interactionInstructionTextComponent == null && interactionInstructionObject != null)
+            {
+                interactionInstructionTextComponent = interactionInstructionObject.GetComponentInChildren<Text>(true);
+            }
+
+            if (interactionInstructionObject == null && interactionInstructionTextComponent != null)
+            {
+                interactionInstructionObject = interactionInstructionTextComponent.gameObject;
             }
         }
 
@@ -468,6 +526,7 @@ namespace ShadowPrototype
             }
 
             ResolveIntroNarrationPlayer();
+            ResolveInteractionInstructionReferences();
         }
 
         private void CacheWallInitialColors()

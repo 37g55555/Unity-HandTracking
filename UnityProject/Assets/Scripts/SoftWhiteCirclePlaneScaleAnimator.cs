@@ -9,7 +9,7 @@ namespace ShadowPrototype
         [SerializeField] private GameStateManager stateManager;
         [SerializeField] private Transform targetPlane;
         [SerializeField] private bool playOnStart;
-        [SerializeField] private Vector2 targetScaleXZ = new Vector2(8.0f, 4.0f);
+        [SerializeField] private Vector2 targetScaleXZ = new Vector2(8.0f, 4.5f);
         [SerializeField, Min(0.0f)] private float delaySeconds;
         [SerializeField, Min(0.01f)] private float durationSeconds = 5.0f;
         [SerializeField] private bool destroyTargetPlaneOnTargetScaleReached = true;

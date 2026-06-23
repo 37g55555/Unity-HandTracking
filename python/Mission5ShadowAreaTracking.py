@@ -1,11 +1,11 @@
-import argparse
+﻿import argparse
 import socket
 import time
 
 import cv2
 import numpy as np
 
-from camera_utils import open_camera
+from camera_utils import add_camera_arguments, open_latest_frame_camera, parse_fallback_cameras
 from preview_window_utils import (
     configure_preview_window,
     get_foreground_window,
@@ -57,46 +57,48 @@ def parse_roi(value):
     )
 
 
-def capture_background(cap, seconds, roi_mask):
+def capture_background(cap, seconds, roi_mask, preview):
     started_at = time.monotonic()
     frames = []
-    restore_focus_window = get_foreground_window()
+    restore_focus_window = get_foreground_window() if preview else None
     preview_focus_restored = False
 
     log(f"[INFO] Capturing empty background for {seconds:.1f}s.")
-    cv2.namedWindow(PREVIEW_WINDOW_NAME, cv2.WINDOW_NORMAL)
-    configure_preview_window(cv2, PREVIEW_WINDOW_NAME, restore_focus_window)
+    if preview:
+        cv2.namedWindow(PREVIEW_WINDOW_NAME, cv2.WINDOW_NORMAL)
+        configure_preview_window(cv2, PREVIEW_WINDOW_NAME, restore_focus_window)
 
     while True:
-        ok, frame = cap.read()
+        ok, frame = cap.read(copy_frame=preview)
         if not ok or frame is None:
             continue
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         frames.append(gray.astype(np.float32))
 
-        display = frame.copy()
-        remaining = max(0.0, seconds - (time.monotonic() - started_at))
-        cv2.putText(
-            display,
-            f"Capturing background: {remaining:.1f}s",
-            (24, 48),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1.0,
-            (0, 255, 255),
-            2,
-        )
+        if preview:
+            display = frame.copy()
+            remaining = max(0.0, seconds - (time.monotonic() - started_at))
+            cv2.putText(
+                display,
+                f"Capturing background: {remaining:.1f}s",
+                (24, 48),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                (0, 255, 255),
+                2,
+            )
 
-        if roi_mask is not None:
-            overlay_roi(display, roi_mask, (0, 255, 255))
+            if roi_mask is not None:
+                overlay_roi(display, roi_mask, (0, 255, 255))
 
-        cv2.imshow(PREVIEW_WINDOW_NAME, display)
-        if not preview_focus_restored:
-            keep_preview_window_no_activate(PREVIEW_WINDOW_NAME, restore_focus_window)
-            preview_focus_restored = True
+            cv2.imshow(PREVIEW_WINDOW_NAME, display)
+            if not preview_focus_restored:
+                keep_preview_window_no_activate(PREVIEW_WINDOW_NAME, restore_focus_window)
+                preview_focus_restored = True
 
-        if cv2.waitKey(1) & 0xFF == QUIT_KEY:
-            raise KeyboardInterrupt
+            if cv2.waitKey(1) & 0xFF == QUIT_KEY:
+                raise KeyboardInterrupt
 
         if time.monotonic() - started_at >= seconds and frames:
             break
@@ -145,14 +147,42 @@ def draw_shadow_overlay(display, mask):
 
 def run_tracking(
     camera_id,
+    fallback_camera_ids,
     udp_port,
     background_seconds,
     darkening_threshold,
     black_threshold,
     use_background,
     roi,
+    width,
+    height,
+    fps,
+    camera_buffer_size,
+    camera_auto_exposure,
+    camera_exposure,
+    camera_autofocus,
+    directshow_device,
+    directshow_pixel_format,
+    directshow_video_codec,
+    allow_black_frames,
+    preview,
 ):
-    cap = open_camera(camera_id, log=log)
+    cap = open_latest_frame_camera(
+        camera_id,
+        fallback_camera_ids=fallback_camera_ids,
+        width=width,
+        height=height,
+        fps=fps,
+        buffer_size=camera_buffer_size,
+        auto_exposure=camera_auto_exposure,
+        exposure=camera_exposure,
+        autofocus=camera_autofocus,
+        directshow_device=directshow_device,
+        directshow_pixel_format=directshow_pixel_format,
+        directshow_video_codec=directshow_video_codec,
+        allow_black_frames=allow_black_frames,
+        log=log,
+    )
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_target = (UDP_HOST, udp_port)
     roi_mask = None
@@ -164,16 +194,17 @@ def run_tracking(
             roi_mask = build_roi_mask(first_frame.shape, roi)
 
         if use_background:
-            background = capture_background(cap, background_seconds, roi_mask)
+            background = capture_background(cap, background_seconds, roi_mask, preview)
 
-        restore_focus_window = get_foreground_window()
+        restore_focus_window = get_foreground_window() if preview else None
         preview_focus_restored = False
-        cv2.namedWindow(PREVIEW_WINDOW_NAME, cv2.WINDOW_NORMAL)
-        configure_preview_window(cv2, PREVIEW_WINDOW_NAME, restore_focus_window)
+        if preview:
+            cv2.namedWindow(PREVIEW_WINDOW_NAME, cv2.WINDOW_NORMAL)
+            configure_preview_window(cv2, PREVIEW_WINDOW_NAME, restore_focus_window)
         log(f"[OK] Sending shadow ratio to Unity UDP {UDP_HOST}:{udp_port}.")
 
         while True:
-            ok, frame = cap.read()
+            ok, frame = cap.read(copy_frame=preview)
             if not ok or frame is None:
                 continue
 
@@ -188,27 +219,28 @@ def run_tracking(
             payload = f"ratio={ratio:.6f}"
             sock.sendto(payload.encode("utf-8"), udp_target)
 
-            display = draw_shadow_overlay(frame.copy(), mask)
-            if roi_mask is not None:
-                overlay_roi(display, roi_mask, (0, 255, 255))
+            if preview:
+                display = draw_shadow_overlay(frame.copy(), mask)
+                if roi_mask is not None:
+                    overlay_roi(display, roi_mask, (0, 255, 255))
 
-            cv2.putText(
-                display,
-                f"shadow area {ratio * 100.0:.2f}%",
-                (24, 48),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.0,
-                (0, 255, 0),
-                2,
-            )
+                cv2.putText(
+                    display,
+                    f"shadow area {ratio * 100.0:.2f}%",
+                    (24, 48),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1.0,
+                    (0, 255, 0),
+                    2,
+                )
 
-            cv2.imshow(PREVIEW_WINDOW_NAME, display)
-            if not preview_focus_restored:
-                keep_preview_window_no_activate(PREVIEW_WINDOW_NAME, restore_focus_window)
-                preview_focus_restored = True
+                cv2.imshow(PREVIEW_WINDOW_NAME, display)
+                if not preview_focus_restored:
+                    keep_preview_window_no_activate(PREVIEW_WINDOW_NAME, restore_focus_window)
+                    preview_focus_restored = True
 
-            if cv2.waitKey(1) & 0xFF == QUIT_KEY:
-                break
+                if cv2.waitKey(1) & 0xFF == QUIT_KEY:
+                    break
     finally:
         sock.close()
         cap.release()
@@ -220,7 +252,7 @@ def run_tracking(
 
 def main():
     parser = argparse.ArgumentParser(description="Measure live shadow area and send the ratio to Unity.")
-    parser.add_argument("--camera", type=int, default=0)
+    add_camera_arguments(parser, default_camera=0, preview_default=False)
     parser.add_argument("--udp-port", type=int, default=5055)
     parser.add_argument("--background-seconds", type=float, default=1.0)
     parser.add_argument("--darkening-threshold", type=int, default=28)
@@ -236,12 +268,25 @@ def main():
 
     run_tracking(
         args.camera,
+        parse_fallback_cameras(args.fallback_cameras),
         args.udp_port,
         args.background_seconds,
         args.darkening_threshold,
         args.black_threshold,
         args.use_background,
         args.roi,
+        args.width,
+        args.height,
+        args.fps,
+        args.camera_buffer_size,
+        args.camera_auto_exposure,
+        args.camera_exposure,
+        args.camera_autofocus,
+        args.directshow_device,
+        args.directshow_pixel_format,
+        args.directshow_video_codec,
+        args.allow_black_frames,
+        args.preview,
     )
 
 

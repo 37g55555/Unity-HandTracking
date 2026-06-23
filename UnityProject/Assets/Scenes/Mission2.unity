@@ -677,7 +677,7 @@ MonoBehaviour:
   pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
   workingDirectory: C:\capstone\Shadow-to-3D-Generator
   scriptName: python\MediaPipeTracking.py
-  scriptArguments: --camera 0
+  scriptArguments: --camera 1 --width 640 --height 360 --fps 30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --camera-brightness 180 --camera-gain 80 --camera-contrast 110 --allow-black-frames --frame-gain 2 --frame-brightness-offset 45 --preview
 --- !u!1 &600000
 GameObject:
   m_ObjectHideFlags: 0

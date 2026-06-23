@@ -93,6 +93,7 @@ namespace ShadowPrototype
         private float lastPokeDepth;
         private float firstPokeSeenTime = -1.0f;
         private bool isPokeArmed = true;
+        private bool pokeInputEnabled = true;
         private float lastTriggeredPokeDepth;
         private int forwardPokeFrameCount;
         private int lastPokeClipIndex = -1;
@@ -101,7 +102,7 @@ namespace ShadowPrototype
         {
             EnsureOverlay();
             EnsureRig();
-            ResolvePokeReferences(false);
+            ResolvePokeReferences();
 
             if (Application.isPlaying)
             {
@@ -121,13 +122,13 @@ namespace ShadowPrototype
             }
             else
             {
-                ResolvePokeReferences(true);
+                ResolvePokeReferences();
             }
         }
 
         private void Start()
         {
-            ResolvePokeReferences(true);
+            ResolvePokeReferences();
             if (showOnStart)
             {
                 Show();
@@ -180,9 +181,22 @@ namespace ShadowPrototype
             ShowPanels(true, true, true);
         }
 
-        public void ShowSidePanelsOnly()
+        public void SetPokeInputEnabled(bool isEnabled)
         {
-            ShowPanels(false, true, true);
+            if (pokeInputEnabled == isEnabled)
+            {
+                return;
+            }
+
+            pokeInputEnabled = isEnabled;
+            ResetPokeTracking();
+
+            if (!isEnabled)
+            {
+                StopPokeRoutine();
+                StopPokeAudioRoutine();
+                SetActiveModel(false);
+            }
         }
 
         private void ShowPanels(bool showFrontPanel, bool showLeftPanel, bool showRightPanel)
@@ -375,8 +389,8 @@ namespace ShadowPrototype
 
             if (rigRoot == null)
             {
-                Transform existingRig = transform.Find("EndingHologramModelRig");
-                rigRoot = existingRig != null ? existingRig.gameObject : new GameObject("EndingHologramModelRig");
+                Transform existingRig = transform.Find("HologramModelRig");
+                rigRoot = existingRig != null ? existingRig.gameObject : new GameObject("HologramModelRig");
                 rigRoot.transform.SetParent(transform, false);
             }
 
@@ -399,49 +413,49 @@ namespace ShadowPrototype
 
             if (frontCamera == null)
             {
-                frontCamera = FindRigComponent<Camera>("EndingModel_Cam_Front");
+                frontCamera = FindRigComponent<Camera>("Cam_Front");
                 if (frontCamera == null)
                 {
-                    frontCamera = CreateViewCamera("EndingModel_Cam_Front", frontTexture);
+                    frontCamera = CreateViewCamera("Cam_Front", frontTexture);
                     createdCamera = true;
                 }
             }
 
             if (leftCamera == null)
             {
-                leftCamera = FindRigComponent<Camera>("EndingModel_Cam_Left");
+                leftCamera = FindRigComponent<Camera>("Cam_Left");
                 if (leftCamera == null)
                 {
-                    leftCamera = CreateViewCamera("EndingModel_Cam_Left", leftTexture);
+                    leftCamera = CreateViewCamera("Cam_Left", leftTexture);
                     createdCamera = true;
                 }
             }
 
             if (rightCamera == null)
             {
-                rightCamera = FindRigComponent<Camera>("EndingModel_Cam_Right");
+                rightCamera = FindRigComponent<Camera>("Cam_Right");
                 if (rightCamera == null)
                 {
-                    rightCamera = CreateViewCamera("EndingModel_Cam_Right", rightTexture);
+                    rightCamera = CreateViewCamera("Cam_Right", rightTexture);
                     createdCamera = true;
                 }
             }
 
             if (createCameraLights)
             {
-                frontCameraLight = EnsureCameraLight(frontCamera, frontCameraLight, "EndingModel_FrontLight", ref createdCameraLight);
-                leftCameraLight = EnsureCameraLight(leftCamera, leftCameraLight, "EndingModel_LeftLight", ref createdCameraLight);
-                rightCameraLight = EnsureCameraLight(rightCamera, rightCameraLight, "EndingModel_RightLight", ref createdCameraLight);
+                frontCameraLight = EnsureCameraLight(frontCamera, frontCameraLight, "Light_Front", ref createdCameraLight);
+                leftCameraLight = EnsureCameraLight(leftCamera, leftCameraLight, "Light_Left", ref createdCameraLight);
+                rightCameraLight = EnsureCameraLight(rightCamera, rightCameraLight, "Light_Right", ref createdCameraLight);
             }
 
             if (keyLight == null)
             {
-                keyLight = FindRigComponent<Light>("EndingModel_KeyLight");
+                keyLight = FindRigComponent<Light>("KeyLight");
             }
 
             if (keyLight == null)
             {
-                GameObject lightObject = new GameObject("EndingModel_KeyLight");
+                GameObject lightObject = new GameObject("KeyLight");
                 lightObject.transform.SetParent(rigRoot.transform, false);
                 keyLight = lightObject.AddComponent<Light>();
                 keyLight.type = LightType.Directional;
@@ -620,8 +634,14 @@ namespace ShadowPrototype
                 return;
             }
 
-            ResolvePokeReferences(true);
+            ResolvePokeReferences();
             StartMediaPipeReceiverIfNeeded();
+
+            if (!pokeInputEnabled)
+            {
+                ResetPokeTracking();
+                return;
+            }
 
             if (mediaPipeReceiver == null ||
                 !TryGetPokeDepth(out float currentDepth))
@@ -702,56 +722,21 @@ namespace ShadowPrototype
             }
         }
 
-        private void ResolvePokeReferences(bool allowRuntimeComponentCreation)
+        private void ResolvePokeReferences()
         {
             if (mediaPipeReceiver == null)
             {
                 mediaPipeReceiver = GetComponent<MediaPipeUdpReceiver>();
-                if (mediaPipeReceiver == null)
-                {
-                    mediaPipeReceiver = GetComponentInParent<MediaPipeUdpReceiver>();
-                }
-
-                if (mediaPipeReceiver == null && Application.isPlaying)
-                {
-                    mediaPipeReceiver = FindObjectOfType<MediaPipeUdpReceiver>();
-                }
-
-                if (mediaPipeReceiver == null && allowRuntimeComponentCreation && Application.isPlaying)
-                {
-                    mediaPipeReceiver = gameObject.AddComponent<MediaPipeUdpReceiver>();
-                }
             }
 
             if (mediaPipeLauncher == null)
             {
                 mediaPipeLauncher = GetComponent<MediaPipeTrackingProcessLauncher>();
-                if (mediaPipeLauncher == null)
-                {
-                    mediaPipeLauncher = GetComponentInParent<MediaPipeTrackingProcessLauncher>();
-                }
-
-                if (mediaPipeLauncher == null && Application.isPlaying)
-                {
-                    mediaPipeLauncher = FindObjectOfType<MediaPipeTrackingProcessLauncher>();
-                }
-
-                if (mediaPipeLauncher == null && allowRuntimeComponentCreation && Application.isPlaying)
-                {
-                    mediaPipeLauncher = gameObject.AddComponent<MediaPipeTrackingProcessLauncher>();
-                }
             }
 
             if (pokeAudioSource == null)
             {
                 pokeAudioSource = GetComponent<AudioSource>();
-                if (pokeAudioSource == null && allowRuntimeComponentCreation && Application.isPlaying)
-                {
-                    pokeAudioSource = gameObject.AddComponent<AudioSource>();
-                    pokeAudioSource.playOnAwake = false;
-                    pokeAudioSource.spatialBlend = 0.0f;
-                    pokeAudioSource.ignoreListenerPause = true;
-                }
             }
         }
 
@@ -844,24 +829,28 @@ namespace ShadowPrototype
             isPokeArmed = false;
             lastTriggeredPokeDepth = currentDepth;
             forwardPokeFrameCount = 0;
-            PlayPokeSound();
+            float modelHoldSeconds = PlayPokeSound();
+            if (modelHoldSeconds <= 0.0f)
+            {
+                modelHoldSeconds = pokeModelHoldSeconds;
+            }
 
             if (pokeRoutine != null)
             {
                 StopCoroutine(pokeRoutine);
             }
 
-            pokeRoutine = StartCoroutine(PokeModelRoutine());
+            pokeRoutine = StartCoroutine(PokeModelRoutine(modelHoldSeconds));
         }
 
-        private IEnumerator PokeModelRoutine()
+        private IEnumerator PokeModelRoutine(float modelHoldSeconds)
         {
             EnsureModelInstances();
             SetActiveModel(true);
 
-            if (pokeModelHoldSeconds > 0.0f)
+            if (modelHoldSeconds > 0.0f)
             {
-                yield return new WaitForSeconds(pokeModelHoldSeconds);
+                yield return new WaitForSeconds(modelHoldSeconds);
             }
 
             SetActiveModel(false);
@@ -879,19 +868,19 @@ namespace ShadowPrototype
             pokeRoutine = null;
         }
 
-        private void PlayPokeSound()
+        private float PlayPokeSound()
         {
             AudioClip clip = PickPokeAudioClip();
             if (clip == null)
             {
-                return;
+                return 0.0f;
             }
 
-            ResolvePokeReferences(true);
+            ResolvePokeReferences();
             pokeAudioSource = HologramAudioPlaybackUtility.Resolve2DAudioSource(this, pokeAudioSource);
             if (pokeAudioSource == null)
             {
-                return;
+                return 0.0f;
             }
 
             if (pokeAudioRoutine != null)
@@ -900,6 +889,7 @@ namespace ShadowPrototype
             }
 
             pokeAudioRoutine = StartCoroutine(PlayPokeSoundRoutine(clip));
+            return GetAudioClipDuration(clip, pokeAudioSource);
         }
 
         private IEnumerator PlayPokeSoundRoutine(AudioClip clip)
@@ -942,6 +932,22 @@ namespace ShadowPrototype
             pokeAudioSource.Play();
 
             pokeAudioRoutine = null;
+        }
+
+        private static float GetAudioClipDuration(AudioClip clip, AudioSource audioSource)
+        {
+            if (clip == null)
+            {
+                return 0.0f;
+            }
+
+            float pitch = audioSource != null ? Mathf.Abs(audioSource.pitch) : 1.0f;
+            if (pitch <= 0.001f)
+            {
+                pitch = 1.0f;
+            }
+
+            return clip.length / pitch;
         }
 
         private void StopPokeAudioRoutine()
@@ -1026,11 +1032,12 @@ namespace ShadowPrototype
                 return;
             }
 
-            Transform existingCanvasTransform = transform.Find("EndingHologramModelCanvas");
+            Transform existingCanvasTransform = transform.Find("HologramCanvas");
             bool createdOverlay = existingCanvasTransform == null;
             GameObject canvasObject = existingCanvasTransform != null
                 ? existingCanvasTransform.gameObject
-                : new GameObject("EndingHologramModelCanvas", typeof(RectTransform));
+                : new GameObject("HologramCanvas", typeof(RectTransform));
+            canvasObject.name = "HologramCanvas";
             canvasObject.transform.SetParent(transform, false);
 
             canvas = canvasObject.GetComponent<Canvas>();
@@ -1059,9 +1066,9 @@ namespace ShadowPrototype
 
             raycaster.enabled = false;
 
-            frontPanel = FindOrCreatePanel(canvasObject.transform, "EndingModel_Front", 180.0f);
-            leftPanel = FindOrCreatePanel(canvasObject.transform, "EndingModel_Left", -90.0f);
-            rightPanel = FindOrCreatePanel(canvasObject.transform, "EndingModel_Right", 90.0f);
+            frontPanel = FindOrCreatePanel(canvasObject.transform, "Front", 180.0f);
+            leftPanel = FindOrCreatePanel(canvasObject.transform, "Left", -90.0f);
+            rightPanel = FindOrCreatePanel(canvasObject.transform, "Right", 90.0f);
 
             ApplyTargetDisplay();
             if (createdOverlay || autoApplyPanelLayout)
@@ -1159,9 +1166,9 @@ namespace ShadowPrototype
 
         private void EnsureRenderTextures()
         {
-            EnsureRenderTexture(ref frontTexture, "EndingHologramModelFrontRenderTexture");
-            EnsureRenderTexture(ref leftTexture, "EndingHologramModelLeftRenderTexture");
-            EnsureRenderTexture(ref rightTexture, "EndingHologramModelRightRenderTexture");
+            EnsureRenderTexture(ref frontTexture, "HologramModelFrontRenderTexture");
+            EnsureRenderTexture(ref leftTexture, "HologramModelLeftRenderTexture");
+            EnsureRenderTexture(ref rightTexture, "HologramModelRightRenderTexture");
             AssignPanelTextures();
         }
 

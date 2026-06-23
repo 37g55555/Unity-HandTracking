@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -22,7 +23,7 @@ namespace ShadowPrototype
         [SerializeField] private string scriptName = @"python\ArucoTracking.py";
 
         [Header("Marker")]
-        [SerializeField, Min(0)] private int cameraDeviceIndex;
+        [SerializeField, Min(0)] private int cameraDeviceIndex = 1;
         [SerializeField] private string dictionaryName = "DICT_4X4_50";
         [SerializeField] private int markerId;
         [SerializeField, Min(1)] private int udpPort = 5054;
@@ -134,6 +135,8 @@ namespace ShadowPrototype
                 $"Set-Location -LiteralPath {QuotePowerShellArgument(workingDirectory)}; " +
                 $"& {QuotePowerShellArgument(pythonExecutablePath)} {QuotePowerShellArgument(scriptPath)} " +
                 $"--camera {cameraDeviceIndex} " +
+                "--width 640 --height 360 --fps 30 --camera-buffer-size 1 " +
+                "--camera-auto-exposure 0.75 --preview " +
                 $"--dictionary {dictionaryName} " +
                 $"--marker-id {markerId} " +
                 $"--udp-port {udpPort}";
@@ -152,6 +155,7 @@ namespace ShadowPrototype
             try
             {
                 launchedProcess.Start();
+                StartCoroutine(TerminalWindowRouter.MoveToConfiguredDisplayRoutine(launchedProcess, ProcessLabel));
             }
             catch (Exception exception)
             {

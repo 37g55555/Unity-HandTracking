@@ -122,6 +122,24 @@ namespace ShadowPrototype
             loadRoutine = StartCoroutine(LoadHologramSceneRoutine());
         }
 
+        public void DebugAdvance()
+        {
+            if (currentPhase == Mission3Phase.Intro)
+            {
+                if (phaseRoutine != null)
+                {
+                    StopCoroutine(phaseRoutine);
+                    phaseRoutine = null;
+                }
+
+                EnterInteraction();
+                return;
+            }
+
+            HologramSwipeRotationSystem swipeSystem = FindObjectOfType<HologramSwipeRotationSystem>();
+            swipeSystem?.DebugAdvanceToNextScene();
+        }
+
         private IEnumerator PlayIntroRoutine()
         {
             yield return FadeIntroDarkAndMoveShadowStarRoutine();
@@ -146,6 +164,7 @@ namespace ShadowPrototype
             float duration = Mathf.Max(fadeDuration, moveDuration);
             Transform resolvedShadowStar = ResolveShadowStarTransform();
             Vector3 shadowStarStartPosition = resolvedShadowStar != null ? resolvedShadowStar.position : Vector3.zero;
+            Quaternion shadowStarStartRotation = resolvedShadowStar != null ? resolvedShadowStar.localRotation : Quaternion.identity;
             Vector3 shadowStarTargetPosition = shadowStarStartPosition;
             shadowStarTargetPosition.x = introShadowStarTargetX;
             SetDarkAlpha(IntroStartAlpha01);
@@ -187,10 +206,17 @@ namespace ShadowPrototype
                     {
                         float moveT = Mathf.Clamp01(elapsed / moveDuration);
                         float moveEased = Mathf.SmoothStep(0.0f, 1.0f, moveT);
-                        resolvedShadowStar.position = Vector3.LerpUnclamped(
+                        Vector3 walkBasePosition = Vector3.LerpUnclamped(
                             shadowStarStartPosition,
                             shadowStarTargetPosition,
                             moveEased);
+                        StarWalkMotion.ApplyWorld(
+                            resolvedShadowStar,
+                            walkBasePosition,
+                            shadowStarStartPosition,
+                            shadowStarTargetPosition,
+                            moveEased,
+                            shadowStarStartRotation);
                     }
                 }
 
@@ -200,7 +226,7 @@ namespace ShadowPrototype
             SetDarkAlpha(0.0f);
             if (resolvedShadowStar != null)
             {
-                resolvedShadowStar.position = shadowStarTargetPosition;
+                StarWalkMotion.FinishWorld(resolvedShadowStar, shadowStarTargetPosition, shadowStarStartRotation);
             }
         }
 
@@ -223,6 +249,13 @@ namespace ShadowPrototype
             Vector3 startPosition = resolvedBackground != null ? resolvedBackground.position : Vector3.zero;
             Vector3 targetPosition = startPosition;
             targetPosition.x = introBackgroundScrollTargetX;
+            Transform resolvedShadowStar = ResolveShadowStarTransform();
+            Vector3 shadowWalkBasePosition = resolvedShadowStar != null ? resolvedShadowStar.position : Vector3.zero;
+            Quaternion shadowWalkBaseRotation = resolvedShadowStar != null ? resolvedShadowStar.localRotation : Quaternion.identity;
+            float shadowWalkElapsed = 0.0f;
+            bool backgroundScrolls = resolvedBackground != null &&
+                                     !Mathf.Approximately(startPosition.x, targetPosition.x);
+            float shadowWalkDirection = backgroundScrolls ? -Mathf.Sign(targetPosition.x - startPosition.x) : 1.0f;
 
             yield return narrationPlayer.PlayRangeAndWaitRoutine(
                 startIndex,
@@ -237,11 +270,27 @@ namespace ShadowPrototype
                     float t = Mathf.Clamp01(elapsedSeconds / durationSeconds);
                     float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
                     resolvedBackground.position = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
+
+                    if (backgroundScrolls && resolvedShadowStar != null)
+                    {
+                        shadowWalkElapsed += Mathf.Max(0.0f, deltaSeconds);
+                        StarWalkMotion.ApplyWorldInPlace(
+                            resolvedShadowStar,
+                            shadowWalkBasePosition,
+                            shadowWalkElapsed,
+                            shadowWalkDirection,
+                            shadowWalkBaseRotation);
+                    }
                 });
 
             if (resolvedBackground != null)
             {
                 resolvedBackground.position = targetPosition;
+            }
+
+            if (backgroundScrolls && resolvedShadowStar != null)
+            {
+                StarWalkMotion.FinishWorld(resolvedShadowStar, shadowWalkBasePosition, shadowWalkBaseRotation);
             }
         }
 

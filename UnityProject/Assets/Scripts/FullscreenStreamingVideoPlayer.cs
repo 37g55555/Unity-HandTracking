@@ -93,6 +93,16 @@ namespace ShadowPrototype
             yield return PlayRoutine();
         }
 
+        public IEnumerator PlayAndWaitRoutine(string nextVideoRelativePath)
+        {
+            if (!string.IsNullOrWhiteSpace(nextVideoRelativePath))
+            {
+                videoRelativePath = nextVideoRelativePath;
+            }
+
+            yield return PlayAndWaitRoutine();
+        }
+
         public void SkipPlayback()
         {
             playbackCompleted = true;

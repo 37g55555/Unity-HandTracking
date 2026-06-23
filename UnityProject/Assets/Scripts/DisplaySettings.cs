@@ -4,8 +4,9 @@ namespace ShadowPrototype
 {
     internal static class DisplayRoutingSettings
     {
+        public const int MainUnityWindowsDisplayNumber = 3;
         public const int HologramUnityDisplayIndex = 1;
-        public const int TerminalMonitorPositionIndex = 1;
+        public const int TerminalWindowsDisplayNumber = 2;
 
         public static int ResolveUnityDisplayIndex(int requestedDisplayIndex)
         {

@@ -20,7 +20,7 @@ namespace ShadowPrototype
         [SerializeField] private Color editorPreviewColor = new Color(1.0f, 1.0f, 1.0f, 0.45f);
         [SerializeField, Range(0.0f, 1.0f)] private float audioVolume = 1.0f;
         [SerializeField] private int targetDisplayIndex = DisplayRoutingSettings.HologramUnityDisplayIndex;
-        [SerializeField] private int sortingOrder = 5000;
+        [SerializeField] private int sortingOrder = 5200;
         [SerializeField] private bool autoApplyPanelLayout;
         [SerializeField] private bool showFrontPanel = true;
         [SerializeField] private bool showLeftPanel = true;
@@ -277,18 +277,21 @@ namespace ShadowPrototype
 
         private void EnsureOverlay()
         {
-            if (canvas != null && frontPanel != null && leftPanel != null && rightPanel != null)
+            if (canvas != null &&
+                frontPanel != null &&
+                (!showLeftPanel || leftPanel != null) &&
+                (!showRightPanel || rightPanel != null))
             {
                 ApplyTargetDisplay();
                 ApplyLayoutIfNeeded(false);
                 return;
             }
 
-            Transform existingCanvasTransform = transform.Find("EndingHologramVideoCanvas");
+            Transform existingCanvasTransform = transform.Find("HologramVideoPanels");
             bool createdOverlay = existingCanvasTransform == null;
             GameObject canvasObject = existingCanvasTransform != null
                 ? existingCanvasTransform.gameObject
-                : new GameObject("EndingHologramVideoCanvas", typeof(RectTransform));
+                : new GameObject("HologramVideoPanels", typeof(RectTransform));
             canvasObject.transform.SetParent(transform, false);
 
             canvas = canvasObject.GetComponent<Canvas>();
@@ -309,9 +312,13 @@ namespace ShadowPrototype
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
             scaler.scaleFactor = 1.0f;
 
-            frontPanel = FindOrCreatePanel(canvasObject.transform, "EndingVideo_Front", 180.0f);
-            leftPanel = FindOrCreatePanel(canvasObject.transform, "EndingVideo_Left", -90.0f);
-            rightPanel = FindOrCreatePanel(canvasObject.transform, "EndingVideo_Right", 90.0f);
+            frontPanel = FindOrCreatePanel(canvasObject.transform, "Video_Front", 180.0f);
+            leftPanel = showLeftPanel
+                ? FindOrCreatePanel(canvasObject.transform, "Video_Left", -90.0f)
+                : FindPanel(canvasObject.transform, "Video_Left");
+            rightPanel = showRightPanel
+                ? FindOrCreatePanel(canvasObject.transform, "Video_Right", 90.0f)
+                : FindPanel(canvasObject.transform, "Video_Right");
 
             ApplyTargetDisplay();
             if (createdOverlay || autoApplyPanelLayout)
@@ -322,8 +329,8 @@ namespace ShadowPrototype
 
         private static RawImage FindOrCreatePanel(Transform parent, string panelName, float zRotation)
         {
-            Transform existingPanel = parent.Find(panelName);
-            if (existingPanel != null && existingPanel.TryGetComponent(out RawImage existingImage))
+            RawImage existingImage = FindPanel(parent, panelName);
+            if (existingImage != null)
             {
                 RectTransform existingRect = existingImage.rectTransform;
                 existingRect.localRotation = Quaternion.Euler(0.0f, 0.0f, zRotation);
@@ -333,6 +340,14 @@ namespace ShadowPrototype
             }
 
             return CreatePanel(parent, panelName, zRotation);
+        }
+
+        private static RawImage FindPanel(Transform parent, string panelName)
+        {
+            Transform existingPanel = parent != null ? parent.Find(panelName) : null;
+            return existingPanel != null && existingPanel.TryGetComponent(out RawImage existingImage)
+                ? existingImage
+                : null;
         }
 
         private static RawImage CreatePanel(Transform parent, string panelName, float zRotation)

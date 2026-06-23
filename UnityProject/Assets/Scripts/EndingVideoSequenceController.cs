@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace ShadowPrototype
 {
@@ -7,7 +8,12 @@ namespace ShadowPrototype
     public sealed class EndingVideoSequenceController : MonoBehaviour
     {
         [SerializeField] private FullscreenStreamingVideoPlayer metamorphosisVideoPlayer;
-        [SerializeField] private FullscreenStreamingVideoPlayer connectVideoPlayer;
+        [SerializeField] private string metamorphosisVideoRelativePath = "Videos/6 Metamorphosis.mp4";
+        [SerializeField] private string connectVideoRelativePath = "Videos/7 Ending_connect.mp4";
+        [SerializeField] private bool playFullscreenIntroVideos = true;
+        [SerializeField] private bool loadHologramSceneAfterIntroVideos;
+        [SerializeField] private string hologramSceneName = "Ending_H";
+        [SerializeField] private bool playHologramSequenceInThisScene = true;
         [SerializeField] private EndingHologramVideoPlayer endingHologramVideoPlayer;
         [SerializeField] private EndingHologramModelPresenter endingHologramModelPresenter;
         [SerializeField] private bool playOnStart = true;
@@ -42,56 +48,83 @@ namespace ShadowPrototype
 
             ResolveReferences();
             metamorphosisVideoPlayer?.SkipPlayback();
-            connectVideoPlayer?.SkipPlayback();
-            endingHologramVideoPlayer?.SkipPlayback();
-            endingHologramModelPresenter?.Show();
+
+            if (loadHologramSceneAfterIntroVideos)
+            {
+                sequenceRoutine = StartCoroutine(LoadHologramSceneAndClearRoutine());
+                return;
+            }
+
+            if (playHologramSequenceInThisScene)
+            {
+                endingHologramVideoPlayer?.SkipPlayback();
+                if (endingHologramModelPresenter != null)
+                {
+                    endingHologramModelPresenter.Show();
+                    endingHologramModelPresenter.SetPokeInputEnabled(true);
+                }
+            }
         }
 
         private IEnumerator PlaySequenceRoutine()
         {
             ResolveReferences();
-            endingHologramModelPresenter?.Hide();
 
-            if (metamorphosisVideoPlayer != null)
+            if (playHologramSequenceInThisScene && endingHologramModelPresenter != null)
             {
-                yield return metamorphosisVideoPlayer.PlayAndWaitRoutine();
-                Debug.Log("EndingVideoSequenceController: metamorphosis video finished; starting connect video.");
+                endingHologramModelPresenter.Show();
+                endingHologramModelPresenter.SetPokeInputEnabled(false);
             }
-            else
+            else if (playHologramSequenceInThisScene)
             {
-                Debug.LogWarning("EndingVideoSequenceController: metamorphosis video player is missing; starting connect video.");
-            }
-
-            if (connectVideoPlayer != null)
-            {
-                yield return connectVideoPlayer.PlayAndWaitRoutine();
-                Debug.Log("EndingVideoSequenceController: connect video finished; starting hologram ending video.");
-            }
-            else
-            {
-                Debug.LogWarning("EndingVideoSequenceController: connect video player is missing; starting hologram ending video.");
+                Debug.LogWarning("EndingVideoSequenceController: ending hologram model presenter is missing.");
             }
 
-            if (endingHologramModelPresenter != null)
+            if (playFullscreenIntroVideos)
             {
-                endingHologramModelPresenter.ShowSidePanelsOnly();
+                if (metamorphosisVideoPlayer != null)
+                {
+                    yield return metamorphosisVideoPlayer.PlayAndWaitRoutine(metamorphosisVideoRelativePath);
+                    Debug.Log("EndingVideoSequenceController: metamorphosis video finished; starting connect video.");
+                }
+                else
+                {
+                    Debug.LogWarning("EndingVideoSequenceController: metamorphosis video player is missing; starting connect video.");
+                }
+
+                if (metamorphosisVideoPlayer != null)
+                {
+                    yield return metamorphosisVideoPlayer.PlayAndWaitRoutine(connectVideoRelativePath);
+                    Debug.Log("EndingVideoSequenceController: connect video finished.");
+                }
+                else
+                {
+                    Debug.LogWarning("EndingVideoSequenceController: fullscreen video player is missing.");
+                }
             }
 
-            if (endingHologramVideoPlayer != null)
+            if (loadHologramSceneAfterIntroVideos)
+            {
+                yield return LoadHologramSceneRoutine();
+                sequenceRoutine = null;
+                yield break;
+            }
+
+            if (playHologramSequenceInThisScene && endingHologramVideoPlayer != null)
             {
                 yield return endingHologramVideoPlayer.PlayAndWaitRoutine();
                 Debug.Log("EndingVideoSequenceController: ending hologram video finished; showing hologram model.");
             }
-            else
+            else if (playHologramSequenceInThisScene)
             {
                 Debug.LogWarning("EndingVideoSequenceController: ending hologram video player is missing.");
             }
 
-            if (endingHologramModelPresenter != null)
+            if (playHologramSequenceInThisScene && endingHologramModelPresenter != null)
             {
-                endingHologramModelPresenter.Show();
+                endingHologramModelPresenter.SetPokeInputEnabled(true);
             }
-            else
+            else if (playHologramSequenceInThisScene)
             {
                 Debug.LogWarning("EndingVideoSequenceController: ending hologram model presenter is missing.");
             }
@@ -106,19 +139,6 @@ namespace ShadowPrototype
                 metamorphosisVideoPlayer = GetComponent<FullscreenStreamingVideoPlayer>();
             }
 
-            if (connectVideoPlayer == null)
-            {
-                FullscreenStreamingVideoPlayer[] fullscreenPlayers = GetComponentsInChildren<FullscreenStreamingVideoPlayer>(true);
-                for (int i = 0; i < fullscreenPlayers.Length; i++)
-                {
-                    if (fullscreenPlayers[i] != null && fullscreenPlayers[i] != metamorphosisVideoPlayer)
-                    {
-                        connectVideoPlayer = fullscreenPlayers[i];
-                        break;
-                    }
-                }
-            }
-
             if (endingHologramVideoPlayer == null)
             {
                 endingHologramVideoPlayer = GetComponent<EndingHologramVideoPlayer>();
@@ -126,13 +146,70 @@ namespace ShadowPrototype
 
             if (endingHologramModelPresenter == null)
             {
-                endingHologramModelPresenter = GetComponentInChildren<EndingHologramModelPresenter>(true);
+                endingHologramModelPresenter = GetComponent<EndingHologramModelPresenter>();
+            }
+        }
+
+        private IEnumerator LoadHologramSceneAndClearRoutine()
+        {
+            yield return LoadHologramSceneRoutine();
+            sequenceRoutine = null;
+        }
+
+        private IEnumerator LoadHologramSceneRoutine()
+        {
+            if (string.IsNullOrWhiteSpace(hologramSceneName))
+            {
+                yield break;
             }
 
-            if (endingHologramModelPresenter == null)
+            int displayIndex = DisplayRoutingSettings.ResolveUnityDisplayIndex(
+                DisplayRoutingSettings.HologramUnityDisplayIndex);
+            DisplayRoutingSettings.ActivateUnityDisplay(displayIndex);
+
+            Scene hologramScene = SceneManager.GetSceneByName(hologramSceneName);
+            if (!hologramScene.IsValid() || !hologramScene.isLoaded)
             {
-                endingHologramModelPresenter = gameObject.AddComponent<EndingHologramModelPresenter>();
-                Debug.Log("EndingVideoSequenceController: added missing ending hologram model presenter.");
+                AsyncOperation loadOperation = SceneManager.LoadSceneAsync(hologramSceneName, LoadSceneMode.Additive);
+                if (loadOperation == null)
+                {
+                    Debug.LogWarning($"EndingVideoSequenceController: hologram scene could not be loaded: {hologramSceneName}");
+                    yield break;
+                }
+
+                while (!loadOperation.isDone)
+                {
+                    yield return null;
+                }
+            }
+
+            ApplyHologramTargetDisplay(displayIndex);
+            yield return null;
+            ApplyHologramTargetDisplay(displayIndex);
+            Debug.Log($"EndingVideoSequenceController: loaded hologram scene additively: {hologramSceneName}");
+        }
+
+        private void ApplyHologramTargetDisplay(int displayIndex)
+        {
+            Scene hologramScene = SceneManager.GetSceneByName(hologramSceneName);
+            if (!hologramScene.IsValid() || !hologramScene.isLoaded)
+            {
+                return;
+            }
+
+            foreach (GameObject rootObject in hologramScene.GetRootGameObjects())
+            {
+                Camera[] cameras = rootObject.GetComponentsInChildren<Camera>(true);
+                for (int i = 0; i < cameras.Length; i++)
+                {
+                    cameras[i].targetDisplay = displayIndex;
+                }
+
+                Canvas[] canvases = rootObject.GetComponentsInChildren<Canvas>(true);
+                for (int i = 0; i < canvases.Length; i++)
+                {
+                    canvases[i].targetDisplay = displayIndex;
+                }
             }
         }
     }
