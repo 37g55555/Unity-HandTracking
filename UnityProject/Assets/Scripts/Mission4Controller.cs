@@ -33,9 +33,13 @@ namespace ShadowPrototype
         [Header("Interaction UI")]
         [SerializeField] private GameObject interactionInstructionObject;
         [SerializeField] private Text interactionInstructionTextComponent;
-        [SerializeField] private string interactionInstructionText = "\uBE5B\uC774 \uD544\uC694\uD560\uC9C0\uB3C4 \uBAA8\uB978\uB2E4.";
+        [SerializeField] private string interactionInstructionText = "\uC190\uC804\uB4F1\uC73C\uB85C \uAE38\uC744 \uBE44\uCD94\uBA74, \uADF8\uB9BC\uC790\uAC00 \uADF8 \uBE5B\uC744 \uB530\uB77C\uAC11\uB2C8\uB2E4.";
         [SerializeField] private Color interactionInstructionTextColor = Color.white;
         [SerializeField, Min(12)] private int interactionInstructionFontSize = 36;
+
+        [Header("Pre Interaction Tutorial")]
+        [SerializeField] private GameObject preInteractionTutorialObject;
+        [SerializeField, Min(0.0f)] private float preInteractionTutorialSeconds = 4.0f;
 
         [Header("Completion")]
         [SerializeField] private AudioSource completionAudioSource;
@@ -58,6 +62,7 @@ namespace ShadowPrototype
             ResolveReferences();
             SetInteractionSystemsEnabled(currentPhase == Mission4Phase.Interaction);
             SetInteractionInstructionVisible(currentPhase == Mission4Phase.Interaction);
+            SetPreInteractionTutorialVisible(false);
         }
 
         private void Start()
@@ -96,11 +101,13 @@ namespace ShadowPrototype
             currentPhase = Mission4Phase.Intro;
             SetInteractionSystemsEnabled(false);
             SetInteractionInstructionVisible(false);
+            SetPreInteractionTutorialVisible(false);
         }
 
         public void EnterInteraction()
         {
             currentPhase = Mission4Phase.Interaction;
+            SetPreInteractionTutorialVisible(false);
             SetInteractionSystemsEnabled(true);
             SetInteractionInstructionVisible(true);
         }
@@ -152,6 +159,7 @@ namespace ShadowPrototype
 
             if (autoEnterInteractionAfterIntro)
             {
+                yield return PlayPreInteractionTutorialRoutine();
                 EnterInteraction();
             }
 
@@ -162,6 +170,7 @@ namespace ShadowPrototype
         {
             completionStarted = true;
             SetInteractionSystemsEnabled(false);
+            SetPreInteractionTutorialVisible(false);
             yield return PlayCompletionDingRoutine();
             SetInteractionInstructionVisible(false);
 
@@ -302,6 +311,27 @@ namespace ShadowPrototype
             else if (interactionInstructionTextComponent != null)
             {
                 interactionInstructionTextComponent.gameObject.SetActive(isVisible);
+            }
+        }
+
+        private IEnumerator PlayPreInteractionTutorialRoutine()
+        {
+            if (preInteractionTutorialObject == null || preInteractionTutorialSeconds <= 0.0f)
+            {
+                SetPreInteractionTutorialVisible(false);
+                yield break;
+            }
+
+            SetPreInteractionTutorialVisible(true);
+            yield return new WaitForSecondsRealtime(preInteractionTutorialSeconds);
+            SetPreInteractionTutorialVisible(false);
+        }
+
+        private void SetPreInteractionTutorialVisible(bool isVisible)
+        {
+            if (preInteractionTutorialObject != null)
+            {
+                preInteractionTutorialObject.SetActive(isVisible);
             }
         }
 

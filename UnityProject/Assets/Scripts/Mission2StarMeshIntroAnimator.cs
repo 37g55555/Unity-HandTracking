@@ -76,6 +76,14 @@ namespace ShadowPrototype
         [SerializeField] private GameObject interactionInstructionObject;
         [SerializeField] private Text interactionInstructionTextComponent;
 
+        [Header("Interaction Hint")]
+        [SerializeField, Min(0.0f)] private float interactionHintDelaySeconds = 10.0f;
+        [SerializeField] private string interactionHintMessage = "\uBE5B\uC774 \uAC00\uAE4C\uC6CC\uC9C8\uC218\uB85D ...";
+        [SerializeField] private Color interactionHintTextColor = Color.black;
+        [SerializeField, Min(12)] private int interactionHintFontSize = 36;
+        [SerializeField] private GameObject interactionHintObject;
+        [SerializeField] private Text interactionHintTextComponent;
+
         [Header("Interaction Start Cue")]
         [SerializeField] private bool playSunSlideCueOnInteractionStart = true;
         [SerializeField, Min(1)] private int sunSlideCueRepeatCount = 3;
@@ -92,6 +100,7 @@ namespace ShadowPrototype
 
         private Coroutine animationRoutine;
         private Coroutine interactionStartCueRoutine;
+        private Coroutine interactionHintRoutine;
         private Mission2Phase currentPhase;
         private MaterialPropertyBlock darkPropertyBlock;
         private MaterialPropertyBlock backgroundPropertyBlock;
@@ -111,6 +120,7 @@ namespace ShadowPrototype
             SetIntroBackgroundAlpha(currentPhase == Mission2Phase.Intro ? IntroBackgroundStartAlpha01 : 0.0f);
             SetInteractionSystemsEnabled(false);
             SetInteractionInstructionVisible(currentPhase == Mission2Phase.Interaction);
+            SetInteractionHintVisible(false);
         }
 
         private void Start()
@@ -167,6 +177,7 @@ namespace ShadowPrototype
         public void EnterIntro()
         {
             StopInteractionStartCue();
+            StopInteractionHint();
             currentPhase = Mission2Phase.Intro;
             ResolveDarkRenderer();
             ResolveIntroBackgroundRenderer();
@@ -180,6 +191,7 @@ namespace ShadowPrototype
             }
 
             SetInteractionInstructionVisible(false);
+            SetInteractionHintVisible(false);
         }
 
         public void EnterInteraction()
@@ -191,6 +203,8 @@ namespace ShadowPrototype
             StartMediaPipeTracking();
 
             StopInteractionStartCue();
+            StopInteractionHint();
+            SetInteractionHintVisible(false);
             if (playSunSlideCueOnInteractionStart && sunSlideCueRepeatCount > 0)
             {
                 if (sunHandSystem != null)
@@ -222,18 +236,24 @@ namespace ShadowPrototype
             {
                 sunHandSystem.BeginInteraction();
             }
+
+            StartInteractionHintTimer();
         }
 
         public void HideInteractionInstruction()
         {
+            StopInteractionHint();
             SetInteractionInstructionVisible(false);
+            SetInteractionHintVisible(false);
         }
 
         public void EnterOutro()
         {
             StopInteractionStartCue();
+            StopInteractionHint();
             currentPhase = Mission2Phase.Outro;
             SetInteractionInstructionVisible(false);
+            SetInteractionHintVisible(false);
             SetInteractionSystemsEnabled(false);
         }
 
@@ -821,6 +841,101 @@ namespace ShadowPrototype
             {
                 interactionInstructionTextComponent.gameObject.SetActive(isVisible);
             }
+        }
+
+        private void StartInteractionHintTimer()
+        {
+            StopInteractionHint();
+            SetInteractionHintVisible(false);
+
+            if (interactionHintDelaySeconds <= 0.0f)
+            {
+                SetInteractionHintVisible(currentPhase == Mission2Phase.Interaction);
+                return;
+            }
+
+            interactionHintRoutine = StartCoroutine(ShowInteractionHintAfterDelayRoutine());
+        }
+
+        private IEnumerator ShowInteractionHintAfterDelayRoutine()
+        {
+            float elapsed = 0.0f;
+            float delay = Mathf.Max(0.0f, interactionHintDelaySeconds);
+            while (elapsed < delay)
+            {
+                if (currentPhase != Mission2Phase.Interaction)
+                {
+                    interactionHintRoutine = null;
+                    yield break;
+                }
+
+                elapsed += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            interactionHintRoutine = null;
+            SetInteractionHintVisible(currentPhase == Mission2Phase.Interaction);
+        }
+
+        private void StopInteractionHint()
+        {
+            if (interactionHintRoutine == null)
+            {
+                return;
+            }
+
+            StopCoroutine(interactionHintRoutine);
+            interactionHintRoutine = null;
+        }
+
+        private void SetInteractionHintVisible(bool isVisible)
+        {
+            ResolveInteractionHintReferences();
+
+            if (isVisible)
+            {
+                ApplyInteractionHintSettings();
+            }
+
+            if (interactionHintObject != null)
+            {
+                interactionHintObject.SetActive(isVisible);
+            }
+            else if (interactionHintTextComponent != null)
+            {
+                interactionHintTextComponent.gameObject.SetActive(isVisible);
+            }
+        }
+
+        private void ResolveInteractionHintReferences()
+        {
+            if (interactionHintTextComponent == null && interactionHintObject != null)
+            {
+                interactionHintTextComponent = interactionHintObject.GetComponentInChildren<Text>(true);
+            }
+
+            if (interactionHintObject == null && interactionHintTextComponent != null)
+            {
+                interactionHintObject = interactionHintTextComponent.gameObject;
+            }
+        }
+
+        private void ApplyInteractionHintSettings()
+        {
+            if (interactionHintTextComponent == null)
+            {
+                return;
+            }
+
+            interactionHintTextComponent.text = interactionHintMessage;
+            interactionHintTextComponent.color = interactionHintTextColor;
+            interactionHintTextComponent.fontSize = Mathf.Max(12, interactionHintFontSize);
+            interactionHintTextComponent.alignment = TextAnchor.MiddleCenter;
+            interactionHintTextComponent.horizontalOverflow = HorizontalWrapMode.Wrap;
+            interactionHintTextComponent.verticalOverflow = VerticalWrapMode.Truncate;
+            interactionHintTextComponent.raycastTarget = false;
+            interactionHintTextComponent.supportRichText = false;
+            interactionHintTextComponent.font = ResolveInteractionInstructionFont();
         }
 
         private void ResolveInteractionInstructionReferences()

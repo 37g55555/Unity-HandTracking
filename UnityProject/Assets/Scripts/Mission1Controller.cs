@@ -112,6 +112,8 @@ namespace ShadowPrototype
         [SerializeField, Range(0.2f, 1.0f)] private float interactionInstructionWidthRatio = 0.9f;
         [SerializeField] private GameObject interactionInstructionObject;
         [SerializeField] private Text interactionInstructionTextComponent;
+        [SerializeField] private GameObject preInteractionTutorialObject;
+        [SerializeField, Min(0.0f)] private float preInteractionTutorialSeconds = 4.0f;
 
         private GameObject guideLineObject;
         private Material guideLineMaterial;
@@ -157,6 +159,7 @@ namespace ShadowPrototype
             SetIntroStarAlpha(currentPhase == Mission1Phase.Intro ? 0.0f : IntroStarFinalAlpha01);
             SetShadowStarVisible(false);
             SetInteractionInstructionVisible(currentPhase == Mission1Phase.Interaction);
+            SetPreInteractionTutorialVisible(false);
         }
 
         private IEnumerator Start()
@@ -184,6 +187,7 @@ namespace ShadowPrototype
                 yield return new WaitForSecondsRealtime(introDurationSeconds);
             }
 
+            yield return PlayPreInteractionTutorialRoutine();
             EnterInteraction();
         }
 
@@ -251,6 +255,7 @@ namespace ShadowPrototype
             SetGuideVisible(false);
             SetMatchProgressBarVisible(false);
             SetInteractionInstructionVisible(false);
+            SetPreInteractionTutorialVisible(false);
             ResetInteractionProgress();
             StartIntroReveal();
         }
@@ -266,6 +271,7 @@ namespace ShadowPrototype
             interactionStarted = true;
 
             StopIntroReveal();
+            SetPreInteractionTutorialVisible(false);
 
             ResolveRuntimeReferences();
             RebuildGuidePolygonIfNeeded(force: true);
@@ -300,6 +306,7 @@ namespace ShadowPrototype
             SetGuideVisible(false);
             HideMatchProgressBar();
             SetInteractionInstructionVisible(false);
+            SetPreInteractionTutorialVisible(false);
             StopIntroNarrationPlayback();
         }
 
@@ -489,6 +496,7 @@ namespace ShadowPrototype
 
                 yield return PlayIntroNarrationAndScrollRoutine();
                 yield return PlayIntroToInteractionTransitionRoutine();
+                yield return PlayPreInteractionTutorialRoutine();
                 introRevealRoutine = null;
                 EnterInteraction();
                 yield break;
@@ -521,6 +529,7 @@ namespace ShadowPrototype
 
             yield return PlayIntroNarrationAndScrollRoutine();
             yield return PlayIntroToInteractionTransitionRoutine();
+            yield return PlayPreInteractionTutorialRoutine();
             introRevealRoutine = null;
             EnterInteraction();
         }
@@ -1290,6 +1299,27 @@ namespace ShadowPrototype
             else if (interactionInstructionTextComponent != null)
             {
                 interactionInstructionTextComponent.gameObject.SetActive(isVisible);
+            }
+        }
+
+        private IEnumerator PlayPreInteractionTutorialRoutine()
+        {
+            if (preInteractionTutorialObject == null || preInteractionTutorialSeconds <= 0.0f)
+            {
+                SetPreInteractionTutorialVisible(false);
+                yield break;
+            }
+
+            SetPreInteractionTutorialVisible(true);
+            yield return new WaitForSecondsRealtime(preInteractionTutorialSeconds);
+            SetPreInteractionTutorialVisible(false);
+        }
+
+        private void SetPreInteractionTutorialVisible(bool isVisible)
+        {
+            if (preInteractionTutorialObject != null)
+            {
+                preInteractionTutorialObject.SetActive(isVisible);
             }
         }
 

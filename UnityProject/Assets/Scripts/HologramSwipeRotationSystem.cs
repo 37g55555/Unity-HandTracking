@@ -41,8 +41,8 @@ namespace ShadowPrototype
         [SerializeField] private RectTransform spinProgressGaugeRoot;
         [SerializeField] private RectTransform spinProgressGaugeFill;
         [SerializeField, Min(0.0f)] private float spinProgressGaugePadding = 3.0f;
-        [SerializeField, Min(1)] private int spinProgressGaugeTickCount = 5;
-        [SerializeField] private Color spinProgressTrackColor = new Color(0.04f, 0.04f, 0.04f, 0.72f);
+        [SerializeField, Min(1)] private int spinProgressGaugeTickCount = 3;
+        [SerializeField] private Color spinProgressTrackColor = new Color(0.42f, 0.42f, 0.42f, 0.88f);
         [SerializeField] private Color spinProgressFrameColor = new Color(1.0f, 1.0f, 1.0f, 0.85f);
         [SerializeField] private Color spinProgressFillColor = new Color(1.0f, 0.78f, 0.16f, 1.0f);
         [SerializeField] private Color spinProgressGlowColor = new Color(1.0f, 0.74f, 0.18f, 0.24f);
@@ -1103,7 +1103,18 @@ namespace ShadowPrototype
                 if (TryFindGaugeChild($"Tick_{i + 1}", out RectTransform tick))
                 {
                     spinProgressGaugeTicks[i] = tick;
+                    tick.gameObject.SetActive(true);
                 }
+            }
+
+            HideUnusedSpinProgressGaugeTicks(dividerCount);
+        }
+
+        private void HideUnusedSpinProgressGaugeTicks(int usedDividerCount)
+        {
+            for (int i = usedDividerCount + 1; TryFindGaugeChild($"Tick_{i}", out RectTransform tick); i++)
+            {
+                tick.gameObject.SetActive(false);
             }
         }
 
