@@ -140,7 +140,6 @@ namespace ShadowPrototype
         private GameObject recreatedIntroStarObject;
         private Mesh recreatedIntroStarMesh;
         private Material recreatedIntroStarMaterial;
-        private bool lastStarMorphCompleted;
 
         public Mission1Phase CurrentPhase => currentPhase;
         public float LastMatchScore { get; private set; }
@@ -1077,12 +1076,7 @@ namespace ShadowPrototype
             if (replaceMeshWithStarOnComplete)
             {
                 yield return MorphCurrentMeshToGuideStarRoutine();
-                if (!lastStarMorphCompleted)
-                {
-                    Debug.LogWarning("Mission1Controller: star morph did not complete; aligning ShadowStar to the current mesh before handoff.");
-                }
-
-                yield return ReplaceShadowRootWithShadowStarRoutine();
+                ReplaceShadowRootWithShadowStar();
             }
 
             PlayCompletionSparkle();
@@ -1392,13 +1386,10 @@ namespace ShadowPrototype
             }
         }
 
-        private IEnumerator ReplaceShadowRootWithShadowStarRoutine()
+        private void ReplaceShadowRootWithShadowStar()
         {
-            PrepareShadowStarForMorphedMeshHandoff();
-
             DestroyMission1ShadowMeshRoot();
             SetShadowStarVisible(true);
-            yield break;
         }
 
         private void SetShadowStarVisible(bool isVisible)
@@ -1421,86 +1412,6 @@ namespace ShadowPrototype
         private GameObject ResolveShadowStarObject()
         {
             return shadowStarObject;
-        }
-
-        private void PrepareShadowStarForMorphedMeshHandoff()
-        {
-            if (targetMeshDeformer == null || !targetMeshDeformer.HasMesh)
-            {
-                return;
-            }
-
-            GameObject resolvedShadowStar = ResolveShadowStarObject();
-            if (resolvedShadowStar == null)
-            {
-                return;
-            }
-
-            Bounds meshBounds = targetMeshDeformer.GetWorldBounds();
-            resolvedShadowStar.SetActive(true);
-
-            Renderer[] renderers = resolvedShadowStar.GetComponentsInChildren<Renderer>(true);
-
-            Transform starTransform = resolvedShadowStar.transform;
-            starTransform.position = meshBounds.center;
-            starTransform.rotation = targetMeshDeformer.transform.rotation;
-
-            if (TryGetCombinedRendererBounds(renderers, out Bounds starBounds))
-            {
-                Vector3 scale = starTransform.localScale;
-                float scaleX = starBounds.size.x > 0.0001f ? meshBounds.size.x / starBounds.size.x : 1.0f;
-                float scaleY = starBounds.size.y > 0.0001f ? meshBounds.size.y / starBounds.size.y : scaleX;
-                if (float.IsNaN(scaleX) || float.IsInfinity(scaleX) || scaleX <= 0.0f)
-                {
-                    scaleX = 1.0f;
-                }
-
-                if (float.IsNaN(scaleY) || float.IsInfinity(scaleY) || scaleY <= 0.0f)
-                {
-                    scaleY = scaleX;
-                }
-
-                starTransform.localScale = new Vector3(
-                    scale.x * scaleX,
-                    scale.y * scaleY,
-                    scale.z);
-
-                if (TryGetCombinedRendererBounds(renderers, out Bounds scaledBounds))
-                {
-                    starTransform.position += meshBounds.center - scaledBounds.center;
-                }
-            }
-        }
-
-        private static bool TryGetCombinedRendererBounds(Renderer[] renderers, out Bounds bounds)
-        {
-            bounds = default;
-            bool hasBounds = false;
-            if (renderers == null)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < renderers.Length; i++)
-            {
-                Renderer renderer = renderers[i];
-                if (renderer == null)
-                {
-                    continue;
-                }
-
-                if (!hasBounds)
-                {
-                    bounds = renderer.bounds;
-                    hasBounds = true;
-                }
-                else
-                {
-                    bounds.Encapsulate(renderer.bounds);
-                }
-            }
-
-            return hasBounds;
         }
 
         private void DestroyMission1ShadowMeshRoot()
@@ -1680,9 +1591,6 @@ namespace ShadowPrototype
 
         private IEnumerator MorphCurrentMeshToGuideStarRoutine()
         {
-            lastStarMorphCompleted = false;
-            RebuildGuidePolygonIfNeeded(force: true);
-
             if (starMorphSeconds <= 0.0f ||
                 targetMeshDeformer == null ||
                 targetCamera == null ||
@@ -1724,7 +1632,10 @@ namespace ShadowPrototype
                 for (int i = 0; i < sourceVertices.Length; i++)
                 {
                     MorphVertexTarget target = morphTargets[i];
-                    float localTime = SmootherStep01(Mathf.InverseLerp(target.Delay, 1.0f, normalizedTime));
+                    float localTime = Mathf.SmoothStep(
+                        0.0f,
+                        1.0f,
+                        Mathf.InverseLerp(target.Delay, 1.0f, normalizedTime));
                     Vector3 position = Vector3.LerpUnclamped(sourceVertices[i], target.TargetLocal, localTime);
                     float wobble = Mathf.Sin((normalizedTime * Mathf.PI * 5.0f) + target.Phase) *
                         Mathf.Sin(localTime * Mathf.PI) *
@@ -1742,7 +1653,7 @@ namespace ShadowPrototype
                 frameVertices[i] = morphTargets[i].TargetLocal;
             }
 
-            lastStarMorphCompleted = targetMeshDeformer.SetRuntimeMeshVertices(frameVertices, forceColliderRefresh: true);
+            targetMeshDeformer.SetRuntimeMeshVertices(frameVertices, forceColliderRefresh: true);
         }
 
         private MorphVertexTarget[] BuildStarMorphTargets(
@@ -1771,19 +1682,20 @@ namespace ShadowPrototype
                     : new Vector2(Mathf.Cos(defaultAngle), Mathf.Sin(defaultAngle));
 
                 Vector2 starBoundary = ResolveStarBoundaryPoint(starCenterLocal, starPointsLocal, direction);
-                float starBoundaryRadius = Mathf.Max(0.0001f, Vector2.Distance(starBoundary, starCenterLocal));
                 float sourceBoundaryRadius = EstimateSourceBoundaryRadius(sourceVertices, sourceCenter, direction);
                 float radius01 = Mathf.Clamp01(sourceRadius / sourceBoundaryRadius);
                 bool isBoundaryVertex = boundaryVertexMask != null &&
                     i >= 0 &&
                     i < boundaryVertexMask.Length &&
                     boundaryVertexMask[i];
+                Vector2 sourceBoundary = sourceCenter + (direction * sourceBoundaryRadius);
+                Vector2 boundaryDelta = starBoundary - sourceBoundary;
                 float shellFactor = isBoundaryVertex
                     ? 1.0f
                     : Mathf.SmoothStep(0.0f, 1.0f, Mathf.InverseLerp(0.45f, 1.0f, radius01));
                 Vector2 target2D = isBoundaryVertex
                     ? starBoundary
-                    : starCenterLocal + (direction * starBoundaryRadius * SmootherStep01(radius01));
+                    : source + (boundaryDelta * shellFactor);
                 Vector2 wobbleDirection = new Vector2(-direction.y, direction.x);
                 float jitter = Hash01(i) * 0.035f;
 
@@ -1793,17 +1705,11 @@ namespace ShadowPrototype
                     Delay = jitter,
                     Phase = Hash01(i + 137) * Mathf.PI * 2.0f,
                     WobbleDirection = wobbleDirection,
-                    WobbleAmplitude = starRadius * Mathf.Max(shellFactor, radius01 * 0.35f) * Mathf.Lerp(0.004f, 0.018f, Hash01(i + 271))
+                    WobbleAmplitude = starRadius * shellFactor * Mathf.Lerp(0.004f, 0.018f, Hash01(i + 271))
                 };
             }
 
             return targets;
-        }
-
-        private static float SmootherStep01(float value)
-        {
-            float t = Mathf.Clamp01(value);
-            return t * t * t * (t * ((t * 6.0f) - 15.0f) + 10.0f);
         }
 
         private bool[] BuildBoundaryVertexMask(int vertexCount)
