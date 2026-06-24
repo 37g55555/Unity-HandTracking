@@ -106,6 +106,8 @@ namespace ShadowPrototype
         private MaterialPropertyBlock darkPropertyBlock;
         private MaterialPropertyBlock backgroundPropertyBlock;
         private bool interactionInstructionShowingHint;
+        private bool interactionHintSawMediaPipeInput;
+        private long interactionHintStartMediaPipePacketSequence;
         private bool sunSlideCueInterruptedByHand;
         private readonly List<GameObject> sunSlideGhostObjects = new List<GameObject>();
 
@@ -875,12 +877,14 @@ namespace ShadowPrototype
         {
             StopInteractionHint();
             interactionInstructionShowingHint = false;
+            interactionHintSawMediaPipeInput = false;
+            interactionHintStartMediaPipePacketSequence = GetMediaPipeInputSequenceForHint();
             ApplyInteractionInstructionSettings();
             SetInteractionHintVisible(false);
 
             if (interactionHintDelaySeconds <= 0.0f)
             {
-                ApplyInteractionHintToInstruction(currentPhase == Mission2Phase.Interaction);
+                ApplyInteractionHintToInstruction(currentPhase == Mission2Phase.Interaction && !HasNewMediaPipeInputForHint());
                 return;
             }
 
@@ -899,12 +903,22 @@ namespace ShadowPrototype
                     yield break;
                 }
 
+                if (HasNewMediaPipeInputForHint())
+                {
+                    interactionHintSawMediaPipeInput = true;
+                    interactionHintRoutine = null;
+                    yield break;
+                }
+
                 elapsed += Time.unscaledDeltaTime;
                 yield return null;
             }
 
             interactionHintRoutine = null;
-            ApplyInteractionHintToInstruction(currentPhase == Mission2Phase.Interaction);
+            ApplyInteractionHintToInstruction(
+                currentPhase == Mission2Phase.Interaction &&
+                !interactionHintSawMediaPipeInput &&
+                !HasNewMediaPipeInputForHint());
         }
 
         private void StopInteractionHint()
@@ -931,6 +945,26 @@ namespace ShadowPrototype
             }
 
             SetInteractionHintVisible(false);
+        }
+
+        private long GetMediaPipeInputSequenceForHint()
+        {
+            if (mediaPipeReceiver == null)
+            {
+                return 0L;
+            }
+
+            return mediaPipeReceiver.PacketSequence;
+        }
+
+        private bool HasNewMediaPipeInputForHint()
+        {
+            if (mediaPipeReceiver == null)
+            {
+                return false;
+            }
+
+            return mediaPipeReceiver.PacketSequence > interactionHintStartMediaPipePacketSequence;
         }
 
         private void SetInteractionHintVisible(bool isVisible)

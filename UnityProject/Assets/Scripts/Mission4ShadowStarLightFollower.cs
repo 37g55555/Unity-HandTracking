@@ -5,8 +5,6 @@ namespace ShadowPrototype
     public sealed class Mission4ShadowStarLightFollower : MonoBehaviour
     {
         [SerializeField] private Transform lightTransform;
-        [SerializeField] private ArucoMarkerFollower lightMarkerFollower;
-        [SerializeField] private bool waitForFirstMarkerPose = true;
         [SerializeField, Min(0.0f)] private float followSmoothing = 4.5f;
         [SerializeField] private Vector3 worldOffset;
         [SerializeField] private bool keepInitialZ = true;
@@ -16,18 +14,11 @@ namespace ShadowPrototype
         private void Awake()
         {
             initialZ = transform.position.z;
-            ResolveLight();
         }
 
         private void LateUpdate()
         {
-            ResolveLight();
             if (lightTransform == null)
-            {
-                return;
-            }
-
-            if (waitForFirstMarkerPose && lightMarkerFollower != null && !lightMarkerFollower.HasReceivedPose)
             {
                 return;
             }
@@ -40,19 +31,6 @@ namespace ShadowPrototype
 
             float blend = GetFrameBlend(followSmoothing);
             transform.position = Vector3.Lerp(transform.position, targetPosition, blend);
-        }
-
-        private void ResolveLight()
-        {
-            if (lightTransform != null)
-            {
-                if (lightMarkerFollower == null)
-                {
-                    lightMarkerFollower = lightTransform.GetComponent<ArucoMarkerFollower>();
-                }
-
-                return;
-            }
         }
 
         private static float GetFrameBlend(float speed)

@@ -1,94 +1,104 @@
 using System;
-using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
 namespace ShadowPrototype
 {
-    public sealed class Mission4ArucoCameraSystem : MonoBehaviour
+    public sealed class FlashlightLightTracker : MonoBehaviour
     {
-        private const string ProcessLabel = "ArucoTracking";
+        private const string ProcessLabel = "FlashlightTracking";
 
-        [Header("Process")]
-        [SerializeField] private bool launchOnStart = true;
-        [SerializeField] private bool stopProcessOnDisable = true;
-        [SerializeField] private string pythonExecutablePath = @"C:\Users\creal\miniconda3\envs\artifact\python.exe";
-        [SerializeField] private string workingDirectory = @"C:\capstone\Shadow-to-3D-Generator";
-        [SerializeField] private string scriptName = @"python\ArucoTracking.py";
+        [Header("Flashlight Detection")]
+        [SerializeField, Min(0)] private int cameraDeviceIndex;
+        [SerializeField, Range(0, 255)] private int brightnessThreshold = 170;
+        [SerializeField, Range(0, 255)] private int maxSaturation = 255;
+        [SerializeField, Min(0.0f)] private float minBlobArea = 40.0f;
+        [SerializeField] private bool mirrorViewportX;
 
-        [Header("Marker")]
-        [SerializeField, Min(0)] private int cameraDeviceIndex = 1;
-        [SerializeField] private string dictionaryName = "DICT_4X4_50";
-        [SerializeField] private int markerId;
-        [SerializeField, Min(1)] private int udpPort = 5054;
-        [SerializeField] private bool mirrorViewportX = true;
-        [SerializeField] private bool mirrorViewportY;
-
-        [Header("References")]
-        [SerializeField] private ArucoMarkerFollower markerFollower;
+        [HideInInspector, SerializeField] private bool launchOnStart = true;
+        [HideInInspector, SerializeField] private bool stopProcessOnDisable = true;
+        [HideInInspector, SerializeField] private string pythonExecutablePath = @"C:\Users\creal\miniconda3\envs\artifact\python.exe";
+        [HideInInspector, SerializeField] private string workingDirectory = @"C:\capstone\Shadow-to-3D-Generator";
+        [HideInInspector, SerializeField] private string scriptName = @"python\FlashlightTracking.py";
+        [HideInInspector, SerializeField] private int udpPort = 5056;
+        [HideInInspector, SerializeField] private int cameraWidth = 1280;
+        [HideInInspector, SerializeField] private int cameraHeight = 720;
+        [HideInInspector, SerializeField] private int cameraFps = 60;
+        [HideInInspector, SerializeField] private float maxBlobAreaRatio = 0.2f;
+        [HideInInspector, SerializeField] private bool showPreview = true;
+        [HideInInspector, SerializeField] private bool mirrorViewportY;
+        [HideInInspector, SerializeField] private Transform lightTransform;
+        [HideInInspector, SerializeField] private Camera targetCamera;
+        [HideInInspector, SerializeField] private float followPlaneZ = 0.05f;
+        [HideInInspector, SerializeField] private Vector3 worldOffset;
+        [SerializeField, Min(0.0f)] private float followSmoothing = 60.0f;
+        [HideInInspector, SerializeField] private bool startHiddenUntilFirstLight = true;
+        [HideInInspector, SerializeField] private bool hideWhenLightLost;
+        [HideInInspector, SerializeField] private float lightLostTimeoutSeconds = 0.35f;
 
         private readonly object packetLock = new object();
         private Process launchedProcess;
         private Thread receiveThread;
         private UdpClient client;
+        private Renderer[] lightRenderers;
         private volatile bool isReceiving;
         private string latestPacket;
         private DateTime latestPacketUtc = DateTime.MinValue;
-        private bool markerWasVisible;
+        private bool lightWasVisible;
+        private bool hasReceivedLight;
         private string pendingError;
+        private string launchSettingsSignature;
+
+        private void Reset()
+        {
+            lightTransform = transform;
+        }
+
+        private void Awake()
+        {
+            CacheLightRenderers();
+            SetLightVisible(!startHiddenUntilFirstLight && !hideWhenLightLost);
+        }
 
         private void Start()
         {
-            ResolveReferences();
-            StartReceiver();
-
             if (launchOnStart)
             {
-                Launch();
-            }
-        }
-
-        public void BeginTracking()
-        {
-            ResolveReferences();
-            StartReceiver();
-            Launch();
-        }
-
-        public void StopTracking()
-        {
-            StopReceiver();
-
-            if (stopProcessOnDisable)
-            {
-                StopProcess();
+                BeginTracking();
             }
         }
 
         private void Update()
         {
-            ResolveReferences();
             FlushPendingError();
+            RestartProcessIfLaunchSettingsChanged();
             ApplyLatestPacket();
         }
 
         private void OnDisable()
         {
-            StopReceiver();
-
-            if (stopProcessOnDisable)
-            {
-                StopProcess();
-            }
+            StopTracking();
         }
 
         private void OnDestroy()
+        {
+            StopTracking();
+        }
+
+        public void BeginTracking()
+        {
+            StartReceiver();
+            Launch();
+        }
+
+        public void StopTracking()
         {
             StopReceiver();
 
@@ -130,16 +140,22 @@ namespace ShadowPrototype
                 return;
             }
 
+            string settingsSignature = BuildLaunchSettingsSignature();
+            string previewArgument = showPreview ? " --show" : string.Empty;
             string command =
                 $"$Host.UI.RawUI.WindowTitle = {QuotePowerShellArgument(ProcessLabel)}; " +
                 $"Set-Location -LiteralPath {QuotePowerShellArgument(workingDirectory)}; " +
                 $"& {QuotePowerShellArgument(pythonExecutablePath)} {QuotePowerShellArgument(scriptPath)} " +
                 $"--camera {cameraDeviceIndex} " +
-                "--width 640 --height 360 --fps 30 --camera-buffer-size 1 " +
-                "--camera-auto-exposure 0.75 --preview " +
-                $"--dictionary {dictionaryName} " +
-                $"--marker-id {markerId} " +
-                $"--udp-port {udpPort}";
+                $"--udp-port {udpPort} " +
+                $"--width {cameraWidth} " +
+                $"--height {cameraHeight} " +
+                $"--fps {cameraFps} " +
+                $"--threshold {brightnessThreshold} " +
+                $"--max-saturation {maxSaturation} " +
+                $"--min-area {minBlobArea.ToString(CultureInfo.InvariantCulture)} " +
+                $"--max-area-ratio {maxBlobAreaRatio.ToString(CultureInfo.InvariantCulture)}" +
+                previewArgument;
 
             var startInfo = new ProcessStartInfo
             {
@@ -155,6 +171,8 @@ namespace ShadowPrototype
             try
             {
                 launchedProcess.Start();
+                launchSettingsSignature = settingsSignature;
+                Debug.Log($"{ProcessLabel}: launched with camera index {cameraDeviceIndex}.");
                 StartCoroutine(TerminalWindowRouter.MoveToConfiguredDisplayRoutine(launchedProcess, ProcessLabel));
             }
             catch (Exception exception)
@@ -162,7 +180,45 @@ namespace ShadowPrototype
                 Debug.LogWarning($"{ProcessLabel}: terminal launch failed: {exception.Message}");
                 launchedProcess.Dispose();
                 launchedProcess = null;
+                launchSettingsSignature = null;
             }
+        }
+
+        private void RestartProcessIfLaunchSettingsChanged()
+        {
+            if (launchedProcess == null || launchedProcess.HasExited)
+            {
+                return;
+            }
+
+            string currentSignature = BuildLaunchSettingsSignature();
+            if (string.Equals(currentSignature, launchSettingsSignature, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            Debug.Log($"{ProcessLabel}: launch settings changed; restarting tracker.");
+            StopProcess();
+            Launch();
+        }
+
+        private string BuildLaunchSettingsSignature()
+        {
+            return string.Join(
+                "|",
+                pythonExecutablePath,
+                workingDirectory,
+                scriptName,
+                cameraDeviceIndex.ToString(CultureInfo.InvariantCulture),
+                udpPort.ToString(CultureInfo.InvariantCulture),
+                cameraWidth.ToString(CultureInfo.InvariantCulture),
+                cameraHeight.ToString(CultureInfo.InvariantCulture),
+                cameraFps.ToString(CultureInfo.InvariantCulture),
+                brightnessThreshold.ToString(CultureInfo.InvariantCulture),
+                maxSaturation.ToString(CultureInfo.InvariantCulture),
+                minBlobArea.ToString(CultureInfo.InvariantCulture),
+                maxBlobAreaRatio.ToString(CultureInfo.InvariantCulture),
+                showPreview.ToString());
         }
 
         private void StartReceiver()
@@ -213,7 +269,7 @@ namespace ShadowPrototype
                 {
                     IPEndPoint anyIP = new IPEndPoint(IPAddress.Any, 0);
                     byte[] dataBytes = client.Receive(ref anyIP);
-                    string packet = System.Text.Encoding.UTF8.GetString(dataBytes);
+                    string packet = Encoding.UTF8.GetString(dataBytes);
 
                     lock (packetLock)
                     {
@@ -237,11 +293,6 @@ namespace ShadowPrototype
 
         private void ApplyLatestPacket()
         {
-            if (markerFollower == null)
-            {
-                return;
-            }
-
             string packet;
             DateTime packetUtc;
             lock (packetLock)
@@ -252,44 +303,65 @@ namespace ShadowPrototype
             }
 
             if (!string.IsNullOrWhiteSpace(packet) &&
-                TryParseMarkerPacket(packet, out string dictionary, out int id, out Vector2 viewportPosition, out float rotationDegrees))
+                TryParseLightPacket(packet, out Vector2 viewportPosition))
             {
                 viewportPosition = ApplyViewportMirroring(viewportPosition);
-                markerFollower.SetMarkerViewportPose(dictionary, id, viewportPosition, rotationDegrees);
-                markerWasVisible = true;
+                ApplyViewportPosition(viewportPosition);
+                lightWasVisible = true;
                 return;
             }
 
-            if (markerWasVisible && (DateTime.UtcNow - packetUtc).TotalSeconds > 0.35f)
+            if (lightWasVisible && (DateTime.UtcNow - packetUtc).TotalSeconds > lightLostTimeoutSeconds)
             {
-                markerFollower.MarkMarkerLost(dictionaryName, markerId);
-                markerWasVisible = false;
+                lightWasVisible = false;
+
+                if (hideWhenLightLost)
+                {
+                    SetLightVisible(false);
+                }
             }
         }
 
-        private static bool TryParseMarkerPacket(
-            string packet,
-            out string dictionary,
-            out int id,
-            out Vector2 viewportPosition,
-            out float rotationDegrees)
+        private void ApplyViewportPosition(Vector2 viewportPosition)
         {
-            dictionary = string.Empty;
-            id = -1;
-            viewportPosition = default;
-            rotationDegrees = 0.0f;
+            if (lightTransform == null || targetCamera == null)
+            {
+                return;
+            }
 
+            Ray ray = targetCamera.ViewportPointToRay(new Vector3(viewportPosition.x, viewportPosition.y, 0.0f));
+            Plane followPlane = new Plane(Vector3.forward, new Vector3(0.0f, 0.0f, followPlaneZ));
+            if (!followPlane.Raycast(ray, out float distance))
+            {
+                return;
+            }
+
+            Vector3 targetPosition = ray.GetPoint(distance) + worldOffset;
+            if (!hasReceivedLight || !lightWasVisible)
+            {
+                lightTransform.position = targetPosition;
+                hasReceivedLight = true;
+            }
+            else
+            {
+                float blend = GetFrameBlend(followSmoothing);
+                lightTransform.position = Vector3.Lerp(lightTransform.position, targetPosition, blend);
+            }
+
+            SetLightVisible(true);
+        }
+
+        private static bool TryParseLightPacket(string packet, out Vector2 viewportPosition)
+        {
+            viewportPosition = default;
             string[] values = packet.Split(new[] { ',', ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-            if (values.Length < 5)
+            if (values.Length < 4 || !string.Equals(values[0], "FLASHLIGHT", StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }
 
-            dictionary = values[0];
-            return int.TryParse(values[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out id) &&
-                float.TryParse(values[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float x) &&
-                float.TryParse(values[3], NumberStyles.Float, CultureInfo.InvariantCulture, out float y) &&
-                float.TryParse(values[4], NumberStyles.Float, CultureInfo.InvariantCulture, out rotationDegrees) &&
+            return float.TryParse(values[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float x) &&
+                float.TryParse(values[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float y) &&
                 IsViewportValue(x) &&
                 IsViewportValue(y) &&
                 SetViewport(out viewportPosition, x, y);
@@ -321,13 +393,31 @@ namespace ShadowPrototype
             return viewportPosition;
         }
 
-        private void ResolveReferences()
+        private void CacheLightRenderers()
         {
-            if (markerFollower == null)
+            if (lightTransform == null)
             {
-                markerFollower = FindObjectOfType<ArucoMarkerFollower>();
+                lightRenderers = Array.Empty<Renderer>();
+                return;
             }
 
+            lightRenderers = lightTransform.GetComponentsInChildren<Renderer>(true);
+        }
+
+        private void SetLightVisible(bool visible)
+        {
+            if (lightRenderers == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < lightRenderers.Length; i++)
+            {
+                if (lightRenderers[i] != null)
+                {
+                    lightRenderers[i].enabled = visible;
+                }
+            }
         }
 
         private void FlushPendingError()
@@ -363,6 +453,7 @@ namespace ShadowPrototype
             {
                 launchedProcess.Dispose();
                 launchedProcess = null;
+                launchSettingsSignature = null;
             }
         }
 
@@ -378,6 +469,16 @@ namespace ShadowPrototype
 
             using Process taskkill = Process.Start(startInfo);
             taskkill?.WaitForExit(2000);
+        }
+
+        private static float GetFrameBlend(float speed)
+        {
+            if (speed <= 0.0f)
+            {
+                return 1.0f;
+            }
+
+            return 1.0f - Mathf.Exp(-speed * Time.unscaledDeltaTime);
         }
 
         private static string EscapeWindowsArgument(string value)

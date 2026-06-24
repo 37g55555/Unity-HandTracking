@@ -23,6 +23,7 @@ namespace ShadowPrototype
         private volatile bool isRunning;
         private Vector3[] latestLandmarks = Array.Empty<Vector3>();
         private DateTime latestPacketUtc = DateTime.MinValue;
+        private long packetSequence;
         private string pendingError;
 
         private void Start()
@@ -56,6 +57,17 @@ namespace ShadowPrototype
                 lock (dataLock)
                 {
                     return latestLandmarks.Length / LandmarksPerHand;
+                }
+            }
+        }
+
+        public long PacketSequence
+        {
+            get
+            {
+                lock (dataLock)
+                {
+                    return packetSequence;
                 }
             }
         }
@@ -161,6 +173,7 @@ namespace ShadowPrototype
                     {
                         latestLandmarks = parsedLandmarks;
                         latestPacketUtc = DateTime.UtcNow;
+                        packetSequence++;
                     }
                 }
                 catch (SocketException)

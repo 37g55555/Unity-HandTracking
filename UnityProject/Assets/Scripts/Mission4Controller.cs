@@ -25,8 +25,7 @@ namespace ShadowPrototype
         [SerializeField, Min(0)] private int introNarrationStepCount = 3;
 
         [Header("Interaction Systems")]
-        [SerializeField] private Mission4ArucoCameraSystem arucoCameraSystem;
-        [SerializeField] private ArucoMarkerFollower markerFollower;
+        [SerializeField] private FlashlightLightTracker flashlightLightTracker;
         [SerializeField] private Mission4ShadowStarLightFollower shadowStarLightFollower;
         [SerializeField] private Mission4DoorTransition doorTransition;
 
@@ -265,11 +264,6 @@ namespace ShadowPrototype
         {
             ResolveReferences();
 
-            if (markerFollower != null)
-            {
-                markerFollower.enabled = isEnabled;
-            }
-
             if (shadowStarLightFollower != null)
             {
                 shadowStarLightFollower.enabled = isEnabled;
@@ -280,20 +274,24 @@ namespace ShadowPrototype
                 doorTransition.enabled = isEnabled;
             }
 
-            if (arucoCameraSystem == null)
+            if (flashlightLightTracker != null)
             {
-                return;
-            }
-
-            if (isEnabled)
-            {
-                arucoCameraSystem.enabled = true;
-                arucoCameraSystem.BeginTracking();
-            }
-            else
-            {
-                arucoCameraSystem.StopTracking();
-                arucoCameraSystem.enabled = false;
+                if (isEnabled)
+                {
+                    flashlightLightTracker.enabled = true;
+                    flashlightLightTracker.BeginTracking();
+                }
+                else
+                {
+                    if (flashlightLightTracker.enabled)
+                    {
+                        flashlightLightTracker.enabled = false;
+                    }
+                    else
+                    {
+                        flashlightLightTracker.StopTracking();
+                    }
+                }
             }
         }
 
@@ -403,16 +401,6 @@ namespace ShadowPrototype
         private void ResolveReferences()
         {
             ResolveNarrationPlayer();
-
-            if (arucoCameraSystem == null)
-            {
-                arucoCameraSystem = GetComponent<Mission4ArucoCameraSystem>();
-            }
-
-            if (markerFollower == null)
-            {
-                markerFollower = FindObjectOfType<ArucoMarkerFollower>();
-            }
 
             if (shadowStarLightFollower == null)
             {
