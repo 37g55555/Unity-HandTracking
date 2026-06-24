@@ -350,7 +350,7 @@ MonoBehaviour:
   pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
   workingDirectory: C:\capstone\Shadow-to-3D-Generator
   scriptName: python\MediaPipeTracking.py
-  scriptArguments: --camera 2 --fallback-cameras 1 --width 640 --height 360 --fps 30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --preview
+  scriptArguments: --camera 2 --fallback-cameras 1 --width 640 --height 360 --fps 30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --max-hands 4 --max-output-hands 2 --person-filter --person-filter-fallback-hands --preview
 --- !u!82 &101005
 AudioSource:
   m_ObjectHideFlags: 0

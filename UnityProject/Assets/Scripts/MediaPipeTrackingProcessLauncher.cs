@@ -16,7 +16,7 @@ namespace ShadowPrototype
         [SerializeField] private string pythonExecutablePath = @"C:\Users\creal\miniconda3\envs\artifact\python.exe";
         [SerializeField] private string workingDirectory = @"C:\capstone\Shadow-to-3D-Generator";
         [SerializeField] private string scriptName = @"python\MediaPipeTracking.py";
-        [SerializeField] private string scriptArguments = "--camera 1 --width 640 --height 360 --fps 30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --camera-brightness 180 --camera-gain 80 --camera-contrast 110 --allow-black-frames --frame-gain 2 --frame-brightness-offset 45 --preview";
+        [SerializeField] private string scriptArguments = "--camera 1 --width 640 --height 360 --fps 30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --camera-brightness 180 --camera-gain 80 --camera-contrast 110 --allow-black-frames --frame-gain 2 --frame-brightness-offset 45 --max-hands 4 --max-output-hands 2 --person-filter --person-filter-fallback-hands --preview";
 
         private Process launchedProcess;
 

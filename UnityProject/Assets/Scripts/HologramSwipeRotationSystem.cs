@@ -52,6 +52,9 @@ namespace ShadowPrototype
         [SerializeField] private AudioSource rotationAudioSource;
         [SerializeField, Range(0.0f, 1.0f)] private float rotationDingVolume = 0.85f;
 
+        [Header("Main Display Hint Video")]
+        [SerializeField] private bool showMainDisplayHintVideo = true;
+
         [Header("Palm Fly Away")]
         [SerializeField] private bool playPostSpinVideoBeforeFlyAway = true;
         [SerializeField] private string postSpinVideoRelativePath = "HologramVideos/starChar_1_2_tts.mp4";
@@ -94,6 +97,8 @@ namespace ShadowPrototype
         private float returnToZeroSpeedDegreesPerSecond;
         private Coroutine returnToZeroRoutine;
         private Coroutine flyAwayRoutine;
+        private bool mainDisplayHintVideoDismissed;
+        private bool mainDisplayHintVideoVisible;
         private bool postSpinVideoPlayed;
         private bool waitingForPostSpinVideo;
         private bool postSpinTargetReplaced;
@@ -123,20 +128,26 @@ namespace ShadowPrototype
             {
                 waitingForPostSpinVideo = false;
                 canAcceptFlyAwayGesture = true;
+                mainDisplayHintVideoDismissed = false;
+                HideMainDisplayHintVideo();
                 ResetSwipeTracking();
                 ResetPalmTracking();
                 SetFlyAwayInstructionVisible(true);
                 SetSpinProgressGaugeVisible(false);
+                ShowMainDisplayHintVideoAfterPostSpinVideo();
             }
             else
             {
                 SetFlyAwayInstructionVisible(false);
                 SetSpinProgressGaugeVisible(true);
+                mainDisplayHintVideoDismissed = false;
+                HideMainDisplayHintVideo();
             }
         }
 
         private void OnDisable()
         {
+            HideMainDisplayHintVideo();
             SetSpinProgressGaugeVisible(false);
         }
 
@@ -239,6 +250,38 @@ namespace ShadowPrototype
             {
                 flyAwayInstructionText.gameObject.SetActive(isVisible);
             }
+        }
+
+        private void ShowMainDisplayHintVideo()
+        {
+            mainDisplayHintVideoVisible = true;
+            Mission3MainDisplayHintVideo.ShowFirstAvailable();
+        }
+
+        private void ShowMainDisplayHintVideoAfterPostSpinVideo()
+        {
+            if (!showMainDisplayHintVideo ||
+                mainDisplayHintVideoDismissed ||
+                mainDisplayHintVideoVisible ||
+                !isActiveAndEnabled ||
+                isFlyingAway)
+            {
+                return;
+            }
+
+            ShowMainDisplayHintVideo();
+        }
+
+        private void HideMainDisplayHintVideo()
+        {
+            mainDisplayHintVideoVisible = false;
+            Mission3MainDisplayHintVideo.HideFirstAvailable();
+        }
+
+        private void DismissMainDisplayHintVideo()
+        {
+            mainDisplayHintVideoDismissed = true;
+            HideMainDisplayHintVideo();
         }
 
         private bool TryGetFingertipPoint(out Vector2 fingertipPoint)
@@ -418,6 +461,11 @@ namespace ShadowPrototype
             if (rotationTarget == null || spinLocked || isSpinning || isReturningToZero || isFlyingAway)
             {
                 return;
+            }
+
+            if (mainDisplayHintVideoVisible)
+            {
+                DismissMainDisplayHintVideo();
             }
 
             float maxSpinDegrees = maximumSpinRotations * 360.0f;
@@ -637,6 +685,7 @@ namespace ShadowPrototype
             postSpinVideoPlayed = true;
             waitingForPostSpinVideo = true;
             canAcceptFlyAwayGesture = false;
+            DismissMainDisplayHintVideo();
             ResetSwipeTracking();
             ResetPalmTracking();
             SetSpinProgressGaugeVisible(false);
@@ -762,6 +811,7 @@ namespace ShadowPrototype
 
             isFlyingAway = true;
             spinLocked = true;
+            DismissMainDisplayHintVideo();
             SetFlyAwayInstructionVisible(false);
             SetSpinProgressGaugeVisible(false);
             if (spinRoutine != null)
@@ -789,6 +839,7 @@ namespace ShadowPrototype
             }
 
             SetSpinProgressGaugeVisible(false);
+            DismissMainDisplayHintVideo();
             CompleteFlyAway();
         }
 

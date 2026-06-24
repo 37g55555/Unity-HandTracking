@@ -46,6 +46,9 @@ namespace ShadowPrototype
         [SerializeField] private AudioClip completionNarrationClip;
         [SerializeField, Range(0.0f, 1.0f)] private float completionDingVolume = 0.85f;
         [SerializeField, Min(0.0f)] private float completionNarrationDelaySeconds = 1.0f;
+        [SerializeField] private Transform completionLightTransform;
+        [SerializeField, Min(0.0f)] private float completionLightTargetScale = 20.0f;
+        [SerializeField, Min(0.0f)] private float completionLightScaleSeconds = 2.0f;
         [SerializeField] private string nextSceneName = "Mission5";
 
         private Mission4Phase currentPhase;
@@ -159,8 +162,8 @@ namespace ShadowPrototype
 
             if (autoEnterInteractionAfterIntro)
             {
-                yield return PlayPreInteractionTutorialRoutine();
                 EnterInteraction();
+                yield return PlayPreInteractionTutorialRoutine();
             }
 
             introRoutine = null;
@@ -179,6 +182,7 @@ namespace ShadowPrototype
                 yield return new WaitForSecondsRealtime(completionNarrationDelaySeconds);
             }
 
+            yield return ScaleCompletionLightRoutine();
             yield return PlayCompletionNarrationRoutine();
 
             FindObjectOfType<GameStateManager>()?.SetState(GameStateManager.PipelineState.Mission5);
@@ -311,6 +315,39 @@ namespace ShadowPrototype
             else if (interactionInstructionTextComponent != null)
             {
                 interactionInstructionTextComponent.gameObject.SetActive(isVisible);
+            }
+        }
+
+        private IEnumerator ScaleCompletionLightRoutine()
+        {
+            if (completionLightTransform == null)
+            {
+                yield break;
+            }
+
+            Vector3 startScale = completionLightTransform.localScale;
+            Vector3 targetScale = Vector3.one * Mathf.Max(0.0f, completionLightTargetScale);
+            float duration = Mathf.Max(0.0f, completionLightScaleSeconds);
+
+            if (duration <= 0.0f)
+            {
+                completionLightTransform.localScale = targetScale;
+                yield break;
+            }
+
+            float elapsed = 0.0f;
+            while (elapsed < duration && completionLightTransform != null)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
+                completionLightTransform.localScale = Vector3.LerpUnclamped(startScale, targetScale, eased);
+                yield return null;
+            }
+
+            if (completionLightTransform != null)
+            {
+                completionLightTransform.localScale = targetScale;
             }
         }
 

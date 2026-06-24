@@ -206,7 +206,10 @@ MonoBehaviour:
   pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
   workingDirectory: C:\capstone\Shadow-to-3D-Generator
   scriptName: python\MediaPipeTracking.py
-  scriptArguments: --camera 2 --fallback-cameras 1 --width 640 --height 480 --fps 30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --frame-gain 2.0 --frame-brightness-offset 12 --preview
+  scriptArguments: --camera 2 --fallback-cameras 1 --width 640 --height 480 --fps
+    30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --frame-gain 2.0 --frame-brightness-offset
+    12 --max-hands 4 --max-output-hands 2 --person-filter --person-filter-fallback-hands
+    --preview
 --- !u!114 &202780834
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -246,6 +249,7 @@ MonoBehaviour:
   spinProgressTickColor: {r: 1, g: 1, b: 1, a: 0.62}
   rotationAudioSource: {fileID: 202780836}
   rotationDingVolume: 0.85
+  showMainDisplayHintVideo: 1
   playPostSpinVideoBeforeFlyAway: 1
   postSpinVideoRelativePath: HologramVideos/starChar_1_2_tts.mp4
   postSpinVideoDelaySeconds: 1

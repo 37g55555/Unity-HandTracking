@@ -78,7 +78,7 @@ namespace ShadowPrototype
 
         [Header("Interaction Hint")]
         [SerializeField, Min(0.0f)] private float interactionHintDelaySeconds = 10.0f;
-        [SerializeField] private string interactionHintMessage = "\uBE5B\uC774 \uAC00\uAE4C\uC6CC\uC9C8\uC218\uB85D ...";
+        [SerializeField] private string interactionHintMessage = "\uBE5B\uC774 \uAC00\uAE4C\uC6CC\uC9C8\uC218\uB85D, \uADF8\uB9BC\uC790\uB294 \uB354 \uD06C\uAC8C \uC790\uB77C\uB0A9\uB2C8\uB2E4.";
         [SerializeField] private Color interactionHintTextColor = Color.black;
         [SerializeField, Min(12)] private int interactionHintFontSize = 36;
         [SerializeField] private GameObject interactionHintObject;
@@ -96,7 +96,8 @@ namespace ShadowPrototype
         [SerializeField, Min(0.01f)] private float sunSlideCueGhostLifetimeSeconds = 0.55f;
         [SerializeField] private bool animateShadowStarScaleWithSunSlideCue = true;
         [SerializeField, Min(1.0f)] private float sunSlideCueShadowStarScaleMultiplier = 1.25f;
-        [SerializeField] private bool handDetectionCancelsSunSlideCue = true;
+        [SerializeField] private bool handDetectionCancelsSunSlideCue;
+        [SerializeField] private GameObject sunSlideCueHandObject;
 
         private Coroutine animationRoutine;
         private Coroutine interactionStartCueRoutine;
@@ -104,6 +105,7 @@ namespace ShadowPrototype
         private Mission2Phase currentPhase;
         private MaterialPropertyBlock darkPropertyBlock;
         private MaterialPropertyBlock backgroundPropertyBlock;
+        private bool interactionInstructionShowingHint;
         private bool sunSlideCueInterruptedByHand;
         private readonly List<GameObject> sunSlideGhostObjects = new List<GameObject>();
 
@@ -119,8 +121,10 @@ namespace ShadowPrototype
             SetDarkAlpha(currentPhase == Mission2Phase.Intro ? DarkStartAlpha01 : 0.0f);
             SetIntroBackgroundAlpha(currentPhase == Mission2Phase.Intro ? IntroBackgroundStartAlpha01 : 0.0f);
             SetInteractionSystemsEnabled(false);
+            interactionInstructionShowingHint = false;
             SetInteractionInstructionVisible(currentPhase == Mission2Phase.Interaction);
             SetInteractionHintVisible(false);
+            SetSunSlideCueHandVisible(false);
         }
 
         private void Start()
@@ -190,8 +194,10 @@ namespace ShadowPrototype
                 StartMediaPipeTracking();
             }
 
+            interactionInstructionShowingHint = false;
             SetInteractionInstructionVisible(false);
             SetInteractionHintVisible(false);
+            SetSunSlideCueHandVisible(false);
         }
 
         public void EnterInteraction()
@@ -199,6 +205,7 @@ namespace ShadowPrototype
             currentPhase = Mission2Phase.Interaction;
             SetDarkAlpha(0.0f);
             SetIntroBackgroundAlpha(0.0f);
+            interactionInstructionShowingHint = false;
             SetInteractionInstructionVisible(true);
             StartMediaPipeTracking();
 
@@ -243,6 +250,7 @@ namespace ShadowPrototype
         public void HideInteractionInstruction()
         {
             StopInteractionHint();
+            interactionInstructionShowingHint = false;
             SetInteractionInstructionVisible(false);
             SetInteractionHintVisible(false);
         }
@@ -252,6 +260,7 @@ namespace ShadowPrototype
             StopInteractionStartCue();
             StopInteractionHint();
             currentPhase = Mission2Phase.Outro;
+            interactionInstructionShowingHint = false;
             SetInteractionInstructionVisible(false);
             SetInteractionHintVisible(false);
             SetInteractionSystemsEnabled(false);
@@ -324,9 +333,11 @@ namespace ShadowPrototype
             Transform sunTransform = ResolveIntroSunTransform();
             if (sunTransform == null)
             {
+                SetSunSlideCueHandVisible(false);
                 yield break;
             }
 
+            SetSunSlideCueHandVisible(true);
             Vector3 restPosition = sunTransform.position;
             Transform cueShadowTransform = animateShadowStarScaleWithSunSlideCue ? ResolveShadowStarTransform() : null;
             Vector3 cueShadowRestScale = cueShadowTransform != null ? cueShadowTransform.localScale : Vector3.one;
@@ -342,6 +353,7 @@ namespace ShadowPrototype
                 if (currentPhase != Mission2Phase.Interaction)
                 {
                     RestoreSunSlideCueShadowScale(cueShadowTransform, cueShadowRestScale);
+                    SetSunSlideCueHandVisible(false);
                     yield break;
                 }
 
@@ -349,6 +361,7 @@ namespace ShadowPrototype
                 Vector3 targetPosition = restPosition + (Vector3.left * slideDistance);
                 if (TryInterruptSunSlideCueForHand(cueShadowTransform, cueShadowRestScale))
                 {
+                    SetSunSlideCueHandVisible(false);
                     yield break;
                 }
 
@@ -361,6 +374,7 @@ namespace ShadowPrototype
                     cueShadowRestScale);
                 if (sunSlideCueInterruptedByHand)
                 {
+                    SetSunSlideCueHandVisible(false);
                     yield break;
                 }
 
@@ -369,6 +383,7 @@ namespace ShadowPrototype
                     yield return WaitSunSlideCuePauseRoutine(pauseDuration, cueShadowTransform, cueShadowRestScale);
                     if (sunSlideCueInterruptedByHand)
                     {
+                        SetSunSlideCueHandVisible(false);
                         yield break;
                     }
                 }
@@ -384,6 +399,7 @@ namespace ShadowPrototype
                     0.0f);
                 if (sunSlideCueInterruptedByHand)
                 {
+                    SetSunSlideCueHandVisible(false);
                     yield break;
                 }
 
@@ -392,6 +408,7 @@ namespace ShadowPrototype
                     yield return WaitSunSlideCuePauseRoutine(pauseDuration, cueShadowTransform, cueShadowRestScale);
                     if (sunSlideCueInterruptedByHand)
                     {
+                        SetSunSlideCueHandVisible(false);
                         yield break;
                     }
                 }
@@ -399,6 +416,7 @@ namespace ShadowPrototype
 
             sunTransform.position = restPosition;
             RestoreSunSlideCueShadowScale(cueShadowTransform, cueShadowRestScale);
+            SetSunSlideCueHandVisible(false);
             if (pauseDuration > 0.0f)
             {
                 yield return WaitSunSlideCuePauseRoutine(pauseDuration, cueShadowTransform, cueShadowRestScale);
@@ -517,6 +535,7 @@ namespace ShadowPrototype
             sunSlideCueInterruptedByHand = true;
             ClearSunSlideGhosts();
             RestoreSunSlideCueShadowScale(cueShadowTransform, cueShadowRestScale);
+            SetSunSlideCueHandVisible(false);
             return true;
         }
 
@@ -786,6 +805,15 @@ namespace ShadowPrototype
             }
 
             ClearSunSlideGhosts();
+            SetSunSlideCueHandVisible(false);
+        }
+
+        private void SetSunSlideCueHandVisible(bool isVisible)
+        {
+            if (sunSlideCueHandObject != null)
+            {
+                sunSlideCueHandObject.SetActive(isVisible);
+            }
         }
 
         private void ClearSunSlideGhosts()
@@ -846,11 +874,13 @@ namespace ShadowPrototype
         private void StartInteractionHintTimer()
         {
             StopInteractionHint();
+            interactionInstructionShowingHint = false;
+            ApplyInteractionInstructionSettings();
             SetInteractionHintVisible(false);
 
             if (interactionHintDelaySeconds <= 0.0f)
             {
-                SetInteractionHintVisible(currentPhase == Mission2Phase.Interaction);
+                ApplyInteractionHintToInstruction(currentPhase == Mission2Phase.Interaction);
                 return;
             }
 
@@ -874,7 +904,7 @@ namespace ShadowPrototype
             }
 
             interactionHintRoutine = null;
-            SetInteractionHintVisible(currentPhase == Mission2Phase.Interaction);
+            ApplyInteractionHintToInstruction(currentPhase == Mission2Phase.Interaction);
         }
 
         private void StopInteractionHint()
@@ -886,6 +916,21 @@ namespace ShadowPrototype
 
             StopCoroutine(interactionHintRoutine);
             interactionHintRoutine = null;
+        }
+
+        private void ApplyInteractionHintToInstruction(bool shouldShowHint)
+        {
+            interactionInstructionShowingHint = shouldShowHint;
+            if (interactionInstructionObject != null && interactionInstructionObject.activeInHierarchy)
+            {
+                ApplyInteractionInstructionSettings();
+            }
+            else if (interactionInstructionTextComponent != null && interactionInstructionTextComponent.gameObject.activeInHierarchy)
+            {
+                ApplyInteractionInstructionSettings();
+            }
+
+            SetInteractionHintVisible(false);
         }
 
         private void SetInteractionHintVisible(bool isVisible)
@@ -953,6 +998,8 @@ namespace ShadowPrototype
 
         private void ApplyInteractionInstructionSettings()
         {
+            ResolveInteractionInstructionReferences();
+
             if (interactionInstructionTextComponent == null)
             {
                 return;
@@ -966,12 +1013,20 @@ namespace ShadowPrototype
                 rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
                 rectTransform.pivot = new Vector2(0.5f, 0.5f);
                 rectTransform.anchoredPosition = Vector2.zero;
-                rectTransform.sizeDelta = new Vector2(1920.0f * Mathf.Clamp01(interactionInstructionWidthRatio), 80.0f);
+                rectTransform.sizeDelta = new Vector2(
+                    1920.0f * Mathf.Clamp01(interactionInstructionWidthRatio),
+                    interactionInstructionShowingHint ? 120.0f : 80.0f);
             }
 
-            interactionInstructionTextComponent.text = interactionInstructionText;
-            interactionInstructionTextComponent.color = interactionInstructionTextColor;
-            interactionInstructionTextComponent.fontSize = Mathf.Max(12, interactionInstructionFontSize);
+            interactionInstructionTextComponent.text = interactionInstructionShowingHint
+                ? interactionHintMessage
+                : interactionInstructionText;
+            interactionInstructionTextComponent.color = interactionInstructionShowingHint
+                ? interactionHintTextColor
+                : interactionInstructionTextColor;
+            interactionInstructionTextComponent.fontSize = Mathf.Max(
+                12,
+                interactionInstructionShowingHint ? interactionHintFontSize : interactionInstructionFontSize);
             interactionInstructionTextComponent.alignment = TextAnchor.MiddleCenter;
             interactionInstructionTextComponent.horizontalOverflow = HorizontalWrapMode.Wrap;
             interactionInstructionTextComponent.verticalOverflow = VerticalWrapMode.Truncate;
