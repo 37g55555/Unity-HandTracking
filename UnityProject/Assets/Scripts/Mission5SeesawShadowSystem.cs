@@ -25,10 +25,9 @@ namespace ShadowPrototype
         [SerializeField, Min(0)] private int cameraDeviceIndex;
         [SerializeField, Min(1)] private int udpPort = 5055;
         [SerializeField, Min(0.0f)] private float staleDataTimeoutSeconds = 1.0f;
+        [SerializeField] private string trackingExtraArguments = "--roi-ellipse 0.71,0.54,0.27,0.35";
 
         [Header("Weight Mapping")]
-        [SerializeField, Range(0.0f, 1.0f)] private float minimumAddedShadowRatio = 0.015f;
-        [SerializeField, Range(0.0f, 1.0f)] private float maximumAddedShadowRatio = 0.50f;
         [SerializeField, Min(0.0f)] private float shadowWeightSmoothing = 6.0f;
         [SerializeField, Min(0.0f)] private float rawRatioSmoothing = 8.0f;
 
@@ -39,6 +38,7 @@ namespace ShadowPrototype
         [SerializeField] private Transform rightSeat;
         [SerializeField] private Transform leftSeatAnchor;
         [SerializeField] private Transform rightSeatAnchor;
+        [SerializeField] private bool alignSeatAnchorsToCurrentSeatPositions = true;
         [SerializeField] private Transform shadowStar;
         [SerializeField] private Transform fulcrum;
         [SerializeField] private Vector3 beamBaseEulerAngles = new Vector3(-110.0f, 90.0f, -90.0f);
@@ -48,7 +48,7 @@ namespace ShadowPrototype
         [SerializeField] private float completedBeamEulerX = -70.0f;
 
         [Header("Completion")]
-        [SerializeField, Range(0.0f, 1.0f)] private float completionShadowAreaRatio = 0.50f;
+        [SerializeField, Range(0.001f, 1.0f)] private float completionShadowAreaRatio = 0.50f;
         [SerializeField] private string nextSceneName = "Ending";
         [SerializeField, Min(0.0f)] private float endingTransitionDelay = 0.6f;
         [SerializeField, Min(0.0f)] private float postOutroSceneTransitionDelay = 1.0f;
@@ -70,6 +70,7 @@ namespace ShadowPrototype
         private bool hasInitialFulcrumPose;
         private Vector3 initialFulcrumWorldPosition;
         private Quaternion initialFulcrumWorldRotation;
+        private bool hasAlignedSeatAnchorsToCurrentSeatPositions;
         private AudioClip completionDingClip;
         private bool completionTriggered;
         private bool releaseShadowStarForOutro;
@@ -103,8 +104,7 @@ namespace ShadowPrototype
 
         private void OnValidate()
         {
-            maximumAddedShadowRatio = Mathf.Max(maximumAddedShadowRatio, minimumAddedShadowRatio + 0.001f);
-            completionShadowAreaRatio = Mathf.Clamp01(completionShadowAreaRatio);
+            completionShadowAreaRatio = Mathf.Clamp(completionShadowAreaRatio, 0.001f, 1.0f);
             staleDataTimeoutSeconds = Mathf.Max(0.0f, staleDataTimeoutSeconds);
         }
 
@@ -160,6 +160,9 @@ namespace ShadowPrototype
                 return;
             }
 
+            string extraArguments = string.IsNullOrWhiteSpace(trackingExtraArguments)
+                ? string.Empty
+                : $" {trackingExtraArguments.Trim()}";
             string command =
                 $"$Host.UI.RawUI.WindowTitle = {QuotePowerShellArgument(ProcessLabel)}; " +
                 $"Set-Location -LiteralPath {QuotePowerShellArgument(workingDirectory)}; " +
@@ -167,7 +170,7 @@ namespace ShadowPrototype
                 $"--camera {cameraDeviceIndex} " +
                 "--width 640 --height 360 --fps 30 --camera-buffer-size 1 " +
                 "--camera-auto-exposure 0.75 --preview " +
-                $"--udp-port {udpPort}";
+                $"--udp-port {udpPort}{extraArguments}";
 
             var startInfo = new ProcessStartInfo
             {
@@ -298,10 +301,7 @@ namespace ShadowPrototype
                 smoothedRawRatio = Mathf.Lerp(smoothedRawRatio, rawRatio, GetFrameBlend(rawRatioSmoothing));
             }
 
-            float normalizedWeight = Mathf.InverseLerp(
-                minimumAddedShadowRatio,
-                maximumAddedShadowRatio,
-                smoothedRawRatio);
+            float normalizedWeight = smoothedRawRatio / Mathf.Max(0.001f, completionShadowAreaRatio);
             float easedWeight = Mathf.SmoothStep(0.0f, 1.0f, Mathf.Clamp01(normalizedWeight));
             SmoothWeightToward(easedWeight);
 
@@ -358,6 +358,7 @@ namespace ShadowPrototype
                     beamBaseEulerAngles.z);
             }
 
+            AlignSeatAnchorsToCurrentSeatPositions();
             RestoreFulcrumPose();
 
             Vector3 leftPoint = GetSeatPoint(true);
@@ -411,6 +412,29 @@ namespace ShadowPrototype
             initialFulcrumWorldPosition = fulcrum.position;
             initialFulcrumWorldRotation = fulcrum.rotation;
             hasInitialFulcrumPose = true;
+        }
+
+        private void AlignSeatAnchorsToCurrentSeatPositions()
+        {
+            if (hasAlignedSeatAnchorsToCurrentSeatPositions ||
+                !alignSeatAnchorsToCurrentSeatPositions)
+            {
+                return;
+            }
+
+            AlignSeatAnchorToSeat(leftSeatAnchor, leftSeat);
+            AlignSeatAnchorToSeat(rightSeatAnchor, rightSeat);
+            hasAlignedSeatAnchorsToCurrentSeatPositions = true;
+        }
+
+        private static void AlignSeatAnchorToSeat(Transform anchor, Transform seat)
+        {
+            if (anchor == null || seat == null)
+            {
+                return;
+            }
+
+            anchor.position = seat.position;
         }
 
         private void RestoreFulcrumPose()

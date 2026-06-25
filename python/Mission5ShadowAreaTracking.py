@@ -5,7 +5,7 @@ import time
 import cv2
 import numpy as np
 
-from camera_utils import add_camera_arguments, open_latest_frame_camera, parse_fallback_cameras
+from camera_utils import open_latest_frame_camera
 from preview_window_utils import (
     configure_preview_window,
     get_foreground_window,
@@ -21,10 +21,20 @@ def log(message):
     print(message, flush=True)
 
 
-def build_roi_mask(frame_shape, roi):
+def build_roi_mask(frame_shape, roi, roi_circle, roi_ellipse):
+    if roi_ellipse is not None:
+        return build_ellipse_roi_mask(frame_shape, roi_ellipse)
+
+    if roi_circle is not None:
+        return build_circle_roi_mask(frame_shape, roi_circle)
+
     if roi is None:
         return None
 
+    return build_rect_roi_mask(frame_shape, roi)
+
+
+def build_rect_roi_mask(frame_shape, roi):
     height, width = frame_shape[:2]
     x0, y0, x1, y1 = roi
     x0 = int(np.clip(round(x0 * width), 0, width - 1))
@@ -34,6 +44,37 @@ def build_roi_mask(frame_shape, roi):
 
     mask = np.zeros((height, width), dtype=np.uint8)
     mask[y0:y1, x0:x1] = 255
+    return mask
+
+
+def build_circle_roi_mask(frame_shape, roi_circle):
+    height, width = frame_shape[:2]
+    center_x, center_y, radius = roi_circle
+    center = (
+        int(np.clip(round(center_x * width), 0, width - 1)),
+        int(np.clip(round(center_y * height), 0, height - 1)),
+    )
+    pixel_radius = max(1, int(round(radius * min(width, height))))
+
+    mask = np.zeros((height, width), dtype=np.uint8)
+    cv2.circle(mask, center, pixel_radius, 255, -1)
+    return mask
+
+
+def build_ellipse_roi_mask(frame_shape, roi_ellipse):
+    height, width = frame_shape[:2]
+    center_x, center_y, radius_x, radius_y = roi_ellipse
+    center = (
+        int(np.clip(round(center_x * width), 0, width - 1)),
+        int(np.clip(round(center_y * height), 0, height - 1)),
+    )
+    axes = (
+        max(1, int(round(radius_x * width))),
+        max(1, int(round(radius_y * height))),
+    )
+
+    mask = np.zeros((height, width), dtype=np.uint8)
+    cv2.ellipse(mask, center, axes, 0, 0, 360, 255, -1)
     return mask
 
 
@@ -57,6 +98,45 @@ def parse_roi(value):
     )
 
 
+def parse_roi_circle(value):
+    if not value:
+        return None
+
+    parts = [float(part.strip()) for part in value.split(",")]
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError("ROI circle must be cx,cy,r.")
+
+    center_x, center_y, radius = parts
+    if radius <= 0.0:
+        raise argparse.ArgumentTypeError("ROI circle radius must be greater than 0.")
+
+    return (
+        max(0.0, min(1.0, center_x)),
+        max(0.0, min(1.0, center_y)),
+        max(0.001, min(1.0, radius)),
+    )
+
+
+def parse_roi_ellipse(value):
+    if not value:
+        return None
+
+    parts = [float(part.strip()) for part in value.split(",")]
+    if len(parts) != 4:
+        raise argparse.ArgumentTypeError("ROI ellipse must be cx,cy,rx,ry.")
+
+    center_x, center_y, radius_x, radius_y = parts
+    if radius_x <= 0.0 or radius_y <= 0.0:
+        raise argparse.ArgumentTypeError("ROI ellipse radii must be greater than 0.")
+
+    return (
+        max(0.0, min(1.0, center_x)),
+        max(0.0, min(1.0, center_y)),
+        max(0.001, min(1.0, radius_x)),
+        max(0.001, min(1.0, radius_y)),
+    )
+
+
 def capture_background(cap, seconds, roi_mask, preview):
     started_at = time.monotonic()
     frames = []
@@ -77,7 +157,7 @@ def capture_background(cap, seconds, roi_mask, preview):
         frames.append(gray.astype(np.float32))
 
         if preview:
-            display = frame.copy()
+            display = dim_outside_roi(frame.copy(), roi_mask)
             remaining = max(0.0, seconds - (time.monotonic() - started_at))
             cv2.putText(
                 display,
@@ -113,11 +193,18 @@ def overlay_roi(display, roi_mask, color):
     cv2.drawContours(display, contours, -1, color, 2)
 
 
-def calculate_shadow_ratio(gray, background, roi_mask, darkening_threshold, black_threshold):
-    if background is not None:
-        shadow_mask = (background - gray.astype(np.float32)) >= darkening_threshold
-    else:
-        shadow_mask = gray <= black_threshold
+def dim_outside_roi(display, roi_mask):
+    if roi_mask is None:
+        return display
+
+    focused = display.copy()
+    outside = roi_mask <= 0
+    focused[outside] = (focused[outside].astype(np.float32) * 0.24).astype(np.uint8)
+    return focused
+
+
+def calculate_shadow_ratio(gray, background, roi_mask, darkening_threshold):
+    shadow_mask = (background - gray.astype(np.float32)) >= darkening_threshold
 
     if roi_mask is not None:
         active = roi_mask > 0
@@ -147,13 +234,12 @@ def draw_shadow_overlay(display, mask):
 
 def run_tracking(
     camera_id,
-    fallback_camera_ids,
     udp_port,
     background_seconds,
     darkening_threshold,
-    black_threshold,
-    use_background,
     roi,
+    roi_circle,
+    roi_ellipse,
     width,
     height,
     fps,
@@ -169,7 +255,6 @@ def run_tracking(
 ):
     cap = open_latest_frame_camera(
         camera_id,
-        fallback_camera_ids=fallback_camera_ids,
         width=width,
         height=height,
         fps=fps,
@@ -186,15 +271,13 @@ def run_tracking(
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_target = (UDP_HOST, udp_port)
     roi_mask = None
-    background = None
 
     try:
         ok, first_frame = cap.read()
         if ok and first_frame is not None:
-            roi_mask = build_roi_mask(first_frame.shape, roi)
+            roi_mask = build_roi_mask(first_frame.shape, roi, roi_circle, roi_ellipse)
 
-        if use_background:
-            background = capture_background(cap, background_seconds, roi_mask, preview)
+        background = capture_background(cap, background_seconds, roi_mask, preview)
 
         restore_focus_window = get_foreground_window() if preview else None
         preview_focus_restored = False
@@ -214,13 +297,13 @@ def run_tracking(
                 background,
                 roi_mask,
                 darkening_threshold,
-                black_threshold,
             )
             payload = f"ratio={ratio:.6f}"
             sock.sendto(payload.encode("utf-8"), udp_target)
 
             if preview:
-                display = draw_shadow_overlay(frame.copy(), mask)
+                display = dim_outside_roi(frame.copy(), roi_mask)
+                display = draw_shadow_overlay(display, mask)
                 if roi_mask is not None:
                     overlay_roi(display, roi_mask, (0, 255, 255))
 
@@ -252,15 +335,28 @@ def run_tracking(
 
 def main():
     parser = argparse.ArgumentParser(description="Measure live shadow area and send the ratio to Unity.")
-    add_camera_arguments(parser, default_camera=0, preview_default=False)
+    parser.add_argument("--camera", type=int, default=0)
+    parser.add_argument("--width", type=int, default=640)
+    parser.add_argument("--height", type=int, default=360)
+    parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument("--camera-buffer-size", type=int, default=1)
+    parser.add_argument("--camera-auto-exposure", type=float, default=0.75)
+    parser.add_argument("--camera-exposure", type=float, default=None)
+    parser.add_argument("--camera-autofocus", type=float, default=0.0)
+    parser.add_argument("--directshow-device", default="")
+    parser.add_argument("--directshow-pixel-format", default="")
+    parser.add_argument("--directshow-video-codec", default="")
+    parser.add_argument("--allow-black-frames", action="store_true")
+    preview_group = parser.add_mutually_exclusive_group()
+    preview_group.add_argument("--preview", dest="preview", action="store_true")
+    preview_group.add_argument("--no-preview", dest="preview", action="store_false")
+    parser.set_defaults(preview=False)
     parser.add_argument("--udp-port", type=int, default=5055)
     parser.add_argument("--background-seconds", type=float, default=1.0)
     parser.add_argument("--darkening-threshold", type=int, default=28)
-    parser.add_argument("--black-threshold", type=int, default=70)
-    parser.add_argument("--use-background", dest="use_background", action="store_true")
-    parser.add_argument("--no-background", dest="use_background", action="store_false")
     parser.add_argument("--roi", type=parse_roi, default=None, help="Optional normalized ROI: x0,y0,x1,y1")
-    parser.set_defaults(use_background=True)
+    parser.add_argument("--roi-circle", type=parse_roi_circle, default=None, help="Optional normalized circle ROI: cx,cy,r")
+    parser.add_argument("--roi-ellipse", type=parse_roi_ellipse, default=None, help="Optional normalized ellipse ROI: cx,cy,rx,ry")
     args = parser.parse_args()
 
     if args.background_seconds < 0.0:
@@ -268,13 +364,12 @@ def main():
 
     run_tracking(
         args.camera,
-        parse_fallback_cameras(args.fallback_cameras),
         args.udp_port,
         args.background_seconds,
         args.darkening_threshold,
-        args.black_threshold,
-        args.use_background,
         args.roi,
+        args.roi_circle,
+        args.roi_ellipse,
         args.width,
         args.height,
         args.fps,

@@ -79,7 +79,7 @@ namespace ShadowPrototype
                 StopCoroutine(playbackRoutine);
             }
 
-            playbackRoutine = StartCoroutine(PlayRoutine());
+            playbackRoutine = StartCoroutine(PlayRoutine(null));
         }
 
         public IEnumerator PlayAndWaitRoutine()
@@ -90,7 +90,7 @@ namespace ShadowPrototype
                 playbackRoutine = null;
             }
 
-            yield return PlayRoutine();
+            yield return PlayRoutine(null);
         }
 
         public IEnumerator PlayAndWaitRoutine(string nextVideoRelativePath)
@@ -101,6 +101,22 @@ namespace ShadowPrototype
             }
 
             yield return PlayAndWaitRoutine();
+        }
+
+        public IEnumerator PlayAndWaitRoutine(string nextVideoRelativePath, bool keepLastFrameWhenComplete)
+        {
+            if (!string.IsNullOrWhiteSpace(nextVideoRelativePath))
+            {
+                videoRelativePath = nextVideoRelativePath;
+            }
+
+            if (playbackRoutine != null)
+            {
+                StopCoroutine(playbackRoutine);
+                playbackRoutine = null;
+            }
+
+            yield return PlayRoutine(!keepLastFrameWhenComplete);
         }
 
         public void SkipPlayback()
@@ -116,7 +132,7 @@ namespace ShadowPrototype
             playbackCompleted = true;
         }
 
-        private IEnumerator PlayRoutine()
+        private IEnumerator PlayRoutine(bool? hideWhenCompleteOverride)
         {
             if (!ConfigureVideoPlayer())
             {
@@ -124,6 +140,7 @@ namespace ShadowPrototype
                 yield break;
             }
 
+            bool shouldHideWhenComplete = hideWhenCompleteOverride ?? hideWhenComplete;
             playbackCompleted = false;
             videoPlayer.loopPointReached -= HandleLoopPointReached;
             videoPlayer.loopPointReached += HandleLoopPointReached;
@@ -171,7 +188,7 @@ namespace ShadowPrototype
                 yield return null;
             }
 
-            if (hideWhenComplete)
+            if (shouldHideWhenComplete)
             {
                 StopPlayback(true);
             }

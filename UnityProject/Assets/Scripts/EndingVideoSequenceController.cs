@@ -10,15 +10,20 @@ namespace ShadowPrototype
         [SerializeField] private FullscreenStreamingVideoPlayer metamorphosisVideoPlayer;
         [SerializeField] private string metamorphosisVideoRelativePath = "Videos/6 Metamorphosis.mp4";
         [SerializeField] private string connectVideoRelativePath = "Videos/7 Ending_connect.mp4";
+        [SerializeField] private string postInteractionScreenVideoRelativePath = "Videos/ending_screen.mp4";
+        [SerializeField] private string postInteractionHologramVideoRelativePath = "Videos/ending_hologram.mp4";
+        [SerializeField] private EndingHologramVideoPlayer postInteractionHologramVideoPlayer;
         [SerializeField] private bool playFullscreenIntroVideos = true;
         [SerializeField] private bool loadHologramSceneAfterIntroVideos;
         [SerializeField] private string hologramSceneName = "Ending_H";
         [SerializeField] private bool playHologramSequenceInThisScene = true;
+        [SerializeField] private bool playHologramIntroVideo = true;
         [SerializeField] private EndingHologramVideoPlayer endingHologramVideoPlayer;
         [SerializeField] private EndingHologramModelPresenter endingHologramModelPresenter;
         [SerializeField] private bool playOnStart = true;
 
         private Coroutine sequenceRoutine;
+        private Coroutine postInteractionRoutine;
 
         private void Start()
         {
@@ -66,6 +71,27 @@ namespace ShadowPrototype
             }
         }
 
+        public bool HasFullscreenVideoPlayer
+        {
+            get
+            {
+                ResolveReferences();
+                return metamorphosisVideoPlayer != null;
+            }
+        }
+
+        public void PlayPostInteractionVideos(EndingHologramVideoPlayer hologramVideoPlayer = null)
+        {
+            ResolveReferences();
+
+            if (postInteractionRoutine != null)
+            {
+                StopCoroutine(postInteractionRoutine);
+            }
+
+            postInteractionRoutine = StartCoroutine(PlayPostInteractionVideosRoutine(hologramVideoPlayer));
+        }
+
         private IEnumerator PlaySequenceRoutine()
         {
             ResolveReferences();
@@ -110,12 +136,12 @@ namespace ShadowPrototype
                 yield break;
             }
 
-            if (playHologramSequenceInThisScene && endingHologramVideoPlayer != null)
+            if (playHologramSequenceInThisScene && playHologramIntroVideo && endingHologramVideoPlayer != null)
             {
                 yield return endingHologramVideoPlayer.PlayAndWaitRoutine();
                 Debug.Log("EndingVideoSequenceController: ending hologram video finished; showing hologram model.");
             }
-            else if (playHologramSequenceInThisScene)
+            else if (playHologramSequenceInThisScene && playHologramIntroVideo)
             {
                 Debug.LogWarning("EndingVideoSequenceController: ending hologram video player is missing.");
             }
@@ -130,6 +156,47 @@ namespace ShadowPrototype
             }
 
             sequenceRoutine = null;
+        }
+
+        private IEnumerator PlayPostInteractionVideosRoutine(EndingHologramVideoPlayer hologramVideoPlayer)
+        {
+            EndingHologramVideoPlayer resolvedHologramVideoPlayer =
+                hologramVideoPlayer != null ? hologramVideoPlayer : ResolvePostInteractionHologramVideoPlayer();
+
+            Coroutine screenVideoRoutine = null;
+            Coroutine hologramVideoRoutine = null;
+
+            if (metamorphosisVideoPlayer != null)
+            {
+                screenVideoRoutine = StartCoroutine(
+                    metamorphosisVideoPlayer.PlayAndWaitRoutine(postInteractionScreenVideoRelativePath, true));
+            }
+            else
+            {
+                Debug.LogWarning("EndingVideoSequenceController: fullscreen video player is missing for ending_screen.");
+            }
+
+            if (resolvedHologramVideoPlayer != null)
+            {
+                hologramVideoRoutine = StartCoroutine(
+                    resolvedHologramVideoPlayer.PlayAndWaitRoutine(postInteractionHologramVideoRelativePath));
+            }
+            else
+            {
+                Debug.LogWarning("EndingVideoSequenceController: hologram video player is missing for ending_hologram.");
+            }
+
+            if (screenVideoRoutine != null)
+            {
+                yield return screenVideoRoutine;
+            }
+
+            if (hologramVideoRoutine != null)
+            {
+                yield return hologramVideoRoutine;
+            }
+
+            postInteractionRoutine = null;
         }
 
         private void ResolveReferences()
@@ -148,6 +215,28 @@ namespace ShadowPrototype
             {
                 endingHologramModelPresenter = GetComponent<EndingHologramModelPresenter>();
             }
+        }
+
+        private EndingHologramVideoPlayer ResolvePostInteractionHologramVideoPlayer()
+        {
+            if (postInteractionHologramVideoPlayer != null)
+            {
+                return postInteractionHologramVideoPlayer;
+            }
+
+            if (endingHologramVideoPlayer != null)
+            {
+                postInteractionHologramVideoPlayer = endingHologramVideoPlayer;
+                return postInteractionHologramVideoPlayer;
+            }
+
+            EndingHologramVideoPlayer[] videoPlayers = FindObjectsOfType<EndingHologramVideoPlayer>();
+            if (videoPlayers.Length > 0)
+            {
+                postInteractionHologramVideoPlayer = videoPlayers[0];
+            }
+
+            return postInteractionHologramVideoPlayer;
         }
 
         private IEnumerator LoadHologramSceneAndClearRoutine()

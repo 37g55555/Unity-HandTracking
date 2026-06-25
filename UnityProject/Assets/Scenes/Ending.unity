@@ -196,10 +196,14 @@ MonoBehaviour:
   metamorphosisVideoPlayer: {fileID: 100002}
   metamorphosisVideoRelativePath: Videos/6 Metamorphosis.mp4
   connectVideoRelativePath: Videos/7 Ending_connect.mp4
+  postInteractionScreenVideoRelativePath: Videos/ending_screen.mp4
+  postInteractionHologramVideoRelativePath: Videos/ending_hologram.mp4
+  postInteractionHologramVideoPlayer: {fileID: 0}
   playFullscreenIntroVideos: 1
   loadHologramSceneAfterIntroVideos: 1
   hologramSceneName: Ending_H
   playHologramSequenceInThisScene: 0
+  playHologramIntroVideo: 1
   endingHologramVideoPlayer: {fileID: 0}
   endingHologramModelPresenter: {fileID: 0}
   playOnStart: 1

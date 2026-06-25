@@ -1,12 +1,23 @@
+using System.Collections;
 using UnityEngine;
+using UnityEngine.Video;
 
 namespace ShadowPrototype
 {
     public sealed class Mission3MainDisplayHintVideo : MonoBehaviour
     {
+        public enum InstructionVideo
+        {
+            None = 0,
+            Turn5 = 1,
+            Swipe = 2
+        }
+
         [SerializeField] private GameObject hintVideoObject;
         [SerializeField] private TutorialVideoPlayer tutorialVideoPlayer;
         [SerializeField] private bool hideOnAwake = true;
+        [SerializeField] private VideoClip turn5VideoClip;
+        [SerializeField] private VideoClip swipeVideoClip;
 
         private void Awake()
         {
@@ -55,6 +66,38 @@ namespace ShadowPrototype
             FindFirstAvailable()?.Hide();
         }
 
+        public static bool HasVisibleInstruction()
+        {
+            Mission3MainDisplayHintVideo player = FindFirstAvailable();
+            return player != null && player.IsVisible();
+        }
+
+        public static IEnumerator PlayInstructionVideoAndWaitRoutine(InstructionVideo instructionVideo)
+        {
+            if (instructionVideo == InstructionVideo.None)
+            {
+                yield break;
+            }
+
+            Mission3MainDisplayHintVideo player = FindFirstAvailable();
+            if (player == null)
+            {
+                yield break;
+            }
+
+            yield return player.PlayInstructionAndWaitRoutine(instructionVideo);
+        }
+
+        public static void ShowInstructionVideoLooping(InstructionVideo instructionVideo)
+        {
+            if (instructionVideo == InstructionVideo.None)
+            {
+                return;
+            }
+
+            FindFirstAvailable()?.ShowInstructionLooping(instructionVideo);
+        }
+
         private static Mission3MainDisplayHintVideo FindFirstAvailable()
         {
             Mission3MainDisplayHintVideo[] players = Resources.FindObjectsOfTypeAll<Mission3MainDisplayHintVideo>();
@@ -70,6 +113,12 @@ namespace ShadowPrototype
             return null;
         }
 
+        private bool IsVisible()
+        {
+            ResolveReferences();
+            return hintVideoObject != null && hintVideoObject.activeInHierarchy;
+        }
+
         private void ResolveReferences()
         {
             if (hintVideoObject == null && tutorialVideoPlayer != null)
@@ -80,6 +129,57 @@ namespace ShadowPrototype
             if (tutorialVideoPlayer == null && hintVideoObject != null)
             {
                 tutorialVideoPlayer = hintVideoObject.GetComponentInChildren<TutorialVideoPlayer>(true);
+            }
+        }
+
+        private IEnumerator PlayInstructionAndWaitRoutine(InstructionVideo instructionVideo)
+        {
+            ResolveReferences();
+
+            VideoClip clip = ResolveInstructionClip(instructionVideo);
+            if (clip == null || hintVideoObject == null || tutorialVideoPlayer == null)
+            {
+                yield break;
+            }
+
+            if (hintVideoObject.activeSelf)
+            {
+                hintVideoObject.SetActive(false);
+            }
+
+            hintVideoObject.SetActive(true);
+            yield return tutorialVideoPlayer.PlayClipAndWaitRoutine(clip);
+            Hide();
+        }
+
+        private void ShowInstructionLooping(InstructionVideo instructionVideo)
+        {
+            ResolveReferences();
+
+            VideoClip clip = ResolveInstructionClip(instructionVideo);
+            if (clip == null || hintVideoObject == null || tutorialVideoPlayer == null)
+            {
+                return;
+            }
+
+            if (!hintVideoObject.activeSelf)
+            {
+                hintVideoObject.SetActive(true);
+            }
+
+            tutorialVideoPlayer.PlayClipLooping(clip);
+        }
+
+        private VideoClip ResolveInstructionClip(InstructionVideo instructionVideo)
+        {
+            switch (instructionVideo)
+            {
+                case InstructionVideo.Turn5:
+                    return turn5VideoClip;
+                case InstructionVideo.Swipe:
+                    return swipeVideoClip != null ? swipeVideoClip : tutorialVideoPlayer?.CurrentClip;
+                default:
+                    return null;
             }
         }
     }

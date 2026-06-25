@@ -10,14 +10,20 @@ namespace ShadowPrototype
     {
         private const int ActivationRetryCount = 60;
         private const float ActivationRetryIntervalSeconds = 0.1f;
+        private const int MainWindowPostActivationRouteCount = 40;
+        private const float SecondaryWindowRouteIntervalSeconds = 0.25f;
         private static bool created;
 
         private Camera blankDisplayCamera;
 
 #if UNITY_STANDALONE_WIN
         private IntPtr mainUnityWindowHandle = IntPtr.Zero;
+        private IntPtr secondaryUnityWindowHandle = IntPtr.Zero;
         private RectInt mainUnityWindowBounds;
+        private RectInt secondaryUnityWindowBounds;
         private string mainUnityWindowDisplayDescription = string.Empty;
+        private string secondaryUnityWindowDisplayDescription = string.Empty;
+        private bool secondaryUnityWindowRouteLogged;
 #endif
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -51,7 +57,9 @@ namespace ShadowPrototype
 #endif
             yield return ActivateHologramDisplayRoutine();
 #if UNITY_STANDALONE_WIN
+            StartCoroutine(EnforceSecondaryWindowToHologramDisplayRoutine());
             yield return RouteCapturedMainWindowToBeamDisplayRoutine();
+            yield return EnforceMainWindowToBeamDisplayRoutine();
 #endif
         }
 
@@ -125,6 +133,77 @@ namespace ShadowPrototype
             else
             {
                 Debug.LogWarning($"HologramDisplayBootstrapper: captured main Unity window could not be restored to {mainUnityWindowDisplayDescription}.");
+            }
+        }
+
+        private IEnumerator EnforceMainWindowToBeamDisplayRoutine()
+        {
+            if (mainUnityWindowHandle == IntPtr.Zero ||
+                mainUnityWindowBounds.width <= 0 ||
+                mainUnityWindowBounds.height <= 0)
+            {
+                yield break;
+            }
+
+            for (int attempt = 0; attempt < MainWindowPostActivationRouteCount; attempt++)
+            {
+                Screen.fullScreenMode = FullScreenMode.Windowed;
+                Screen.SetResolution(mainUnityWindowBounds.width, mainUnityWindowBounds.height, false);
+
+                if (WindowsDisplayUtility.MoveWindowToBounds(mainUnityWindowHandle, mainUnityWindowBounds, true))
+                {
+                    Debug.Log($"HologramDisplayBootstrapper: enforced main Unity window on {mainUnityWindowDisplayDescription}.");
+                }
+
+                yield return new WaitForSecondsRealtime(ActivationRetryIntervalSeconds);
+            }
+        }
+
+        private IEnumerator EnforceSecondaryWindowToHologramDisplayRoutine()
+        {
+            if (!WindowsDisplayUtility.TryGetMonitorBoundsByWindowsDisplayNumber(
+                    DisplayRoutingSettings.HologramUnityWindowsDisplayNumber,
+                    useWorkArea: false,
+                    out secondaryUnityWindowBounds,
+                    out secondaryUnityWindowDisplayDescription))
+            {
+                Debug.LogWarning($"HologramDisplayBootstrapper: Windows display {DisplayRoutingSettings.HologramUnityWindowsDisplayNumber} was not found for Unity Secondary Display.");
+                yield break;
+            }
+
+            while (true)
+            {
+                if (mainUnityWindowHandle != IntPtr.Zero)
+                {
+                    if (secondaryUnityWindowHandle == IntPtr.Zero ||
+                        secondaryUnityWindowHandle == mainUnityWindowHandle)
+                    {
+                        WindowsDisplayUtility.TryGetSecondaryVisibleWindowForCurrentProcess(
+                            mainUnityWindowHandle,
+                            out secondaryUnityWindowHandle);
+                    }
+
+                    if (secondaryUnityWindowHandle != IntPtr.Zero)
+                    {
+                        if (WindowsDisplayUtility.MoveWindowToBounds(
+                                secondaryUnityWindowHandle,
+                                secondaryUnityWindowBounds,
+                                true))
+                        {
+                            if (!secondaryUnityWindowRouteLogged)
+                            {
+                                Debug.Log($"HologramDisplayBootstrapper: routed Unity Secondary Display to {secondaryUnityWindowDisplayDescription}.");
+                                secondaryUnityWindowRouteLogged = true;
+                            }
+                        }
+                        else
+                        {
+                            secondaryUnityWindowHandle = IntPtr.Zero;
+                        }
+                    }
+                }
+
+                yield return new WaitForSecondsRealtime(SecondaryWindowRouteIntervalSeconds);
             }
         }
 #endif

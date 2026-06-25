@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Video;
@@ -17,6 +18,8 @@ namespace ShadowPrototype
         [SerializeField] private bool playOnEnable = true;
 
         private RenderTexture renderTexture;
+
+        public VideoClip CurrentClip => videoClip;
 
         private void Awake()
         {
@@ -62,6 +65,77 @@ namespace ShadowPrototype
             }
         }
 
+        public IEnumerator PlayClipAndWaitRoutine(VideoClip clip)
+        {
+            if (clip == null)
+            {
+                yield break;
+            }
+
+            VideoClip previousClip = videoClip;
+            bool previousLoop = loop;
+            videoClip = clip;
+            loop = false;
+            Configure();
+
+            if (videoPlayer == null || videoClip == null)
+            {
+                RestoreClip(previousClip, previousLoop);
+                yield break;
+            }
+
+            bool completed = false;
+            VideoPlayer.EventHandler handleLoopPointReached = _source => completed = true;
+
+            videoPlayer.loopPointReached += handleLoopPointReached;
+            videoPlayer.Stop();
+            videoPlayer.time = 0.0;
+            videoPlayer.Prepare();
+
+            float prepareElapsed = 0.0f;
+            while (!videoPlayer.isPrepared && prepareElapsed < 5.0f)
+            {
+                prepareElapsed += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            videoPlayer.Play();
+
+            float playbackElapsed = 0.0f;
+            float clipLengthSeconds = videoClip.length > 0.0 ? (float)videoClip.length : 0.0f;
+            float maxPlaybackSeconds = clipLengthSeconds > 0.0f ? clipLengthSeconds + 2.0f : 60.0f;
+            while (!completed && playbackElapsed < maxPlaybackSeconds)
+            {
+                playbackElapsed += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            videoPlayer.loopPointReached -= handleLoopPointReached;
+            videoPlayer.Stop();
+            RestoreClip(previousClip, previousLoop);
+        }
+
+        public void PlayClipLooping(VideoClip clip)
+        {
+            if (clip == null)
+            {
+                return;
+            }
+
+            videoClip = clip;
+            loop = true;
+            Configure();
+
+            if (videoPlayer == null || videoClip == null)
+            {
+                return;
+            }
+
+            videoPlayer.Stop();
+            videoPlayer.time = 0.0;
+            videoPlayer.Play();
+        }
+
         private void Configure()
         {
             if (outputImage == null)
@@ -89,6 +163,13 @@ namespace ShadowPrototype
             videoPlayer.audioOutputMode = VideoAudioOutputMode.None;
             videoPlayer.source = VideoSource.VideoClip;
             videoPlayer.clip = videoClip;
+        }
+
+        private void RestoreClip(VideoClip clip, bool shouldLoop)
+        {
+            videoClip = clip;
+            loop = shouldLoop;
+            Configure();
         }
 
         private void EnsureRenderTexture()

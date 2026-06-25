@@ -347,6 +347,7 @@ namespace ShadowPrototype
             }
 
             Vector3 startPosition = resolvedShadowStar.position;
+            Quaternion startRotation = resolvedShadowStar.localRotation;
             Vector2[] pathPoints = introShadowStarRoadPathPoints;
             if (pathPoints == null || pathPoints.Length == 0)
             {
@@ -367,11 +368,18 @@ namespace ShadowPrototype
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
                 float eased = Mathf.SmoothStep(0.0f, 1.0f, t);
-                resolvedShadowStar.position = EvaluateRoadPath(startPosition, pathPoints, eased);
+                Vector3 roadPosition = EvaluateRoadPath(startPosition, pathPoints, eased);
+                StarWalkMotion.ApplyWorld(
+                    resolvedShadowStar,
+                    roadPosition,
+                    startPosition,
+                    targetPosition,
+                    eased,
+                    startRotation);
                 yield return null;
             }
 
-            resolvedShadowStar.position = targetPosition;
+            StarWalkMotion.FinishWorld(resolvedShadowStar, targetPosition, startRotation);
         }
 
         private Vector3 EvaluateRoadPath(Vector3 startPosition, Vector2[] pathPoints, float t)

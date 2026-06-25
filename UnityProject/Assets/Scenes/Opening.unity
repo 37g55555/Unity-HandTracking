@@ -225,8 +225,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_RenderShadows: 1
   m_RequiresDepthTextureOption: 2
   m_RequiresOpaqueTextureOption: 2
@@ -307,11 +307,11 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9821d2f4fb2932e488f67aeac3579b1b, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   currentState: 0
   currentStateName: Opening
-  keyword:
+  keyword: 
 --- !u!114 &775207386
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -322,14 +322,22 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4932527c3299eeb4292b9a73ba6f7ea6, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   pythonExecutablePath: C:\Users\creal\miniconda3\envs\artifact\python.exe
   qwenWorkingDirectory: C:\capstone\Shadow-to-3D-Generator\qwen
   qwenServerArguments: -m uvicorn app:app --host 127.0.0.1 --port 8000
+  fallbackKeywordOnQwenFailure: "\uC54C \uC218 \uC5C6\uB294 \uAC83"
   captureWorkingDirectory: C:\capstone\Shadow-to-3D-Generator
   captureScriptName: python\ShadowMesh.py
-  captureArguments: --mode file
+  captureArguments: --mode live --camera 0
+  captureCameraWidth: 640
+  captureCameraHeight: 360
+  captureCameraFps: 30
+  captureCameraBufferSize: 1
+  captureCameraAutoExposure: 0.75
+  captureFrameEnhance: 0
+  captureControlWindow: 0
   qwenClient: {fileID: 775207387}
   stateManager: {fileID: 775207380}
   meshFileLoader: {fileID: 2145170302}
@@ -351,8 +359,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9a828946dba55b74383b04c52187c2d0, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   baseUrl: http://127.0.0.1:8000
   classifyEndpoint: /classify-silhouette
 --- !u!114 &775207389
@@ -365,8 +373,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: bf42c8b22f14494c8b7db37c76714b27, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   stateManager: {fileID: 775207380}
   sortingOrder: 3500
   keywordResultFormat: "\uB9C8\uC9C0\uB9C9 \uADF8\uB9BC\uC790\uB294 {0} \uBAA8\uC591\uC744
@@ -389,8 +397,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8f3cf62965b1463f9ecf3dcb6a7afad4, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   openingVideoClip: {fileID: 0}
   openingVideoPath: OpeningVideos/opening_0.mp4
   sortingOrder: 3000
@@ -409,8 +417,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e5210c72e0814ff98d7f0d11177404bc, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   keepThisRootAcrossSceneLoads: 0
   persistentObjects:
   - {fileID: 2145170299}
@@ -620,8 +628,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 2a5ae057ce8a01e41baebf9a99506aca, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!33 &1061289397
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -724,8 +732,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 76586c16f19e44d8894f3c7f28e633ec, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   stateManager: {fileID: 0}
   targetPlane: {fileID: 1829000001}
   playOnStart: 0
@@ -819,8 +827,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f6f1a910fd571b446922c71ec7caf491, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
+  capturedOverlayInitialScaleMultiplier: 1.35
+  capturedOverlayInitialPositionOffset: {x: 0, y: -0.2}
 --- !u!114 &2145170302
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -831,8 +841,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0996ee93e966a894c847b1c86e4cb7c2, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   relativeWatchDirectory: ..\output\shadowmesh
   meshFileName: shadow_mesh.obj
   metadataFileName: shadow_metadata.json

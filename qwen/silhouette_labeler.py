@@ -9,6 +9,7 @@ from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
 
 MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"
+GENERATION_MAX_SECONDS = 20.0
 
 model = None
 processor = None
@@ -54,7 +55,7 @@ def unload_labeler():
 
 def clean_label(text: str) -> str:
     text = text.strip()
-    text = re.sub(r"[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ ]", " ", text)
+    text = re.sub(r"[^0-9A-Za-z가-힣]", " ", text)
     words = [
         word
         for word in text.split()
@@ -89,7 +90,7 @@ def parse_label(text: str) -> str:
         if label:
             return label
 
-    return ""
+    return clean_label(text)
 
 
 def extract_label(data) -> str:
@@ -121,13 +122,14 @@ def infer_silhouette_label(
         qwen_model, qwen_processor = get_labeler(device)
 
     prompt = (
-        "이 실루엣 이미지를 보고 JSON 객체 하나만 반환하세요. 키는 반드시 label 하나만 사용하세요. "
-        "이 이미지는 손 그림자 놀이에서 나온 실루엣이므로 손가락처럼 보이는 부분도 의도한 그림자 인형의 일부일 수 있습니다. "
-        "손 자체가 아니라 전체 실루엣이 표현하려는 동물, 식물, 과일, 사물 중 가장 가까운 대상을 추론하세요. "
-        "label 값은 간단한 한국어 명사 하나로만 작성하세요. "
-        "가능하면 사람이 아닌 대상을 고르세요. "
-        "전체 실루엣이 명백히 실제 손일 때를 제외하고 손, 손가락, 손바닥, 팔 같은 신체 부위 라벨은 피하세요. "
-        "예시, 마크다운, 분류명, 설명, 추가 키는 절대 포함하지 마세요."
+        "이 검은 실루엣 이미지를 보고 JSON 객체 하나만 반환하세요. "
+        "반드시 label 키 하나만 사용하세요. "
+        "이미지는 손 그림자에서 얻은 전체 실루엣이며, 사람 팔이나 손가락 일부가 보여도 전체 외곽이 닮은 대상을 추론하세요. "
+        "대상은 동물, 식물, 사물, 자연물 중 가장 가까운 것으로 고르세요. "
+        "label 값은 짧은 한국어 명사 하나로만 작성하세요. "
+        "사람, 손, 팔, 그림자 같은 촬영 과정 설명은 피하세요. "
+        "예시나 마크다운, 분류명, 설명은 포함하지 마세요. "
+        "출력 예: {\"label\":\"나무\"}"
     )
     messages = [
         {
@@ -157,6 +159,7 @@ def infer_silhouette_label(
         generated_ids = qwen_model.generate(
             **inputs,
             max_new_tokens=32,
+            max_time=GENERATION_MAX_SECONDS,
             do_sample=False,
         )
 

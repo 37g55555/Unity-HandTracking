@@ -20,6 +20,8 @@ namespace ShadowPrototype
         [SerializeField, Range(0, 255)] private int brightnessThreshold = 170;
         [SerializeField, Range(0, 255)] private int maxSaturation = 255;
         [SerializeField, Min(0.0f)] private float minBlobArea = 40.0f;
+        [SerializeField, Min(0.0f)] private float backgroundCaptureSeconds = 1.0f;
+        [SerializeField, Range(0, 255)] private int brighteningThreshold = 45;
         [SerializeField] private bool mirrorViewportX;
 
         [HideInInspector, SerializeField] private bool launchOnStart = true;
@@ -30,7 +32,8 @@ namespace ShadowPrototype
         [HideInInspector, SerializeField] private int udpPort = 5056;
         [HideInInspector, SerializeField] private int cameraWidth = 1280;
         [HideInInspector, SerializeField] private int cameraHeight = 720;
-        [HideInInspector, SerializeField] private int cameraFps = 60;
+        [HideInInspector, SerializeField] private int cameraFps = 120;
+        [HideInInspector, SerializeField, Min(1)] private int cameraBufferSize = 1;
         [HideInInspector, SerializeField] private float maxBlobAreaRatio = 0.2f;
         [HideInInspector, SerializeField] private bool showPreview = true;
         [HideInInspector, SerializeField] private bool mirrorViewportY;
@@ -38,7 +41,7 @@ namespace ShadowPrototype
         [HideInInspector, SerializeField] private Camera targetCamera;
         [HideInInspector, SerializeField] private float followPlaneZ = 0.05f;
         [HideInInspector, SerializeField] private Vector3 worldOffset;
-        [SerializeField, Min(0.0f)] private float followSmoothing = 60.0f;
+        [SerializeField, Min(0.0f)] private float followSmoothing = 140.0f;
         [HideInInspector, SerializeField] private bool startHiddenUntilFirstLight = true;
         [HideInInspector, SerializeField] private bool hideWhenLightLost;
         [HideInInspector, SerializeField] private float lightLostTimeoutSeconds = 0.35f;
@@ -151,10 +154,13 @@ namespace ShadowPrototype
                 $"--width {cameraWidth} " +
                 $"--height {cameraHeight} " +
                 $"--fps {cameraFps} " +
+                $"--camera-buffer-size {cameraBufferSize} " +
                 $"--threshold {brightnessThreshold} " +
                 $"--max-saturation {maxSaturation} " +
                 $"--min-area {minBlobArea.ToString(CultureInfo.InvariantCulture)} " +
-                $"--max-area-ratio {maxBlobAreaRatio.ToString(CultureInfo.InvariantCulture)}" +
+                $"--max-area-ratio {maxBlobAreaRatio.ToString(CultureInfo.InvariantCulture)} " +
+                $"--background-seconds {backgroundCaptureSeconds.ToString(CultureInfo.InvariantCulture)} " +
+                $"--brightening-threshold {brighteningThreshold}" +
                 previewArgument;
 
             var startInfo = new ProcessStartInfo
@@ -214,9 +220,12 @@ namespace ShadowPrototype
                 cameraWidth.ToString(CultureInfo.InvariantCulture),
                 cameraHeight.ToString(CultureInfo.InvariantCulture),
                 cameraFps.ToString(CultureInfo.InvariantCulture),
+                cameraBufferSize.ToString(CultureInfo.InvariantCulture),
                 brightnessThreshold.ToString(CultureInfo.InvariantCulture),
                 maxSaturation.ToString(CultureInfo.InvariantCulture),
                 minBlobArea.ToString(CultureInfo.InvariantCulture),
+                backgroundCaptureSeconds.ToString(CultureInfo.InvariantCulture),
+                brighteningThreshold.ToString(CultureInfo.InvariantCulture),
                 maxBlobAreaRatio.ToString(CultureInfo.InvariantCulture),
                 showPreview.ToString());
         }

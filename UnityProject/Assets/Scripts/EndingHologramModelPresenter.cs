@@ -61,6 +61,10 @@ namespace ShadowPrototype
         [SerializeField] private AudioSource pokeAudioSource;
         [SerializeField] private AudioClip[] pokeAudioClips = new AudioClip[0];
         [SerializeField, Range(0.0f, 1.0f)] private float pokeAudioVolume = 1.0f;
+        [SerializeField, Min(1)] private int completionPokeCount = 3;
+        [SerializeField, Min(0.0f)] private float completionVideoStartDelaySeconds = 1.0f;
+        [SerializeField] private EndingVideoSequenceController endingVideoSequenceController;
+        [SerializeField] private EndingHologramVideoPlayer endingHologramVideoPlayer;
 
         private GameObject rigRoot;
         private Transform modelRoot;
@@ -84,6 +88,7 @@ namespace ShadowPrototype
         private Vector2Int lastLayoutSize;
         private Coroutine pokeRoutine;
         private Coroutine pokeAudioRoutine;
+        private Coroutine completionVideoRoutine;
         private bool isVisible;
         private bool hasPokeStart;
         private float pokeStartDepth;
@@ -96,7 +101,8 @@ namespace ShadowPrototype
         private bool pokeInputEnabled = true;
         private float lastTriggeredPokeDepth;
         private int forwardPokeFrameCount;
-        private int lastPokeClipIndex = -1;
+        private int successfulPokeCount;
+        private bool completionVideosTriggered;
 
         private void Awake()
         {
@@ -139,6 +145,8 @@ namespace ShadowPrototype
         {
             pokeFingertipLandmarkIndex = Mathf.Clamp(pokeFingertipLandmarkIndex, 0, LandmarksPerHand - 1);
             pokeRequiredForwardFrames = Mathf.Max(1, pokeRequiredForwardFrames);
+            completionPokeCount = Mathf.Max(1, completionPokeCount);
+            completionVideoStartDelaySeconds = Mathf.Max(0.0f, completionVideoStartDelaySeconds);
         }
 
         private void Update()
@@ -178,6 +186,11 @@ namespace ShadowPrototype
 
         public void Show()
         {
+            if (Application.isPlaying)
+            {
+                ResetCompletionState();
+            }
+
             ShowPanels(true, true, true);
         }
 
@@ -223,6 +236,7 @@ namespace ShadowPrototype
         {
             StopPokeRoutine();
             StopPokeAudioRoutine();
+            StopCompletionVideoRoutine();
             SetActiveModel(false);
             ResetPokeTracking();
             SetVisible(false);
@@ -738,6 +752,11 @@ namespace ShadowPrototype
             {
                 pokeAudioSource = GetComponent<AudioSource>();
             }
+
+            if (endingHologramVideoPlayer == null)
+            {
+                endingHologramVideoPlayer = GetComponent<EndingHologramVideoPlayer>();
+            }
         }
 
         private void StartMediaPipeReceiverIfNeeded()
@@ -841,6 +860,89 @@ namespace ShadowPrototype
             }
 
             pokeRoutine = StartCoroutine(PokeModelRoutine(modelHoldSeconds));
+            successfulPokeCount++;
+            TryTriggerCompletionVideos(modelHoldSeconds);
+        }
+
+        private void TryTriggerCompletionVideos(float delaySeconds)
+        {
+            if (completionVideosTriggered || successfulPokeCount < completionPokeCount)
+            {
+                return;
+            }
+
+            completionVideosTriggered = true;
+            pokeInputEnabled = false;
+            ResetPokeTracking();
+
+            StopCompletionVideoRoutine();
+            completionVideoRoutine = StartCoroutine(PlayCompletionVideosAfterDelay(delaySeconds));
+        }
+
+        private IEnumerator PlayCompletionVideosAfterDelay(float delaySeconds)
+        {
+            float totalDelaySeconds = Mathf.Max(0.0f, delaySeconds) + completionVideoStartDelaySeconds;
+            if (totalDelaySeconds > 0.0f)
+            {
+                yield return new WaitForSeconds(totalDelaySeconds);
+            }
+
+            SetActiveModel(false);
+            SetVisible(false);
+
+            EndingVideoSequenceController controller = ResolveEndingVideoSequenceController();
+            if (controller != null)
+            {
+                controller.PlayPostInteractionVideos(endingHologramVideoPlayer);
+            }
+            else
+            {
+                Debug.LogWarning("EndingHologramModelPresenter: main EndingVideoSequenceController was not found.");
+            }
+
+            completionVideoRoutine = null;
+        }
+
+        private void StopCompletionVideoRoutine()
+        {
+            if (completionVideoRoutine == null)
+            {
+                return;
+            }
+
+            StopCoroutine(completionVideoRoutine);
+            completionVideoRoutine = null;
+        }
+
+        private void ResetCompletionState()
+        {
+            successfulPokeCount = 0;
+            completionVideosTriggered = false;
+        }
+
+        private EndingVideoSequenceController ResolveEndingVideoSequenceController()
+        {
+            if (endingVideoSequenceController != null && endingVideoSequenceController.HasFullscreenVideoPlayer)
+            {
+                return endingVideoSequenceController;
+            }
+
+            EndingVideoSequenceController[] controllers = FindObjectsOfType<EndingVideoSequenceController>();
+            for (int i = 0; i < controllers.Length; i++)
+            {
+                if (controllers[i] != null && controllers[i].HasFullscreenVideoPlayer)
+                {
+                    endingVideoSequenceController = controllers[i];
+                    return endingVideoSequenceController;
+                }
+            }
+
+            if (endingVideoSequenceController == null && controllers.Length > 0)
+            {
+                endingVideoSequenceController = controllers[0];
+            }
+
+            return endingVideoSequenceController;
         }
 
         private IEnumerator PokeModelRoutine(float modelHoldSeconds)
@@ -985,38 +1087,14 @@ namespace ShadowPrototype
                 return null;
             }
 
-            int skipIndex = availableCount > 1 ? lastPokeClipIndex : -1;
-            if (skipIndex < 0 ||
-                skipIndex >= pokeAudioClips.Length ||
-                pokeAudioClips[skipIndex] == null)
+            int preferredIndex = Mathf.Clamp(successfulPokeCount, 0, pokeAudioClips.Length - 1);
+            for (int offset = 0; offset < pokeAudioClips.Length; offset++)
             {
-                skipIndex = -1;
-            }
+                int index = (preferredIndex + offset) % pokeAudioClips.Length;
 
-            int randomOrdinal = Random.Range(0, availableCount - (skipIndex >= 0 ? 1 : 0));
-            int ordinal = 0;
-            for (int i = 0; i < pokeAudioClips.Length; i++)
-            {
-                if (pokeAudioClips[i] == null || i == skipIndex)
+                if (pokeAudioClips[index] != null)
                 {
-                    continue;
-                }
-
-                if (ordinal == randomOrdinal)
-                {
-                    lastPokeClipIndex = i;
-                    return pokeAudioClips[i];
-                }
-
-                ordinal++;
-            }
-
-            lastPokeClipIndex = -1;
-            for (int i = 0; i < pokeAudioClips.Length; i++)
-            {
-                if (pokeAudioClips[i] != null)
-                {
-                    return pokeAudioClips[i];
+                    return pokeAudioClips[index];
                 }
             }
 

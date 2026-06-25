@@ -699,8 +699,8 @@ MonoBehaviour:
   scriptName: python\MediaPipeTracking.py
   scriptArguments: --camera 1 --width 640 --height 360 --fps 30 --camera-buffer-size
     1 --camera-auto-exposure 0.75 --camera-brightness 180 --camera-gain 80 --camera-contrast
-    110 --allow-black-frames --frame-gain 2 --frame-brightness-offset 45 --max-hands
-    4 --max-output-hands 2 --person-filter --person-filter-fallback-hands --preview
+    110 --allow-black-frames --frame-gain 2 --frame-brightness-offset 45 --frame-zoom
+    1.6 --preview
 --- !u!1 &510000000
 GameObject:
   m_ObjectHideFlags: 0

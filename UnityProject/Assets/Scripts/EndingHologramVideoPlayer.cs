@@ -23,6 +23,7 @@ namespace ShadowPrototype
         [SerializeField] private int sortingOrder = 5200;
         [SerializeField] private bool autoApplyPanelLayout;
         [SerializeField] private bool showFrontPanel = true;
+        [SerializeField] private bool flipFrontPanelHorizontally;
         [SerializeField] private bool showLeftPanel = true;
         [SerializeField] private bool showRightPanel = true;
         [SerializeField] private Vector2Int renderTextureSize = DefaultRenderTextureSize;
@@ -101,6 +102,16 @@ namespace ShadowPrototype
             }
 
             yield return PlayRoutine();
+        }
+
+        public IEnumerator PlayAndWaitRoutine(string nextVideoRelativePath)
+        {
+            if (!string.IsNullOrWhiteSpace(nextVideoRelativePath))
+            {
+                videoRelativePath = nextVideoRelativePath;
+            }
+
+            yield return PlayAndWaitRoutine();
         }
 
         public void SkipPlayback()
@@ -250,9 +261,9 @@ namespace ShadowPrototype
             videoPlayer.SetDirectAudioMute(0, audioVolume <= 0.0f);
             videoPlayer.SetDirectAudioVolume(0, audioVolume);
 
-            AssignPanelTexture(frontPanel);
-            AssignPanelTexture(leftPanel);
-            AssignPanelTexture(rightPanel);
+            AssignPanelTexture(frontPanel, flipFrontPanelHorizontally);
+            AssignPanelTexture(leftPanel, false);
+            AssignPanelTexture(rightPanel, false);
             ApplyPanelVisibility();
             return true;
         }
@@ -261,9 +272,9 @@ namespace ShadowPrototype
         {
             EnsureOverlay();
             EnsureVideoPlayer();
-            AssignPanelEditorPreview(frontPanel);
-            AssignPanelEditorPreview(leftPanel);
-            AssignPanelEditorPreview(rightPanel);
+            AssignPanelEditorPreview(frontPanel, flipFrontPanelHorizontally);
+            AssignPanelEditorPreview(leftPanel, false);
+            AssignPanelEditorPreview(rightPanel, false);
             ApplyPanelVisibility();
             ApplyTargetDisplay();
 
@@ -458,12 +469,15 @@ namespace ShadowPrototype
             renderTexture.Create();
         }
 
-        private void AssignPanelTexture(RawImage panel)
+        private void AssignPanelTexture(RawImage panel, bool flipHorizontally)
         {
             if (panel != null)
             {
                 panel.texture = renderTexture;
                 panel.color = Color.white;
+                panel.uvRect = flipHorizontally
+                    ? new Rect(1.0f, 0.0f, -1.0f, 1.0f)
+                    : new Rect(0.0f, 0.0f, 1.0f, 1.0f);
             }
         }
 
@@ -482,7 +496,7 @@ namespace ShadowPrototype
             }
         }
 
-        private void AssignPanelEditorPreview(RawImage panel)
+        private void AssignPanelEditorPreview(RawImage panel, bool flipHorizontally)
         {
             if (panel == null)
             {
@@ -491,6 +505,9 @@ namespace ShadowPrototype
 
             panel.texture = null;
             panel.color = editorPreviewColor;
+            panel.uvRect = flipHorizontally
+                ? new Rect(1.0f, 0.0f, -1.0f, 1.0f)
+                : new Rect(0.0f, 0.0f, 1.0f, 1.0f);
         }
 
         private string ResolveVideoUrl()

@@ -12,7 +12,6 @@ namespace ShadowPrototype
         private const int IndexTipLandmark = 8;
         private const float TrackedFrameWidth = 1920.0f;
 
-        private static readonly int[] PalmLandmarkIndices = { 0, 5, 9, 13, 17 };
         private static readonly Vector2 FallbackSpinProgressGaugeSize = new Vector2(300.0f, 18.0f);
 
         [Header("References")]
@@ -55,25 +54,22 @@ namespace ShadowPrototype
         [Header("Main Display Hint Video")]
         [SerializeField] private bool showMainDisplayHintVideo = true;
 
-        [Header("Palm Fly Away")]
+        [Header("Fingertip Fly Away")]
         [SerializeField] private bool playPostSpinVideoBeforeFlyAway = true;
         [SerializeField] private string postSpinVideoRelativePath = "HologramVideos/starChar_1_2_tts.mp4";
+        [SerializeField] private Mission3MainDisplayHintVideo.InstructionVideo postSpinMainDisplayInstructionAfterVideo =
+            Mission3MainDisplayHintVideo.InstructionVideo.Swipe;
         [SerializeField, Min(0.0f)] private float postSpinVideoDelaySeconds = 1.0f;
         [SerializeField] private bool replaceTargetBeforePostSpinVideo = true;
         [SerializeField] private string postSpinReplacementResourcePath = "Models/Weeping_Star";
         [SerializeField] private bool destroyPreviousTargetAfterReplacement = true;
-        [SerializeField, Min(1.0f)] private float palmSwipeThresholdPixels = 260.0f;
-        [SerializeField, Min(1.0f)] private float palmMinimumSwipeSpeedPixelsPerSecond = 850.0f;
-        [SerializeField, Min(0.01f)] private float palmSwipeWindowSeconds = 0.35f;
-        [SerializeField, Min(0.0f)] private float palmSmoothingSpeed = 16.0f;
-        [SerializeField, Min(0.0f)] private float minimumPalmSpanPixels = 80.0f;
         [SerializeField, Min(0.0f)] private float flyAwayDurationSeconds = 0.65f;
         [SerializeField] private Vector3 flyAwayLocalOffset = new Vector3(-4.0f, 3.0f, 0.0f);
 
         [Header("Fly Away Instruction")]
         [SerializeField] private GameObject flyAwayInstructionObject;
         [SerializeField] private Text flyAwayInstructionText;
-        [SerializeField] private string flyAwayInstructionMessage = "스와이프하여 벽으로 돌려보내기";
+        [SerializeField] private string flyAwayInstructionMessage = "손끝으로 별을 돌려보내기";
 
         [Header("Completion")]
         [SerializeField] private string nextMainSceneName = "Mission4";
@@ -90,10 +86,6 @@ namespace ShadowPrototype
         private bool isReturningToZero;
         private bool canAcceptFlyAwayGesture;
         private bool isFlyingAway;
-        private bool hasSmoothedPalm;
-        private Vector2 smoothedPalmCenter;
-        private Vector2 palmSwipeStartCenter;
-        private float palmSwipeStartTime;
         private float returnToZeroSpeedDegreesPerSecond;
         private Coroutine returnToZeroRoutine;
         private Coroutine flyAwayRoutine;
@@ -131,7 +123,6 @@ namespace ShadowPrototype
                 mainDisplayHintVideoDismissed = false;
                 HideMainDisplayHintVideo();
                 ResetSwipeTracking();
-                ResetPalmTracking();
                 SetFlyAwayInstructionVisible(true);
                 SetSpinProgressGaugeVisible(false);
                 ShowMainDisplayHintVideoAfterPostSpinVideo();
@@ -141,7 +132,14 @@ namespace ShadowPrototype
                 SetFlyAwayInstructionVisible(false);
                 SetSpinProgressGaugeVisible(true);
                 mainDisplayHintVideoDismissed = false;
-                HideMainDisplayHintVideo();
+                if (showMainDisplayHintVideo && Mission3MainDisplayHintVideo.HasVisibleInstruction())
+                {
+                    mainDisplayHintVideoVisible = true;
+                }
+                else
+                {
+                    HideMainDisplayHintVideo();
+                }
             }
         }
 
@@ -164,15 +162,29 @@ namespace ShadowPrototype
             if (rotationTarget == null || mediaPipeReceiver == null)
             {
                 ResetSwipeTracking();
-                ResetPalmTracking();
                 return;
             }
 
             if (!TryGetFingertipPoint(out Vector2 fingertipPoint))
             {
                 ResetSwipeTracking();
+                return;
             }
-            else if (!spinLocked && !isFlyingAway && !isSpinning && !isReturningToZero)
+
+            if (isFlyingAway)
+            {
+                ResetSwipeTracking();
+                return;
+            }
+
+            if (canAcceptFlyAwayGesture && !isReturningToZero)
+            {
+                UpdateSmoothedFingertip(fingertipPoint);
+                DetectFingertipFlyAwayGesture();
+                return;
+            }
+
+            if (!spinLocked && !isSpinning && !isReturningToZero)
             {
                 UpdateSmoothedFingertip(fingertipPoint);
                 DetectSwipe();
@@ -181,27 +193,6 @@ namespace ShadowPrototype
             {
                 ResetSwipeTracking();
             }
-
-            if (isFlyingAway)
-            {
-                ResetPalmTracking();
-                return;
-            }
-
-            if (!canAcceptFlyAwayGesture || isReturningToZero)
-            {
-                ResetPalmTracking();
-                return;
-            }
-
-            if (!TryGetPalmCenter(out Vector2 palmCenter))
-            {
-                ResetPalmTracking();
-                return;
-            }
-
-            UpdateSmoothedPalm(palmCenter);
-            DetectPalmFlyAwayGesture();
         }
 
         private void OnValidate()
@@ -315,83 +306,6 @@ namespace ShadowPrototype
             return false;
         }
 
-        private bool TryGetPalmCenter(out Vector2 palmCenter)
-        {
-            palmCenter = Vector2.zero;
-            if (!mediaPipeReceiver.TryGetLatestLandmarks(out Vector3[] landmarks))
-            {
-                return false;
-            }
-
-            int handCount = Mathf.Min(
-                MaxHands,
-                landmarks.Length / LandmarksPerHand);
-
-            float bestSpan = 0.0f;
-            Vector2 bestCenter = Vector2.zero;
-            bool foundHand = false;
-
-            for (int handIndex = 0; handIndex < handCount; handIndex++)
-            {
-                if (!TryGetPalmForHand(landmarks, handIndex, out Vector2 center, out float span))
-                {
-                    continue;
-                }
-
-                if (span > bestSpan)
-                {
-                    bestSpan = span;
-                    bestCenter = center;
-                    foundHand = true;
-                }
-            }
-
-            if (!foundHand || bestSpan < minimumPalmSpanPixels)
-            {
-                return false;
-            }
-
-            palmCenter = bestCenter;
-            return true;
-        }
-
-        private bool TryGetPalmForHand(Vector3[] landmarks, int handIndex, out Vector2 center, out float span)
-        {
-            center = Vector2.zero;
-            span = 0.0f;
-
-            int startIndex = handIndex * LandmarksPerHand;
-            Vector2[] points = new Vector2[PalmLandmarkIndices.Length];
-
-            for (int i = 0; i < PalmLandmarkIndices.Length; i++)
-            {
-                int landmarkIndex = startIndex + PalmLandmarkIndices[i];
-                if (landmarkIndex < 0 || landmarkIndex >= landmarks.Length)
-                {
-                    return false;
-                }
-
-                Vector3 landmark = landmarks[landmarkIndex];
-                float x = mirrorHorizontal
-                    ? TrackedFrameWidth - landmark.x
-                    : landmark.x;
-                points[i] = new Vector2(x, landmark.y);
-                center += points[i];
-            }
-
-            center /= PalmLandmarkIndices.Length;
-
-            for (int i = 0; i < points.Length; i++)
-            {
-                for (int j = i + 1; j < points.Length; j++)
-                {
-                    span = Mathf.Max(span, Vector2.Distance(points[i], points[j]));
-                }
-            }
-
-            return true;
-        }
-
         private void UpdateSmoothedFingertip(Vector2 fingertipPoint)
         {
             if (!hasSmoothedFingertip)
@@ -461,11 +375,6 @@ namespace ShadowPrototype
             if (rotationTarget == null || spinLocked || isSpinning || isReturningToZero || isFlyingAway)
             {
                 return;
-            }
-
-            if (mainDisplayHintVideoVisible)
-            {
-                DismissMainDisplayHintVideo();
             }
 
             float maxSpinDegrees = maximumSpinRotations * 360.0f;
@@ -613,7 +522,6 @@ namespace ShadowPrototype
                 minimumReturnToZeroSpeedDegreesPerSecond,
                 currentSpinSpeed);
             ResetSwipeTracking();
-            ResetPalmTracking();
 
             if (returnToZeroRoutine != null)
             {
@@ -687,10 +595,11 @@ namespace ShadowPrototype
             canAcceptFlyAwayGesture = false;
             DismissMainDisplayHintVideo();
             ResetSwipeTracking();
-            ResetPalmTracking();
             SetSpinProgressGaugeVisible(false);
             ReplaceTargetBeforePostSpinVideo();
-            postSpinVideoPlayer.Play(postSpinVideoRelativePath);
+            postSpinVideoPlayer.Play(
+                postSpinVideoRelativePath,
+                postSpinMainDisplayInstructionAfterVideo);
             return true;
         }
 
@@ -745,61 +654,48 @@ namespace ShadowPrototype
             }
         }
 
-        private void UpdateSmoothedPalm(Vector2 palmCenter)
+        private void DetectFingertipFlyAwayGesture()
         {
-            if (!hasSmoothedPalm)
+            float now = Time.unscaledTime;
+            if (now < cooldownUntilTime)
             {
-                smoothedPalmCenter = palmCenter;
-                palmSwipeStartCenter = palmCenter;
-                palmSwipeStartTime = Time.unscaledTime;
-                hasSmoothedPalm = true;
+                swipeStartFingertip = smoothedFingertip;
+                swipeStartTime = now;
                 return;
             }
 
-            float blend = palmSmoothingSpeed <= 0.0f
-                ? 1.0f
-                : 1.0f - Mathf.Exp(-palmSmoothingSpeed * Time.unscaledDeltaTime);
-            smoothedPalmCenter = Vector2.Lerp(smoothedPalmCenter, palmCenter, blend);
-        }
-
-        private void DetectPalmFlyAwayGesture()
-        {
-            float now = Time.unscaledTime;
-            float elapsed = Mathf.Max(0.001f, now - palmSwipeStartTime);
-            Vector2 delta = smoothedPalmCenter - palmSwipeStartCenter;
+            float elapsed = Mathf.Max(0.001f, now - swipeStartTime);
+            Vector2 delta = smoothedFingertip - swipeStartFingertip;
             float distance = delta.magnitude;
             float speed = distance / elapsed;
 
-            if (elapsed <= palmSwipeWindowSeconds &&
-                distance >= palmSwipeThresholdPixels &&
-                speed >= palmMinimumSwipeSpeedPixelsPerSecond &&
-                IsUpLeftPalmSwipe(delta))
+            if (elapsed <= swipeWindowSeconds &&
+                distance >= swipeThresholdPixels &&
+                speed >= minimumSwipeSpeedPixelsPerSecond &&
+                IsRightToLeftFingertipSwipe(delta))
             {
                 StartFlyAway();
-                palmSwipeStartCenter = smoothedPalmCenter;
-                palmSwipeStartTime = now;
+                cooldownUntilTime = now + swipeCooldownSeconds;
+                swipeStartFingertip = smoothedFingertip;
+                swipeStartTime = now;
                 return;
             }
 
-            if (elapsed > palmSwipeWindowSeconds)
+            if (elapsed > swipeWindowSeconds)
             {
-                palmSwipeStartCenter = smoothedPalmCenter;
-                palmSwipeStartTime = now;
+                swipeStartFingertip = smoothedFingertip;
+                swipeStartTime = now;
             }
         }
 
-        private static bool IsUpLeftPalmSwipe(Vector2 delta)
+        private bool IsRightToLeftFingertipSwipe(Vector2 delta)
         {
-            if (delta.x >= 0.0f || delta.y <= 0.0f)
+            if (delta.x >= 0.0f)
             {
                 return false;
             }
 
-            float absX = Mathf.Abs(delta.x);
-            float absY = Mathf.Abs(delta.y);
-            float smaller = Mathf.Min(absX, absY);
-            float larger = Mathf.Max(absX, absY);
-            return larger <= smaller * 2.2f;
+            return IsDominantAxisSwipe(delta);
         }
 
         private void StartFlyAway()
@@ -897,11 +793,6 @@ namespace ShadowPrototype
         private void ResetSwipeTracking()
         {
             hasSmoothedFingertip = false;
-        }
-
-        private void ResetPalmTracking()
-        {
-            hasSmoothedPalm = false;
         }
 
         private Transform FindTransformRecursive(Transform root, string targetName)

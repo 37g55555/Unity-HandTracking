@@ -263,8 +263,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: bf42c8b22f14494c8b7db37c76714b27, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   stateManager: {fileID: 0}
   sortingOrder: 3500
   keywordResultFormat: "\uB9C8\uC9C0\uB9C9 \uADF8\uB9BC\uC790\uB294 {0} \uBAA8\uC591\uC744
@@ -287,8 +287,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 990e7c503d0044fab12219126bebef64, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   audioSource: {fileID: 100003}
   subtitleController: {fileID: 100004}
   narrationChain:
@@ -313,8 +313,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 39c51ad6f2964d8d974b8b469463019e, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   initialPhase: 0
   autoEnterInteractionAfterIntro: 1
   playOnStart: 1
@@ -327,10 +327,6 @@ MonoBehaviour:
   doorTransition: {fileID: 1746316735}
   interactionInstructionObject: {fileID: 900001}
   interactionInstructionTextComponent: {fileID: 900008}
-  interactionInstructionText: "\uC190\uC804\uB4F1\uC73C\uB85C \uAE38\uC744 \uBE44\uCD94\uBA74,
-    \uADF8\uB9BC\uC790\uAC00 \uADF8 \uBE5B\uC744 \uB530\uB77C\uAC11\uB2C8\uB2E4."
-  interactionInstructionTextColor: {r: 1, g: 1, b: 1, a: 1}
-  interactionInstructionFontSize: 36
   preInteractionTutorialObject: {fileID: 901500}
   preInteractionTutorialSeconds: 4
   completionAudioSource: {fileID: 100003}
@@ -445,8 +441,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_RenderShadows: 1
   m_RequiresDepthTextureOption: 2
   m_RequiresOpaqueTextureOption: 2
@@ -569,8 +565,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0cd44c1031e13a943bb63640046fad76, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_UiScaleMode: 1
   m_ReferencePixelsPerUnit: 100
   m_ScaleFactor: 1
@@ -592,8 +588,8 @@ MonoBehaviour:
   m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: dc42784cf147c0c48a680349fa168899, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_IgnoreReversedGraphics: 1
   m_BlockingObjects: 0
   m_BlockingMask:
@@ -636,8 +632,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 0
@@ -732,8 +728,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0cd44c1031e13a943bb63640046fad76, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_UiScaleMode: 1
   m_ReferencePixelsPerUnit: 100
   m_ScaleFactor: 1
@@ -802,8 +798,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 0.92}
   m_RaycastTarget: 0
@@ -877,8 +873,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0, g: 0, b: 0, a: 1}
   m_RaycastTarget: 0
@@ -958,8 +954,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1344c3c82d62a2a41a3576d8abb8e3ea, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 2100000, guid: d2e1fcf80c8048a5b77df7e8a3953c11, type: 2}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 0
@@ -1001,7 +997,7 @@ VideoPlayer:
   - {fileID: 0}
   m_DirectAudioVolumes:
   - 1
-  m_Url:
+  m_Url: 
   m_EnabledAudioTracks: 01
   m_DirectAudioMutes: 00
   m_ControlledAudioTrackCount: 1
@@ -1021,8 +1017,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a7010e8df57d42de935d7c3e7eb43b91, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   videoClip: {fileID: 32900000, guid: 87a0648a62944b318bfe8a81e2fd347f, type: 3}
   outputImage: {fileID: 901303}
   videoPlayer: {fileID: 901304}
@@ -1084,8 +1080,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0, g: 0, b: 0, a: 0.86}
   m_RaycastTarget: 0
@@ -1201,8 +1197,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0, g: 0, b: 0, a: 1}
   m_RaycastTarget: 0
@@ -1298,13 +1294,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 252613594}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 7, y: -3.55, z: 0}
+  m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
+  m_LocalPosition: {x: -7, y: -3.55, z: 0}
   m_LocalScale: {x: 0.3, y: 0.3, z: 0.3}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 180, z: 0}
 --- !u!212 &252613599
 SpriteRenderer:
   m_ObjectHideFlags: 0
@@ -1451,12 +1447,14 @@ MonoBehaviour:
   m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 47b643445bb74eb59dad9260c4f6bdbc, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   cameraDeviceIndex: 0
   brightnessThreshold: 170
   maxSaturation: 255
   minBlobArea: 40
+  backgroundCaptureSeconds: 1
+  brighteningThreshold: 45
   mirrorViewportX: 0
   launchOnStart: 0
   stopProcessOnDisable: 1
@@ -1466,7 +1464,8 @@ MonoBehaviour:
   udpPort: 5056
   cameraWidth: 1280
   cameraHeight: 720
-  cameraFps: 60
+  cameraFps: 120
+  cameraBufferSize: 1
   maxBlobAreaRatio: 0.2
   showPreview: 1
   mirrorViewportY: 0
@@ -1474,7 +1473,7 @@ MonoBehaviour:
   targetCamera: {fileID: 200002}
   followPlaneZ: 0.05
   worldOffset: {x: 0, y: 0, z: 0}
-  followSmoothing: 60
+  followSmoothing: 140
   startHiddenUntilFirstLight: 1
   hideWhenLightLost: 0
   lightLostTimeoutSeconds: 0.35
@@ -1559,8 +1558,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4a09957bddfd496092759bbe9e4b9b81, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   starColor: {r: 0.02, g: 0.02, b: 0.02, a: 1}
   outerRadius: 1
   innerRadius: 0.43
@@ -1590,10 +1589,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 65714b0a81354d2eae6b90265796f016, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   lightTransform: {fileID: 410000001}
-  followSmoothing: 4.5
+  followSmoothing: 32
   worldOffset: {x: 0, y: 0, z: 0}
   keepInitialZ: 1
 --- !u!114 &1746316735
@@ -1606,8 +1605,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0bdb18a2fb684b41a3ec5d17d578b1f8, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   shadowStar: {fileID: 1746316733}
   shadowMeshFilter: {fileID: 1746316731}
   door: {fileID: 252613597}

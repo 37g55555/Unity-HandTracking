@@ -32,9 +32,6 @@ namespace ShadowPrototype
         [Header("Interaction UI")]
         [SerializeField] private GameObject interactionInstructionObject;
         [SerializeField] private Text interactionInstructionTextComponent;
-        [SerializeField] private string interactionInstructionText = "\uC190\uC804\uB4F1\uC73C\uB85C \uAE38\uC744 \uBE44\uCD94\uBA74, \uADF8\uB9BC\uC790\uAC00 \uADF8 \uBE5B\uC744 \uB530\uB77C\uAC11\uB2C8\uB2E4.";
-        [SerializeField] private Color interactionInstructionTextColor = Color.white;
-        [SerializeField, Min(12)] private int interactionInstructionFontSize = 36;
 
         [Header("Pre Interaction Tutorial")]
         [SerializeField] private GameObject preInteractionTutorialObject;
@@ -298,13 +295,6 @@ namespace ShadowPrototype
         private void SetInteractionInstructionVisible(bool isVisible)
         {
             ResolveInstructionReferences();
-
-            if (interactionInstructionTextComponent != null)
-            {
-                interactionInstructionTextComponent.text = interactionInstructionText;
-                interactionInstructionTextComponent.color = interactionInstructionTextColor;
-                interactionInstructionTextComponent.fontSize = Mathf.Max(12, interactionInstructionFontSize);
-            }
 
             if (interactionInstructionObject != null)
             {

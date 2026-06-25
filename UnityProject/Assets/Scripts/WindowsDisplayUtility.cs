@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using UnityEngine;
 
 namespace ShadowPrototype
@@ -80,6 +81,12 @@ namespace ShadowPrototype
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetWindowTextLength(IntPtr hWnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
         private const int ShowWindowRestore = 9;
         private const uint SetWindowPosNoZOrder = 0x0004;
         private const uint SetWindowPosShowWindow = 0x0040;
@@ -141,6 +148,61 @@ namespace ShadowPrototype
                     int height = rect.bottom - rect.top;
                     int area = width * height;
                     if (width >= 320 && height >= 240 && area > bestWindowArea)
+                    {
+                        bestWindowHandle = candidateHandle;
+                        bestWindowArea = area;
+                    }
+
+                    return true;
+                },
+                IntPtr.Zero);
+
+            windowHandle = bestWindowHandle;
+            return windowHandle != IntPtr.Zero;
+        }
+
+        public static bool TryGetSecondaryVisibleWindowForCurrentProcess(IntPtr mainWindowHandle, out IntPtr windowHandle)
+        {
+            int currentProcessId = Process.GetCurrentProcess().Id;
+            IntPtr bestWindowHandle = IntPtr.Zero;
+            int bestWindowArea = 0;
+
+            EnumWindows(
+                (candidateHandle, _) =>
+                {
+                    if (candidateHandle == mainWindowHandle || !IsWindowVisible(candidateHandle))
+                    {
+                        return true;
+                    }
+
+                    GetWindowThreadProcessId(candidateHandle, out uint processId);
+                    if (processId != currentProcessId)
+                    {
+                        return true;
+                    }
+
+                    if (!GetWindowRect(candidateHandle, out NativeRect rect))
+                    {
+                        return true;
+                    }
+
+                    int width = rect.right - rect.left;
+                    int height = rect.bottom - rect.top;
+                    int area = width * height;
+                    if (width < 320 || height < 240)
+                    {
+                        return true;
+                    }
+
+                    string title = GetWindowTitle(candidateHandle);
+                    if (title.IndexOf("Unity Secondary Display", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        bestWindowHandle = candidateHandle;
+                        bestWindowArea = int.MaxValue;
+                        return false;
+                    }
+
+                    if (area > bestWindowArea)
                     {
                         bestWindowHandle = candidateHandle;
                         bestWindowArea = area;
@@ -244,6 +306,19 @@ namespace ShadowPrototype
                 rect.top,
                 rect.right - rect.left,
                 rect.bottom - rect.top);
+        }
+
+        private static string GetWindowTitle(IntPtr windowHandle)
+        {
+            int titleLength = GetWindowTextLength(windowHandle);
+            if (titleLength <= 0)
+            {
+                return string.Empty;
+            }
+
+            var builder = new StringBuilder(titleLength + 1);
+            GetWindowText(windowHandle, builder, builder.Capacity);
+            return builder.ToString();
         }
 
         private static int ParseDisplayNumber(string deviceName)

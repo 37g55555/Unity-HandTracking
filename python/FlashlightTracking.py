@@ -1,10 +1,11 @@
 import argparse
 import socket
+import time
 
 import cv2
 import numpy as np
 
-from camera_utils import open_camera
+from camera_utils import open_latest_frame_camera
 from preview_window_utils import (
     configure_preview_window,
     get_foreground_window,
@@ -21,15 +22,62 @@ def log(message):
     print(message, flush=True)
 
 
-def find_brightest_white_blob(frame, threshold, max_saturation, min_area, max_area_ratio):
+def capture_background(cap, seconds, show_preview):
+    started_at = time.monotonic()
+    frames = []
+    log(f"[INFO] Capturing flashlight background for {seconds:.1f}s.")
+
+    while True:
+        success, frame = cap.read(copy_frame=show_preview)
+        if not success or frame is None:
+            continue
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        frames.append(hsv[:, :, 2].astype(np.float32))
+
+        if show_preview:
+            display = frame.copy()
+            remaining = max(0.0, seconds - (time.monotonic() - started_at))
+            cv2.putText(
+                display,
+                f"Capturing background: {remaining:.1f}s",
+                (24, 48),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                (0, 255, 255),
+                2,
+            )
+            cv2.imshow(PREVIEW_WINDOW_NAME, display)
+            if cv2.waitKey(1) & 0xFF == QUIT_KEY:
+                raise KeyboardInterrupt
+
+        if time.monotonic() - started_at >= seconds and frames:
+            break
+
+    background = np.mean(frames, axis=0).astype(np.float32)
+    log(f"[OK] Flashlight background captured from {len(frames)} frame(s).")
+    return background
+
+
+def find_brightest_white_blob(
+    frame,
+    threshold,
+    max_saturation,
+    min_area,
+    max_area_ratio,
+    background_value,
+    brightening_threshold=45,
+):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    saturation = hsv[:, :, 1]
     value = hsv[:, :, 2]
-    mask = cv2.inRange(hsv, (0, 0, threshold), (179, max_saturation, 255))
-    if cv2.countNonZero(mask) <= 0:
-        brightest_value = int(value.max())
-        if brightest_value >= 50:
-            adaptive_threshold = max(40, min(int(threshold), brightest_value - 20))
-            mask = cv2.inRange(value, adaptive_threshold, 255)
+
+    mask = np.zeros_like(value, dtype=np.uint8)
+    if background_value is not None and background_value.shape == value.shape:
+        brightened = (value.astype(np.float32) - background_value) >= float(brightening_threshold)
+        bright_enough = value >= int(threshold)
+        saturation_ok = saturation <= int(max_saturation)
+        mask[brightened & bright_enough & saturation_ok] = 255
 
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
@@ -68,17 +116,21 @@ def run_tracking(
     width,
     height,
     fps,
+    camera_buffer_size,
     threshold,
     max_saturation,
     min_area,
     max_area_ratio,
+    background_seconds,
+    brightening_threshold,
     show_preview,
 ):
-    cap = open_camera(
+    cap = open_latest_frame_camera(
         camera_id,
         width=width,
         height=height,
         fps=fps,
+        buffer_size=camera_buffer_size,
         allow_black_frames=True,
         log=log,
     )
@@ -94,9 +146,11 @@ def run_tracking(
         cv2.namedWindow(PREVIEW_WINDOW_NAME, cv2.WINDOW_NORMAL)
         configure_preview_window(cv2, PREVIEW_WINDOW_NAME, restore_focus_window)
 
+    background_value = capture_background(cap, max(0.0, background_seconds), show_preview)
+
     try:
         while True:
-            success, frame = cap.read()
+            success, frame = cap.read(copy_frame=show_preview)
             if not success or frame is None:
                 continue
 
@@ -106,6 +160,8 @@ def run_tracking(
                 max_saturation,
                 min_area,
                 max_area_ratio,
+                background_value,
+                brightening_threshold,
             )
 
             if detection is not None:
@@ -143,11 +199,14 @@ def main():
     parser.add_argument("--udp-port", type=int, default=5056)
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
-    parser.add_argument("--fps", type=int, default=60)
+    parser.add_argument("--fps", type=int, default=120)
+    parser.add_argument("--camera-buffer-size", type=int, default=1)
     parser.add_argument("--threshold", type=int, default=245)
     parser.add_argument("--max-saturation", type=int, default=120)
     parser.add_argument("--min-area", type=float, default=120.0)
     parser.add_argument("--max-area-ratio", type=float, default=0.2)
+    parser.add_argument("--background-seconds", type=float, default=1.0)
+    parser.add_argument("--brightening-threshold", type=int, default=45)
     parser.add_argument("--show", action="store_true")
     args = parser.parse_args()
 
@@ -157,10 +216,13 @@ def main():
         width=args.width,
         height=args.height,
         fps=args.fps,
+        camera_buffer_size=args.camera_buffer_size,
         threshold=args.threshold,
         max_saturation=args.max_saturation,
         min_area=args.min_area,
         max_area_ratio=args.max_area_ratio,
+        background_seconds=args.background_seconds,
+        brightening_threshold=args.brightening_threshold,
         show_preview=args.show,
     )
 

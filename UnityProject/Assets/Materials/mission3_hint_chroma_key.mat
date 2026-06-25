@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: mission1_tutorial_chroma_key
+  m_Name: mission3_hint_chroma_key
   m_Shader: {fileID: 4800000, guid: 3ad2441530b54d449a3409309cc7916e, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
@@ -31,21 +31,21 @@ Material:
     m_Ints: []
     m_Floats:
     - _ColorMask: 15
-    - _Softness: 0.16
-    - _Softness2: 0.16
-    - _SpillReduction: 0.65
+    - _Softness: 0.035
+    - _Softness2: 0.035
+    - _SpillReduction: 0.2
     - _Stencil: 0
     - _StencilComp: 8
     - _StencilOp: 0
     - _StencilReadMask: 255
     - _StencilWriteMask: 255
-    - _Threshold: 0.24
-    - _Threshold2: 0.24
+    - _Threshold: 0.055
+    - _Threshold2: 0.045
     - _UseUIAlphaClip: 0
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
-    - _KeyColor: {r: 0.7961, g: 0.1725, b: 0.6196, a: 1}
-    - _KeyColor2: {r: 0.9529, g: 0.2667, b: 0.6431, a: 1}
+    - _KeyColor: {r: 0.0196, g: 0.0196, b: 0.0196, a: 1}
+    - _KeyColor2: {r: 0, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []
 --- !u!114 &3087245180933354772
 MonoBehaviour:

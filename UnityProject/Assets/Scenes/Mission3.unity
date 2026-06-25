@@ -359,6 +359,10 @@ MonoBehaviour:
   hintVideoObject: {fileID: 9100000}
   tutorialVideoPlayer: {fileID: 9100205}
   hideOnAwake: 1
+  turn5VideoClip: {fileID: 32900000, guid: a8d917caf21a4511a9a16dd6d75a1ecb,
+    type: 3}
+  swipeVideoClip: {fileID: 32900000, guid: df367f6044f0496090dfb5a3b9d7ca56,
+    type: 3}
 --- !u!1 &200000
 GameObject:
   m_ObjectHideFlags: 0
@@ -917,13 +921,13 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 9100100}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
   m_Name:
   m_EditorClassIdentifier:
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0.92}
+  m_Color: {r: 1, g: 1, b: 1, a: 0}
   m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -999,7 +1003,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1344c3c82d62a2a41a3576d8abb8e3ea, type: 3}
   m_Name:
   m_EditorClassIdentifier:
-  m_Material: {fileID: 2100000, guid: 67ec9d962fa14844a8d69c6bec542e45, type: 2}
+  m_Material: {fileID: 2100000, guid: 44076e9b42404edca666796d40a0c7aa, type: 2}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
@@ -1022,7 +1026,7 @@ VideoPlayer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 9100200}
   m_Enabled: 1
-  m_VideoClip: {fileID: 32900000, guid: 721d20395ccaca446bb923588ac5ef03, type: 3}
+  m_VideoClip: {fileID: 32900000, guid: df367f6044f0496090dfb5a3b9d7ca56, type: 3}
   m_TargetCameraAlpha: 1
   m_TargetCamera3DLayout: 0
   m_TargetCamera: {fileID: 0}
@@ -1060,7 +1064,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a7010e8df57d42de935d7c3e7eb43b91, type: 3}
   m_Name:
   m_EditorClassIdentifier:
-  videoClip: {fileID: 32900000, guid: 721d20395ccaca446bb923588ac5ef03, type: 3}
+  videoClip: {fileID: 32900000, guid: df367f6044f0496090dfb5a3b9d7ca56, type: 3}
   outputImage: {fileID: 9100203}
   videoPlayer: {fileID: 9100204}
   renderTextureSize: {x: 1280, y: 720}

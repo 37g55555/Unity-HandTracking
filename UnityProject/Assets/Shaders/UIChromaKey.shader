@@ -5,8 +5,11 @@ Shader "ShadowPrototype/UI Chroma Key"
         [PerRendererData] _MainTex ("Texture", 2D) = "white" {}
         _Color ("Tint", Color) = (1,1,1,1)
         _KeyColor ("Key Color", Color) = (1,0,1,1)
+        _KeyColor2 ("Key Color 2", Color) = (1,0,1,1)
         _Threshold ("Threshold", Range(0,1)) = 0.22
+        _Threshold2 ("Threshold 2", Range(0,1)) = 0.22
         _Softness ("Softness", Range(0.001,1)) = 0.08
+        _Softness2 ("Softness 2", Range(0.001,1)) = 0.08
         _SpillReduction ("Spill Reduction", Range(0,1)) = 0.45
 
         _StencilComp ("Stencil Comparison", Float) = 8
@@ -77,8 +80,11 @@ Shader "ShadowPrototype/UI Chroma Key"
             sampler2D _MainTex;
             fixed4 _Color;
             fixed4 _KeyColor;
+            fixed4 _KeyColor2;
             float _Threshold;
+            float _Threshold2;
             float _Softness;
+            float _Softness2;
             float _SpillReduction;
             float4 _ClipRect;
 
@@ -96,10 +102,14 @@ Shader "ShadowPrototype/UI Chroma Key"
             {
                 fixed4 color = tex2D(_MainTex, IN.texcoord) * IN.color;
                 float keyDistance = distance(color.rgb, _KeyColor.rgb);
+                float keyDistance2 = distance(color.rgb, _KeyColor2.rgb);
                 float alpha = smoothstep(_Threshold, _Threshold + _Softness, keyDistance);
+                float alpha2 = smoothstep(_Threshold2, _Threshold2 + _Softness2, keyDistance2);
+                alpha = min(alpha, alpha2);
 
                 float spill = saturate(1.0 - alpha) * _SpillReduction;
-                color.rgb = saturate(color.rgb - _KeyColor.rgb * spill);
+                fixed3 spillColor = keyDistance <= keyDistance2 ? _KeyColor.rgb : _KeyColor2.rgb;
+                color.rgb = saturate(color.rgb - spillColor * spill);
                 color.a *= alpha;
 
                 #ifdef UNITY_UI_CLIP_RECT

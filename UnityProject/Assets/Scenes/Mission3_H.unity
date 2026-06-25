@@ -208,8 +208,7 @@ MonoBehaviour:
   scriptName: python\MediaPipeTracking.py
   scriptArguments: --camera 2 --fallback-cameras 1 --width 640 --height 480 --fps
     30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --frame-gain 2.0 --frame-brightness-offset
-    12 --max-hands 4 --max-output-hands 2 --person-filter --person-filter-fallback-hands
-    --preview
+    12 --frame-zoom 1.6 --preview
 --- !u!114 &202780834
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -252,20 +251,16 @@ MonoBehaviour:
   showMainDisplayHintVideo: 1
   playPostSpinVideoBeforeFlyAway: 1
   postSpinVideoRelativePath: HologramVideos/starChar_1_2_tts.mp4
+  postSpinMainDisplayInstructionAfterVideo: 2
   postSpinVideoDelaySeconds: 1
   replaceTargetBeforePostSpinVideo: 1
   postSpinReplacementResourcePath: Models/Weeping_Star
   destroyPreviousTargetAfterReplacement: 1
-  palmSwipeThresholdPixels: 260
-  palmMinimumSwipeSpeedPixelsPerSecond: 850
-  palmSwipeWindowSeconds: 0.35
-  palmSmoothingSpeed: 16
-  minimumPalmSpanPixels: 80
   flyAwayDurationSeconds: 0.65
   flyAwayLocalOffset: {x: -4, y: 3, z: 0}
   flyAwayInstructionObject: {fileID: 940000001}
   flyAwayInstructionText: {fileID: 940000003}
-  flyAwayInstructionMessage: "\uC2A4\uC640\uC774\uD504\uD558\uC5EC \uBCBD\uC73C\uB85C
+  flyAwayInstructionMessage: "\uC190\uB05D\uC73C\uB85C \uBCC4\uC744
     \uB3CC\uB824\uBCF4\uB0B4\uAE30"
   nextMainSceneName: Mission4
 --- !u!114 &202780835
@@ -294,6 +289,7 @@ MonoBehaviour:
   interactionBehavioursToEnableAfterVideo:
   - {fileID: 202780834}
   hidePanelsWhenNotPlaying: 1
+  mainDisplayInstructionAfterVideo: 1
   postVideoNarrationAudioSource: {fileID: 202780836}
   postVideoNarrationClip: {fileID: 8300000, guid: 350736251e214708b95d8c2b5e5e7be6,
     type: 3}

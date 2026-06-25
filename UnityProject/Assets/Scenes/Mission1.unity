@@ -896,9 +896,9 @@ MonoBehaviour:
   m_Texture: {fileID: 0}
   m_UVRect:
     serializedVersion: 2
-    x: 0
+    x: 0.02
     y: 0
-    width: 1
+    width: 0.86
     height: 1
 --- !u!328 &501204
 VideoPlayer:
@@ -1147,10 +1147,9 @@ MonoBehaviour:
   workingDirectory: C:\capstone\Shadow-to-3D-Generator
   scriptName: python\MediaPipeTracking.py
   scriptArguments: --camera 1 --width 640 --height 360 --fps 30 --camera-buffer-size
-    1 --camera-auto-exposure 0.75 --camera-brightness 180 --camera-gain 80 --camera-contrast
-    110 --allow-black-frames --frame-gain 2 --frame-brightness-offset 45 --max-hands
-    4 --max-output-hands 2 --person-filter --person-filter-fallback-hands --person-selection-mode
-    center --person-center-fallback-width 0.7 --person-center-fallback-height 1 --preview
+    1 --camera-auto-exposure 0.75 --camera-brightness 175 --camera-gain 60
+    --camera-contrast 100 --allow-black-frames --frame-gain 1.35 --frame-brightness-offset
+    12 --frame-zoom 1.6 --preview
 --- !u!114 &600008
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1223,6 +1222,8 @@ MonoBehaviour:
   outroShadowStarTargetPosition: {x: 0.95, y: -2.8}
   outroShadowStarTargetScale: 0.8
   mission2SceneTransitionDelaySeconds: 1
+  enableInteractionSkipKey: 1
+  interactionSkipKey: 115
   matchProgressFillRect: {fileID: 500201}
   matchThresholdMarker: {fileID: 500301}
   interactionInstructionText: "\uADF8\uB9BC\uC790\uB97C \uD615\uD0DC\uC5D0 \uB9DE\uCDB0\uC8FC\uC138\uC694."

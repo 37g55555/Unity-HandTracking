@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -14,8 +15,9 @@ namespace ShadowPrototype
 {
     public class PipelineManager : MonoBehaviour
     {
-        private const string DefaultCaptureCameraArguments = "--mode live --bg --camera 0 --camera-width 640 --camera-height 360 --camera-fps 30 --camera-buffer-size 1 --camera-auto-exposure 0.75 --no-frame-enhance --no-control-window";
+        private const string DefaultCaptureCameraArguments = "--mode live --bg --camera 0";
         private const string DefaultQwenServerArguments = "-m uvicorn app:app --host 127.0.0.1 --port 8000";
+        private const string DefaultFallbackKeywordOnQwenFailure = "알 수 없는 것";
         private const string ShadowCaptureProcessLabel = "ShadowCapture";
         private const string QwenServerProcessLabel = "Qwen";
         private const string ShadowContourFileName = "shadow_contour.png";
@@ -33,9 +35,19 @@ namespace ShadowPrototype
         [SerializeField] private string pythonExecutablePath = @"C:\Users\creal\miniconda3\envs\artifact\python.exe";
         [SerializeField] private string qwenWorkingDirectory = @"C:\capstone\Shadow-to-3D-Generator\qwen";
         [SerializeField] private string qwenServerArguments = DefaultQwenServerArguments;
+        [SerializeField] private string fallbackKeywordOnQwenFailure = DefaultFallbackKeywordOnQwenFailure;
         [SerializeField] private string captureWorkingDirectory = @"C:\capstone\Shadow-to-3D-Generator";
         [SerializeField] private string captureScriptName = @"python\ShadowMesh.py";
         [SerializeField] private string captureArguments = DefaultCaptureCameraArguments;
+
+        [Header("Capture Camera Settings")]
+        [SerializeField, Min(16)] private int captureCameraWidth = 640;
+        [SerializeField, Min(16)] private int captureCameraHeight = 360;
+        [SerializeField, Min(1)] private int captureCameraFps = 30;
+        [SerializeField, Min(1)] private int captureCameraBufferSize = 1;
+        [SerializeField] private float captureCameraAutoExposure = 0.75f;
+        [SerializeField] private bool captureFrameEnhance;
+        [SerializeField] private bool captureControlWindow;
 
         [SerializeField] private QwenClient qwenClient;
         [SerializeField] private GameStateManager stateManager;
@@ -270,22 +282,19 @@ namespace ShadowPrototype
             yield return EnsureQwenLabelerReady();
             if (!qwenServerReady)
             {
-                ShowPipelineStatus("Qwen API is not ready.");
-                keywordClassificationRoutine = null;
+                yield return ContinueAfterQwenFailureRoutine("Qwen API is not ready.");
                 yield break;
             }
 
             if (qwenClient == null)
             {
-                ShowPipelineStatus("Qwen client is not assigned.");
-                keywordClassificationRoutine = null;
+                yield return ContinueAfterQwenFailureRoutine("Qwen client is not assigned.");
                 yield break;
             }
 
             if (!qwenClient.IsLabelerReady)
             {
-                ShowPipelineStatus("Qwen labeler warmup failed; keyword classification was skipped.");
-                keywordClassificationRoutine = null;
+                yield return ContinueAfterQwenFailureRoutine("Qwen labeler warmup failed; keyword classification was skipped.");
                 yield break;
             }
 
@@ -297,11 +306,23 @@ namespace ShadowPrototype
 
             if (!qwenClient.HasKeyword)
             {
-                ShowPipelineStatus("Qwen keyword classification did not return a keyword.");
-                keywordClassificationRoutine = null;
+                yield return ContinueAfterQwenFailureRoutine("Qwen keyword classification did not return a keyword.");
                 yield break;
             }
 
+            yield return ContinueToMission1AfterKeywordRoutine();
+        }
+
+        private IEnumerator ContinueAfterQwenFailureRoutine(string reason)
+        {
+            string fallbackKeyword = ResolveFallbackKeywordOnQwenFailure();
+            ShowPipelineStatus($"{reason} Continuing with fallback keyword: {fallbackKeyword}");
+            ApplyKeywordPresentation(fallbackKeyword);
+            yield return ContinueToMission1AfterKeywordRoutine();
+        }
+
+        private IEnumerator ContinueToMission1AfterKeywordRoutine()
+        {
             yield return WaitForOpeningVideoCompleteRoutine();
             ApplyPendingKeywordAfterOpeningVideo();
             yield return WaitForKeywordSubtitleTimingRoutine();
@@ -312,6 +333,13 @@ namespace ShadowPrototype
             stateManager?.OnMediaPipeTrackingStarted();
             LoadMission1Scene();
             keywordClassificationRoutine = null;
+        }
+
+        private string ResolveFallbackKeywordOnQwenFailure()
+        {
+            return string.IsNullOrWhiteSpace(fallbackKeywordOnQwenFailure)
+                ? DefaultFallbackKeywordOnQwenFailure
+                : fallbackKeywordOnQwenFailure.Trim();
         }
 
         private IEnumerator HideKeywordSubtitleRoutine()
@@ -494,7 +522,65 @@ namespace ShadowPrototype
 
         private void LaunchCaptureProcess()
         {
-            LaunchPythonScriptInTerminal(ShadowCaptureProcessLabel, captureWorkingDirectory, captureScriptName, captureArguments);
+            LaunchPythonScriptInTerminal(
+                ShadowCaptureProcessLabel,
+                captureWorkingDirectory,
+                captureScriptName,
+                BuildCaptureArguments());
+        }
+
+        private string BuildCaptureArguments()
+        {
+            var argumentsBuilder = new StringBuilder();
+            AppendArguments(argumentsBuilder, captureArguments);
+            AppendArgument(argumentsBuilder, "--camera-width", Mathf.Max(16, captureCameraWidth));
+            AppendArgument(argumentsBuilder, "--camera-height", Mathf.Max(16, captureCameraHeight));
+            AppendArgument(argumentsBuilder, "--camera-fps", Mathf.Max(1, captureCameraFps));
+            AppendArgument(argumentsBuilder, "--camera-buffer-size", Mathf.Max(1, captureCameraBufferSize));
+            AppendArgument(argumentsBuilder, "--camera-auto-exposure", captureCameraAutoExposure);
+
+            if (!captureFrameEnhance)
+            {
+                AppendArguments(argumentsBuilder, "--no-frame-enhance");
+            }
+
+            if (!captureControlWindow)
+            {
+                AppendArguments(argumentsBuilder, "--no-control-window");
+            }
+
+            return argumentsBuilder.ToString();
+        }
+
+        private static void AppendArgument(StringBuilder builder, string name, int value)
+        {
+            AppendArgument(builder, name, value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        private static void AppendArgument(StringBuilder builder, string name, float value)
+        {
+            AppendArgument(builder, name, value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        private static void AppendArgument(StringBuilder builder, string name, string value)
+        {
+            AppendArguments(builder, name);
+            AppendArguments(builder, value);
+        }
+
+        private static void AppendArguments(StringBuilder builder, string arguments)
+        {
+            if (builder == null || string.IsNullOrWhiteSpace(arguments))
+            {
+                return;
+            }
+
+            if (builder.Length > 0)
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(arguments.Trim());
         }
 
         private void SetupContourWatcher()

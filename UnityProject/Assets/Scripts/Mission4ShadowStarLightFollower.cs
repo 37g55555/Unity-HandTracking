@@ -5,7 +5,7 @@ namespace ShadowPrototype
     public sealed class Mission4ShadowStarLightFollower : MonoBehaviour
     {
         [SerializeField] private Transform lightTransform;
-        [SerializeField, Min(0.0f)] private float followSmoothing = 4.5f;
+        [SerializeField, Min(0.0f)] private float followSmoothing = 32.0f;
         [SerializeField] private Vector3 worldOffset;
         [SerializeField] private bool keepInitialZ = true;
 

@@ -102,6 +102,10 @@ namespace ShadowPrototype
         [Header("Scene Transition")]
         [SerializeField, Min(0.0f)] private float mission2SceneTransitionDelaySeconds = 1.0f;
 
+        [Header("Skip")]
+        [SerializeField] private bool enableInteractionSkipKey = true;
+        [SerializeField] private KeyCode interactionSkipKey = KeyCode.S;
+
         [Header("Scene UI")]
         [SerializeField] private RectTransform matchProgressFillRect;
         [SerializeField] private RectTransform matchThresholdMarker;
@@ -133,6 +137,7 @@ namespace ShadowPrototype
         private Coroutine introRevealRoutine;
         private bool hasIntroShadowRootRestPose;
         private Vector3 introShadowRootRestLocalScale = Vector3.one;
+        private Quaternion introShadowRootRestLocalRotation = Quaternion.identity;
         private bool hasIntroStarRestPose;
         private Vector3 introStarRestLocalPosition = new Vector3(0.95f, -2.8f, 0.0f);
         private Quaternion introStarRestLocalRotation = Quaternion.identity;
@@ -142,6 +147,7 @@ namespace ShadowPrototype
         private Material recreatedIntroStarMaterial;
 
         public Mission1Phase CurrentPhase => currentPhase;
+        public bool IsInteractionSkippable => currentPhase == Mission1Phase.Interaction && interactionStarted && !missionCompleted;
         public float LastMatchScore { get; private set; }
 
         private void Awake()
@@ -193,8 +199,16 @@ namespace ShadowPrototype
 
         private void Update()
         {
-            if (missionCompleted || currentPhase != Mission1Phase.Interaction || !interactionStarted)
+            if (!IsInteractionSkippable)
             {
+                return;
+            }
+
+            if (enableInteractionSkipKey &&
+                interactionSkipKey != KeyCode.None &&
+                Input.GetKeyDown(interactionSkipKey))
+            {
+                SkipInteraction();
                 return;
             }
 
@@ -325,6 +339,16 @@ namespace ShadowPrototype
             }
 
             LoadNextScene();
+        }
+
+        public void SkipInteraction()
+        {
+            if (!IsInteractionSkippable)
+            {
+                return;
+            }
+
+            CompleteMission();
         }
 
         private bool ResolveRuntimeReferences()
@@ -477,11 +501,13 @@ namespace ShadowPrototype
             CaptureIntroShadowRootRestPose(shadowRoot);
             Vector3 startPosition = shadowRoot != null ? shadowRoot.localPosition : Vector3.zero;
             Vector3 startScale = shadowRoot != null ? shadowRoot.localScale : Vector3.one;
+            Quaternion startRotation = shadowRoot != null ? shadowRoot.localRotation : Quaternion.identity;
             Vector3 targetPosition = new Vector3(
                 introShadowRootTargetPosition.x,
                 introShadowRootTargetPosition.y,
                 startPosition.z);
-            Vector3 targetScale = Vector3.one * Mathf.Max(0.01f, introShadowRootTargetScale);
+            Vector3 targetScale = ScalePreservingAspect(startScale, introShadowRootTargetScale);
+            Quaternion targetRotation = startRotation * Quaternion.Euler(0.0f, 180.0f, 0.0f);
             float duration = Mathf.Max(0.0f, introRevealSeconds);
 
             if (duration <= 0.0f)
@@ -491,6 +517,7 @@ namespace ShadowPrototype
                 {
                     shadowRoot.localPosition = targetPosition;
                     shadowRoot.localScale = targetScale;
+                    shadowRoot.localRotation = targetRotation;
                     centeredMeshInMission = false;
                 }
 
@@ -514,6 +541,7 @@ namespace ShadowPrototype
                 {
                     shadowRoot.localPosition = Vector3.LerpUnclamped(startPosition, targetPosition, eased);
                     shadowRoot.localScale = Vector3.LerpUnclamped(startScale, targetScale, eased);
+                    shadowRoot.localRotation = Quaternion.SlerpUnclamped(startRotation, targetRotation, eased);
                 }
 
                 yield return null;
@@ -524,6 +552,7 @@ namespace ShadowPrototype
             {
                 shadowRoot.localPosition = targetPosition;
                 shadowRoot.localScale = targetScale;
+                shadowRoot.localRotation = targetRotation;
                 centeredMeshInMission = false;
             }
 
@@ -535,6 +564,18 @@ namespace ShadowPrototype
         }
 
         private float IntroBackgroundFinalAlpha01 => Mathf.Clamp(introBackgroundFinalAlpha, 0, 255) / 255.0f;
+
+        private static Vector3 ScalePreservingAspect(Vector3 referenceScale, float scaleMultiplier)
+        {
+            scaleMultiplier = Mathf.Max(0.01f, scaleMultiplier);
+            float zScale = Mathf.Abs(referenceScale.z) > 0.0001f
+                ? referenceScale.z * scaleMultiplier
+                : scaleMultiplier;
+            return new Vector3(
+                referenceScale.x * scaleMultiplier,
+                referenceScale.y * scaleMultiplier,
+                zScale);
+        }
 
         private IEnumerator PlayIntroNarrationAndScrollRoutine()
         {
@@ -715,6 +756,7 @@ namespace ShadowPrototype
             }
 
             introShadowRootRestLocalScale = shadowRoot.localScale;
+            introShadowRootRestLocalRotation = shadowRoot.localRotation;
             hasIntroShadowRootRestPose = true;
         }
 
@@ -754,7 +796,9 @@ namespace ShadowPrototype
             float duration = Mathf.Max(0.0f, introToInteractionTransitionSeconds);
             Vector3 shadowStartPosition = shadowRoot != null ? shadowRoot.localPosition : Vector3.zero;
             Vector3 shadowStartScale = shadowRoot != null ? shadowRoot.localScale : Vector3.one;
+            Quaternion shadowStartRotation = shadowRoot != null ? shadowRoot.localRotation : Quaternion.identity;
             Vector3 shadowTargetScale = hasIntroShadowRootRestPose ? introShadowRootRestLocalScale : Vector3.one;
+            Quaternion shadowTargetRotation = hasIntroShadowRootRestPose ? introShadowRootRestLocalRotation : Quaternion.identity;
             Vector3 shadowTargetPosition = ResolveCenteredShadowRootLocalPosition(shadowRoot, shadowTargetScale, shadowStartPosition);
 
             Vector3 starStartPosition = starTransform != null ? starTransform.localPosition : Vector3.zero;
@@ -766,7 +810,7 @@ namespace ShadowPrototype
             {
                 SetIntroBackgroundAlpha(0.0f);
                 SetIntroDarkAlpha(0.0f);
-                ApplyIntroTransitionFinalTransforms(shadowRoot, shadowTargetPosition, shadowTargetScale, starTransform, starTargetPosition, starTargetScale);
+                ApplyIntroTransitionFinalTransforms(shadowRoot, shadowTargetPosition, shadowTargetScale, shadowTargetRotation, starTransform, starTargetPosition, starTargetScale);
                 yield break;
             }
 
@@ -784,6 +828,7 @@ namespace ShadowPrototype
                 {
                     shadowRoot.localPosition = Vector3.LerpUnclamped(shadowStartPosition, shadowTargetPosition, eased);
                     shadowRoot.localScale = Vector3.LerpUnclamped(shadowStartScale, shadowTargetScale, eased);
+                    shadowRoot.localRotation = Quaternion.SlerpUnclamped(shadowStartRotation, shadowTargetRotation, eased);
                 }
 
                 if (starTransform != null)
@@ -799,13 +844,14 @@ namespace ShadowPrototype
 
             SetIntroBackgroundAlpha(0.0f);
             SetIntroDarkAlpha(0.0f);
-            ApplyIntroTransitionFinalTransforms(shadowRoot, shadowTargetPosition, shadowTargetScale, starTransform, starTargetPosition, starTargetScale);
+            ApplyIntroTransitionFinalTransforms(shadowRoot, shadowTargetPosition, shadowTargetScale, shadowTargetRotation, starTransform, starTargetPosition, starTargetScale);
         }
 
         private void ApplyIntroTransitionFinalTransforms(
             Transform shadowRoot,
             Vector3 shadowTargetPosition,
             Vector3 shadowTargetScale,
+            Quaternion shadowTargetRotation,
             Transform starTransform,
             Vector3 starTargetPosition,
             Vector3 starTargetScale)
@@ -814,6 +860,7 @@ namespace ShadowPrototype
             {
                 shadowRoot.localPosition = shadowTargetPosition;
                 shadowRoot.localScale = shadowTargetScale;
+                shadowRoot.localRotation = shadowTargetRotation;
                 centeredMeshInMission = true;
             }
 

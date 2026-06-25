@@ -179,8 +179,8 @@ MonoBehaviour:
   cameraDeviceIndex: 0
   udpPort: 5055
   staleDataTimeoutSeconds: 1
-  minimumAddedShadowRatio: 0.015
-  maximumAddedShadowRatio: 0.03
+  trackingExtraArguments: --roi-ellipse 0.71,0.54,0.27,0.35 --background-seconds
+    1 --darkening-threshold 45
   shadowWeightSmoothing: 6
   rawRatioSmoothing: 8
   seesawPivot: {fileID: 500000001}
@@ -189,6 +189,7 @@ MonoBehaviour:
   rightSeat: {fileID: 500000031}
   leftSeatAnchor: {fileID: 500000071}
   rightSeatAnchor: {fileID: 500000081}
+  alignSeatAnchorsToCurrentSeatPositions: 1
   shadowStar: {fileID: 1780923197}
   fulcrum: {fileID: 500000041}
   beamBaseEulerAngles: {x: -110, y: 90, z: -90}
@@ -196,7 +197,7 @@ MonoBehaviour:
   seatWorldEulerAngles: {x: -90, y: 0, z: 0}
   shadowStarSeatOffset: {x: 0, y: 0.82, z: 0}
   completedBeamEulerX: -70
-  completionShadowAreaRatio: 0.05
+  completionShadowAreaRatio: 0.3
   nextSceneName: Ending
   endingTransitionDelay: 0.6
   postOutroSceneTransitionDelay: 1

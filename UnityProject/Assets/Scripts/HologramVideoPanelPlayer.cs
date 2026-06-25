@@ -21,6 +21,10 @@ namespace ShadowPrototype
         [SerializeField] private MonoBehaviour[] interactionBehavioursToEnableAfterVideo = Array.Empty<MonoBehaviour>();
         [SerializeField] private bool hidePanelsWhenNotPlaying = true;
 
+        [Header("Main Display Instruction Video")]
+        [SerializeField] private Mission3MainDisplayHintVideo.InstructionVideo mainDisplayInstructionAfterVideo =
+            Mission3MainDisplayHintVideo.InstructionVideo.None;
+
         [Header("Post Video Narration")]
         [SerializeField] private AudioSource postVideoNarrationAudioSource;
         [SerializeField] private AudioClip postVideoNarrationClip;
@@ -30,6 +34,8 @@ namespace ShadowPrototype
         private bool isVideoOutputActive;
         private bool hasPlayedPostVideoNarration;
         private Coroutine enableInteractionRoutine;
+        private Coroutine completeVideoRoutine;
+        private Mission3MainDisplayHintVideo.InstructionVideo activeMainDisplayInstructionAfterVideo;
 
         private void Awake()
         {
@@ -51,6 +57,7 @@ namespace ShadowPrototype
 
         private void OnDisable()
         {
+            StopCompleteVideoRoutine();
             StopEnableInteractionRoutine();
 
             if (videoPlayer != null)
@@ -69,14 +76,25 @@ namespace ShadowPrototype
 
         public void Play()
         {
-            Play(videoRelativePath);
+            Play(videoRelativePath, mainDisplayInstructionAfterVideo);
         }
 
         public void Play(string nextVideoRelativePath)
         {
+            Play(
+                nextVideoRelativePath,
+                Mission3MainDisplayHintVideo.InstructionVideo.None);
+        }
+
+        public void Play(
+            string nextVideoRelativePath,
+            Mission3MainDisplayHintVideo.InstructionVideo instructionVideoAfterCompletion)
+        {
             ResolveReferences();
+            StopCompleteVideoRoutine();
             StopEnableInteractionRoutine();
             SetInteractionBehavioursEnabled(false);
+            activeMainDisplayInstructionAfterVideo = instructionVideoAfterCompletion;
             if (!string.IsNullOrWhiteSpace(nextVideoRelativePath))
             {
                 videoRelativePath = nextVideoRelativePath;
@@ -187,8 +205,18 @@ namespace ShadowPrototype
             }
 
             source.Stop();
+            StopCompleteVideoRoutine();
+            completeVideoRoutine = StartCoroutine(CompleteVideoRoutine());
+        }
+
+        private IEnumerator CompleteVideoRoutine()
+        {
             HideOutputPanels();
+            Mission3MainDisplayHintVideo.ShowInstructionVideoLooping(
+                activeMainDisplayInstructionAfterVideo);
+            yield return null;
             EnableInteractionAfterVideo();
+            completeVideoRoutine = null;
         }
 
         private void EnableInteractionAfterVideo()
@@ -269,6 +297,17 @@ namespace ShadowPrototype
 
             StopCoroutine(enableInteractionRoutine);
             enableInteractionRoutine = null;
+        }
+
+        private void StopCompleteVideoRoutine()
+        {
+            if (completeVideoRoutine == null)
+            {
+                return;
+            }
+
+            StopCoroutine(completeVideoRoutine);
+            completeVideoRoutine = null;
         }
 
         private void SetInteractionBehavioursEnabled(bool isEnabled)
